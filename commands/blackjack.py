@@ -3,7 +3,7 @@ from discord import app_commands, ui
 from discord.ext import commands
 
 from database.db import InsufficientFunds
-from utils.cards import Deck, hand_str, hand_value, is_blackjack
+from utils.cards import BACK_EMOJI, Deck, hand_str, hand_value, is_blackjack
 from utils.checks import game_enabled
 from utils.economy import fmt, game_container, resolve_bet
 
@@ -71,7 +71,7 @@ class BlackjackView(ui.LayoutView):
             dealer_total = hand_value(self.dealer)
             lines.append(f"**Dealer's hand:** {hand_str(self.dealer)}  (**{dealer_total}**)")
         else:
-            lines.append(f"**Dealer's hand:** {self.dealer[0]} 🂠")
+            lines.append(f"**Dealer's hand:** {self.dealer[0].emoji} {BACK_EMOJI}")
 
         lines.append(f"**Bet:** {fmt(self.bet)}")
         if footer:
