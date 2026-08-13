@@ -1,0 +1,214 @@
+{
+  "ace_of_clubs": {
+    "emoji_name": "2918playingcardclubsace",
+    "id": "1537551974000623686"
+  },
+  "ace_of_diamonds": {
+    "emoji_name": "1454playingcarddiamondsace",
+    "id": "1537551897924337674"
+  },
+  "ace_of_hearts": {
+    "emoji_name": "7039playingcardheartsace",
+    "id": "1537551917566140576"
+  },
+  "ace_of_spades": {
+    "emoji_name": "3606playingcardspadesace",
+    "id": "1537552003302039613"
+  },
+  "back": {
+    "emoji_name": "7426playingcardbackside",
+    "id": "1537551988689211412"
+  },
+  "eight_of_clubs": {
+    "emoji_name": "8965playingcardclubseight",
+    "id": "1537551994212851802"
+  },
+  "eight_of_diamonds": {
+    "emoji_name": "9921playingcarddiamondseight",
+    "id": "1537551933211021422"
+  },
+  "eight_of_hearts": {
+    "emoji_name": "3572playingcardheartseight",
+    "id": "1537551905935458364"
+  },
+  "eight_of_spades": {
+    "emoji_name": "5501playingcardspadeseight",
+    "id": "1537551984280997998"
+  },
+  "five_of_clubs": {
+    "emoji_name": "5269playingcardclubsfive",
+    "id": "1537551983181963436"
+  },
+  "five_of_diamonds": {
+    "emoji_name": "4065playingcarddiamondsfive",
+    "id": "1537551907063865344"
+  },
+  "five_of_hearts": {
+    "emoji_name": "8796playingcardheartsfive",
+    "id": "1537551927758295101"
+  },
+  "five_of_spades": {
+    "emoji_name": "5162playingcardspadesfive",
+    "id": "1537551981747372143"
+  },
+  "four_of_clubs": {
+    "emoji_name": "3948playingcardclubsfour",
+    "id": "1537552004711194685"
+  },
+  "four_of_diamonds": {
+    "emoji_name": "1497playingcarddiamondsfour",
+    "id": "1537551901476917320"
+  },
+  "four_of_hearts": {
+    "emoji_name": "5715playingcardheartsfour",
+    "id": "1537551913141276692"
+  },
+  "four_of_spades": {
+    "emoji_name": "9806playingcardspadesfour",
+    "id": "1537551996758794301"
+  },
+  "jack_of_clubs": {
+    "emoji_name": "6968playingcardclubsjack",
+    "id": "1537551985388027969"
+  },
+  "jack_of_diamonds": {
+    "emoji_name": "9562playingcarddiamondsjack",
+    "id": "1537551930761683086"
+  },
+  "jack_of_spades": {
+    "emoji_name": "7377playingcardspadesjack",
+    "id": "1537552008792383538"
+  },
+  "joker": {
+    "emoji_name": "7882playingcardjoker",
+    "id": "1537551990513475686"
+  },
+  "king_of_clubs": {
+    "emoji_name": "9978playingcardclubsking",
+    "id": "1537552001347616918"
+  },
+  "king_of_diamonds": {
+    "emoji_name": "7596playingcarddiamondsking",
+    "id": "1537551899182637106"
+  },
+  "king_of_hearts": {
+    "emoji_name": "7669playingcardheartsking",
+    "id": "1537551924683997194"
+  },
+  "king_of_spades": {
+    "emoji_name": "9846playingcardspadesking",
+    "id": "1537551998348697810"
+  },
+  "nine_of_clubs": {
+    "emoji_name": "2529playingcardclubsnine",
+    "id": "1537551972448870460"
+  },
+  "nine_of_diamonds": {
+    "emoji_name": "9976playingcarddiamondsnine",
+    "id": "1537551935161376908"
+  },
+  "nine_of_hearts": {
+    "emoji_name": "5451playingcardheartsnine",
+    "id": "1537551911715082402"
+  },
+  "nine_of_spades": {
+    "emoji_name": "5071playingcardspadesnine",
+    "id": "1537551980137029822"
+  },
+  "queen_of_clubs": {
+    "emoji_name": "7744playingcardclubsqueen",
+    "id": "1537552010235089016"
+  },
+  "queen_of_diamonds": {
+    "emoji_name": "5305playingcarddiamondsqueen",
+    "id": "1537551910213787688"
+  },
+  "queen_of_hearts": {
+    "emoji_name": "4703playingcardheartsqueen",
+    "id": "1537551908221493349"
+  },
+  "queen_of_spades": {
+    "emoji_name": "4328playingcardspadesqueen",
+    "id": "1537551978744520754"
+  },
+  "seven_of_clubs": {
+    "emoji_name": "9858playingcardclubsseven",
+    "id": "1537552015910244382"
+  },
+  "seven_of_diamonds": {
+    "emoji_name": "2336playingcarddiamondsseven",
+    "id": "1537551902848319588"
+  },
+  "seven_of_hearts": {
+    "emoji_name": "5765playingcardheartsseven",
+    "id": "1537551914386989096"
+  },
+  "seven_of_spades": {
+    "emoji_name": "9649playingcardspadesseven",
+    "id": "1537551995936841860"
+  },
+  "six_of_clubs": {
+    "emoji_name": "7348playingcardclubssix",
+    "id": "1537552007525703710"
+  },
+  "six_of_diamonds": {
+    "emoji_name": "1169playingcarddiamondssix",
+    "id": "1537551900424011878"
+  },
+  "six_of_hearts": {
+    "emoji_name": "7193playingcardheartssix",
+    "id": "1537551922846892073"
+  },
+  "six_of_spades": {
+    "emoji_name": "4160playingcardspadessix",
+    "id": "1537551975510573177"
+  },
+  "ten_of_clubs": {
+    "emoji_name": "7160playingcardclubsten",
+    "id": "1537551987401298001"
+  },
+  "ten_of_diamonds": {
+    "emoji_name": "2715playingcarddiamondsten",
+    "id": "1537551904274522152"
+  },
+  "ten_of_hearts": {
+    "emoji_name": "7963playingcardheartsten",
+    "id": "1537551925908873249"
+  },
+  "ten_of_spades": {
+    "emoji_name": "8896playingcardspadesten",
+    "id": "1537551992812077156"
+  },
+  "three_of_clubs": {
+    "emoji_name": "4263playingcardclubsthree",
+    "id": "1537551976731123914"
+  },
+  "three_of_diamonds": {
+    "emoji_name": "5772playingcarddiamondsthree",
+    "id": "1537551916094193714"
+  },
+  "three_of_hearts": {
+    "emoji_name": "9383playingcardheartsthree",
+    "id": "1537551929360515132"
+  },
+  "three_of_spades": {
+    "emoji_name": "1367playingcardspadesthree",
+    "id": "1537551971102367774"
+  },
+  "two_of_clubs": {
+    "emoji_name": "8842playingcardclubstwo",
+    "id": "1537552012953002055"
+  },
+  "two_of_diamonds": {
+    "emoji_name": "7165playingcarddiamondstwo",
+    "id": "1537551921706041394"
+  },
+  "two_of_hearts": {
+    "emoji_name": "7102playingcardheartstwo",
+    "id": "1537551919101247599"
+  },
+  "two_of_spades": {
+    "emoji_name": "8524playingcardspadestwo",
+    "id": "1537552011774664854"
+  }
+}
