@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from rpg.character import to_fighter
+from rpg.character import current_hp, full_stats, to_fighter
 from rpg.combat import Fighter, simulate
 from rpg.equipment import EQUIPMENT
 from rpg.events import AMBUSH, CURSED, MERCHANT, TREASURE, roll_event
@@ -16,7 +16,7 @@ from utils.economy import StaticView, fmt
 
 DungeonKey = Literal["forest", "cave", "crypt", "volcano", "abyss", "celestial"]
 
-DUNGEON_COOLDOWN = 600  # 10 minutes
+DUNGEON_COOLDOWN = 20
 
 
 def _dungeon_list_text() -> str:
@@ -49,6 +49,12 @@ class RPGDungeon(commands.Cog):
             return
 
         now = datetime.datetime.utcnow()
+        player_stats = full_stats(character)
+        hp_now = current_hp(character, player_stats["hp"], now)
+        if hp_now <= 0:
+            await ctx.send("💀 You're too hurt to fight. Use `/heal` or wait for your HP to regenerate.")
+            return
+
         ok = await self.bot.db.try_consume_cooldown(
             ctx.author.id, "dungeon", datetime.timedelta(seconds=DUNGEON_COOLDOWN), now
         )
@@ -90,7 +96,7 @@ class RPGDungeon(commands.Cog):
                 stats[key] = int(stats[key] * 1.4)
             stats["gold"] = (int(stats["gold"][0] * 1.4), int(stats["gold"][1] * 1.4))
 
-        player_fighter = to_fighter(character, ctx.author.display_name)
+        player_fighter = to_fighter(character, ctx.author.display_name, hp=hp_now)
         if event == CURSED:
             player_fighter.crit = max(0.0, player_fighter.crit - 0.10)
 
@@ -101,6 +107,9 @@ class RPGDungeon(commands.Cog):
 
         result = simulate(player_fighter, monster_fighter)
         won = result["winner"] is player_fighter
+
+        await self.bot.db.set_character_hp(ctx.author.id, player_fighter.hp, now)
+        hp_line = f"\n**HP:** {player_fighter.hp} / {player_fighter.max_hp}"
 
         header_bits = []
         if elite:
@@ -128,10 +137,11 @@ class RPGDungeon(commands.Cog):
                 await self.bot.db.add_rpg_item(ctx.author.id, item_key, 1)
                 loot_text = f"\n🎁 **Loot!** {EQUIPMENT[item_key].name} dropped."
 
-            body = f"{header}You defeated the {monster_name}!\n\n{log_tail}{footer}{loot_text}"
+            body = f"{header}You defeated the {monster_name}!\n\n{log_tail}{footer}{loot_text}{hp_line}"
             color = discord.Color.green()
         else:
-            body = f"{header}The {monster_name} defeated you...\n\n{log_tail}\n\n😢 No rewards this time."
+            downed_text = "\n💀 You've been knocked out! Use `/heal` or wait to recover." if player_fighter.hp <= 0 else ""
+            body = f"{header}The {monster_name} defeated you...\n\n{log_tail}\n\n😢 No rewards this time.{hp_line}{downed_text}"
             color = discord.Color.red()
 
         view = StaticView(f"{d.emoji} {d.name}", body, color=color)

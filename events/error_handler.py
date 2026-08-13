@@ -1,5 +1,6 @@
 import logging
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -15,6 +16,9 @@ def _friendly_message(error: Exception) -> str | None:
         return error.args[0] if error.args else str(error)
     if isinstance(error, commands.MissingRequiredArgument):
         return f"Missing argument: `{error.param.name}`."
+    if isinstance(error, commands.BadLiteralArgument):
+        choices = ", ".join(f"`{c}`" for c in error.literals)
+        return f"Invalid value for `{error.param.name}`. Choose one of: {choices}."
     if isinstance(error, commands.BadArgument):
         return "One of the provided values is invalid."
     if isinstance(error, commands.CommandOnCooldown):
@@ -23,6 +27,11 @@ def _friendly_message(error: Exception) -> str | None:
         return "You're missing the required permission (Administrator)."
     if isinstance(error, commands.CommandNotFound):
         return None
+    if isinstance(error, commands.UserInputError):
+        # Catches every other converter/parsing failure (bad union args, too
+        # many arguments, unclosed quotes, etc.) with a reasonable fallback
+        # instead of falling through to the scary "something went wrong".
+        return "One of the provided values is invalid."
     return None
 
 
@@ -39,7 +48,13 @@ class ErrorHandler(commands.Cog):
             log.exception("Unexpected error in command %s", ctx.command, exc_info=error)
             message = "Something went wrong. Please try again later."
         if message:
-            await ctx.send(f"⚠️ {message}")
+            try:
+                await ctx.send(f"⚠️ {message}")
+            except (discord.HTTPException, aiohttp.ClientError, ConnectionError, OSError):
+                # Best-effort: if we can't even deliver the error notification
+                # (network blip, Discord hiccup), don't let that itself blow
+                # up as an unhandled exception in the event loop.
+                log.warning("Failed to send error message for command %s", ctx.command)
 
     async def on_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
@@ -49,10 +64,13 @@ class ErrorHandler(commands.Cog):
         if message is None:
             log.exception("Unexpected error in app command", exc_info=error)
             message = "Something went wrong. Please try again later."
-        if interaction.response.is_done():
-            await interaction.followup.send(f"⚠️ {message}", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"⚠️ {message}", ephemeral=True)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(f"⚠️ {message}", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"⚠️ {message}", ephemeral=True)
+        except (discord.HTTPException, aiohttp.ClientError, ConnectionError, OSError):
+            log.warning("Failed to send error message for app command")
 
 
 async def setup(bot: commands.Bot):

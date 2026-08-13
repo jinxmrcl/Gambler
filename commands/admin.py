@@ -46,6 +46,19 @@ class Admin(commands.Cog):
         )
         await ctx.send(view=view)
 
+    @commands.hybrid_command(name="giveall", description="[Admin] Give (or take) balance from every player at once.")
+    @app_commands.describe(amount="Amount to give every player (negative to remove, floored at 0)")
+    @commands.has_permissions(administrator=True)
+    async def giveall(self, ctx: commands.Context, amount: int):
+        count = await self.bot.db.give_all_users(amount)
+
+        view = StaticView(
+            "🛠️ Balance Given to Everyone",
+            f"{fmt(amount)} applied to **{count}** player(s).",
+            color=discord.Color.blue(),
+        )
+        await ctx.send(view=view)
+
     @commands.hybrid_command(name="resetuser", description="[Admin] Fully reset a user.")
     @app_commands.describe(user="Target user")
     @commands.has_permissions(administrator=True)
