@@ -1,3 +1,15 @@
+<div align="center">
+
+![Ticket Tool](assets/gambling_bot_banner_1.png)
+
+![discord.py](https://img.shields.io/badge/discord.py-2.6%2B-5865F2?logo=discord&logoColor=white)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)
+![Components V2](https://img.shields.io/badge/UI-Components%20V2-57F287)
+![Multi--guild](https://img.shields.io/badge/servers-unlimited-2B2D31)
+[![Discord](https://img.shields.io/badge/Discord-Join%20server-5865F2?logo=discord&logoColor=white)](https://discord.gg/P992BnNMbw)
+
+</div>
+
 # Gambler
 
 A Discord economy & gambling bot built with `discord.py`, featuring six casino games,
