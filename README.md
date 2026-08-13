@@ -16,7 +16,7 @@ A Discord economy & gambling bot built with `discord.py`, featuring nine casino 
 a full virtual economy (bank, shop, trading, marriage, lottery, robbing), and
 MySQL-backed persistence.
 
-📊 **~3,475 lines of Python** across 32 files.
+📊 **~3,540 lines of Python** across 32 files.
 
 ## Features
 
@@ -160,7 +160,8 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 - `plinko <bet> [risk=medium] [rows=12]` — drop a ball through the Plinko board
 - `limbo <bet> <target>` — set a target multiplier, the random result must reach it
 - `keno <bet> [picks=5]` — pick numbers and hope for hits in the draw
-- `slots <bet>` — spin three reels, match all three symbols to win
+- `slots <bet>` — animated 3x3 grid with 5 paylines (rows + both diagonals); reels stop
+  one column at a time before the result is revealed
 - `roulette <bet> <choice>` — bet on a number, color, or even/odd
 - `dice <bet> <prediction>` — predict the sum of two dice (2-12)
 
