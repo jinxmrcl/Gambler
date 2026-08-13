@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
+from utils.ratelimit import limited_edit
 
 RTP = 1 - HOUSE_EDGE
 SPIN_DELAY = 0.8
@@ -110,7 +111,7 @@ class Slots(commands.Cog):
 
             if locked_columns < 3:
                 view.update(display, footer="🎲 Spinning...")
-                await message.edit(view=view)
+                await limited_edit(message, view=view)
 
         payout, winning_lines = evaluate(final_grid, amount)
         if payout:
