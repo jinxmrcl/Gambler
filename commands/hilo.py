@@ -73,7 +73,7 @@ class HiloView(ui.LayoutView):
         potential = int(self.bet * self.multiplier)
         lines = [
             "**Current card:**",
-            f"### {self.current}",
+            f"## {self.current.emoji}",
             f"**Streak:** {self.streak}",
             f"**Multiplier:** {self.multiplier:.2f}x",
             f"**Current winnings:** {fmt(potential)}",

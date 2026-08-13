@@ -16,7 +16,7 @@ A Discord economy & gambling bot built with `discord.py`, featuring nine casino 
 a full virtual economy (bank, shop, trading, marriage, lottery, robbing), and
 MySQL-backed persistence.
 
-📊 **~3,270 lines of Python** across 32 files.
+📊 **~3,475 lines of Python** across 32 files.
 
 ## Features
 
@@ -24,6 +24,8 @@ MySQL-backed persistence.
 PvP `coinflip` duel between two players. All games are mathematically fair with a fixed,
 transparent house edge (`HOUSE_EDGE` in `utils/economy.py`, default 3%), and interactive
 ones (Blackjack, Mines, Hilo, Keno) use Discord's native buttons and select menus.
+Blackjack and Hilo render playing cards with custom Discord emojis (`assets/cards/`,
+mapped in `utils/cards.py`) instead of plain text.
 
 **Economy** — a per-user virtual balance stored in MySQL, with:
 - `daily` bonus, `work`/`crime`/`slut` for risk-based income, and `rob` to steal from others
@@ -172,7 +174,8 @@ mathematically fair while slightly favoring the house.
 main.py                 Bot entry point, loads cogs, connects to MySQL
 database/db.py           aiomysql connection pool + wallet/bank/inventory/stats/social functions
 utils/economy.py         Bet parsing, formatting, house edge constant, UI building blocks
-utils/cards.py            Card deck for Blackjack & Hilo
+utils/cards.py            Card deck + custom card emoji mapping for Blackjack & Hilo
+assets/cards/              Downloaded card emoji images (reference copies, not loaded at runtime)
 utils/items.py            Shop catalog (item keys, prices, effects)
 utils/checks.py           Per-server game enable/channel checks
 commands/economy.py       balance, daily, leaderboard, pay
