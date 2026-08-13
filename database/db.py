@@ -355,7 +355,7 @@ class Database:
         rowcount = await self._execute(
             "INSERT INTO cooldowns (user_id, action, expires_at) VALUES (%s, %s, %s) AS new "
             "ON DUPLICATE KEY UPDATE "
-            "expires_at = IF(expires_at <= %s, new.expires_at, expires_at)",
+            "expires_at = IF(cooldowns.expires_at <= %s, new.expires_at, cooldowns.expires_at)",
             (user_id, action, now + period, now),
         )
         return rowcount > 0
@@ -387,7 +387,7 @@ class Database:
     async def add_item(self, user_id: int, item_key: str, quantity: int) -> None:
         await self._execute(
             "INSERT INTO inventory (user_id, item_key, quantity) VALUES (%s, %s, %s) AS new "
-            "ON DUPLICATE KEY UPDATE quantity = quantity + new.quantity",
+            "ON DUPLICATE KEY UPDATE quantity = inventory.quantity + new.quantity",
             (user_id, item_key, quantity),
         )
 
@@ -408,10 +408,10 @@ class Database:
             "INSERT INTO stats (user_id, games_played, total_wagered, total_won, biggest_win) "
             "VALUES (%s, 1, %s, %s, %s) AS new "
             "ON DUPLICATE KEY UPDATE "
-            "games_played = games_played + 1, "
-            "total_wagered = total_wagered + new.total_wagered, "
-            "total_won = total_won + new.total_won, "
-            "biggest_win = GREATEST(biggest_win, new.biggest_win)",
+            "stats.games_played = stats.games_played + 1, "
+            "stats.total_wagered = stats.total_wagered + new.total_wagered, "
+            "stats.total_won = stats.total_won + new.total_won, "
+            "stats.biggest_win = GREATEST(stats.biggest_win, new.biggest_win)",
             (user_id, wagered, payout, max(net, 0)),
         )
 
@@ -419,8 +419,8 @@ class Database:
         await self._execute(
             "INSERT INTO stats (user_id, robs_attempted, robs_succeeded) VALUES (%s, 1, %s) AS new "
             "ON DUPLICATE KEY UPDATE "
-            "robs_attempted = robs_attempted + 1, "
-            "robs_succeeded = robs_succeeded + new.robs_succeeded",
+            "stats.robs_attempted = stats.robs_attempted + 1, "
+            "stats.robs_succeeded = stats.robs_succeeded + new.robs_succeeded",
             (user_id, 1 if success else 0),
         )
 
@@ -577,7 +577,7 @@ class Database:
                         raise InsufficientFunds(f"User {user_id} cannot afford {cost}")
                     await cur.execute(
                         "INSERT INTO lottery_tickets (user_id, quantity) VALUES (%s, %s) AS new "
-                        "ON DUPLICATE KEY UPDATE quantity = quantity + new.quantity",
+                        "ON DUPLICATE KEY UPDATE quantity = lottery_tickets.quantity + new.quantity",
                         (user_id, quantity),
                     )
                     await cur.execute(
