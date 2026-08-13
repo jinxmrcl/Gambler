@@ -35,22 +35,19 @@ class Economy(commands.Cog):
     @commands.hybrid_command(name="daily", description="Claim your daily bonus.")
     async def daily(self, ctx: commands.Context):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        last = await self.bot.db.get_last_daily(ctx.author.id)
         now = datetime.datetime.utcnow()
+        period = datetime.timedelta(hours=24)
 
-        if last is not None:
-            elapsed = now - last
-            if elapsed < datetime.timedelta(hours=24):
-                remaining = datetime.timedelta(hours=24) - elapsed
-                hours, rem = divmod(int(remaining.total_seconds()), 3600)
-                minutes = rem // 60
-                await ctx.send(
-                    f"⏳ You already claimed your bonus. Next one in {hours}h {minutes}m."
-                )
-                return
-
-        await self.bot.db.set_last_daily(ctx.author.id, now)
-        new_balance = await self.bot.db.update_balance(ctx.author.id, self.bot.daily_amount)
+        new_balance = await self.bot.db.claim_daily(ctx.author.id, self.bot.daily_amount, period, now)
+        if new_balance is None:
+            last = await self.bot.db.get_last_daily(ctx.author.id)
+            remaining = period - (now - last) if last else datetime.timedelta(0)
+            hours, rem = divmod(max(int(remaining.total_seconds()), 0), 3600)
+            minutes = rem // 60
+            await ctx.send(
+                f"⏳ You already claimed your bonus. Next one in {hours}h {minutes}m."
+            )
+            return
 
         view = StaticView(
             "🎁 Daily Bonus",
@@ -99,12 +96,10 @@ class Economy(commands.Cog):
         await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
 
         try:
-            await self.bot.db.update_balance(ctx.author.id, -amount)
+            await self.bot.db.transfer_balance(ctx.author.id, user.id, amount)
         except InsufficientFunds:
             await ctx.send("⚠️ You don't have enough balance for this transfer.")
             return
-
-        await self.bot.db.update_balance(user.id, amount)
 
         view = StaticView(
             "💸 Transfer",

@@ -81,6 +81,8 @@ class KenoView(ui.LayoutView):
         return True
 
     async def resolve(self, interaction: discord.Interaction, chosen: set[int]):
+        if self.finished:
+            return
         self.finished = True
         self.select.disabled = True
 

@@ -72,12 +72,7 @@ class Shop(commands.Cog):
             await self.bot.db.set_protected_until(ctx.author.id, until)
             text = f"🛡️ You're now protected from `rob` until {until.strftime('%H:%M UTC')}."
         else:
-            hustle = self.bot.get_cog("Hustle")
-            if hustle:
-                for cmd_name in ("work", "crime", "slut", "rob"):
-                    hustle_cmd = getattr(hustle, cmd_name, None)
-                    if hustle_cmd:
-                        hustle_cmd.reset_cooldown(ctx)
+            await self.bot.db.clear_cooldowns(ctx.author.id, ("work", "crime", "slut", "rob"))
             text = "⏩ All cooldowns have been reset."
 
         view = StaticView("✨ Item Used", text, color=discord.Color.green())

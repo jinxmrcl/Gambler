@@ -58,6 +58,8 @@ class CoinflipView(ui.LayoutView):
         self.decline_button.disabled = True
 
     async def accept(self, interaction: discord.Interaction):
+        if self.finished:
+            return
         self.finished = True
         self._disable_buttons()
 

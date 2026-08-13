@@ -61,15 +61,46 @@ ROB_SUCCESS_CHANCE = 0.45
 ROB_STEAL_RANGE = (0.10, 0.25)
 ROB_FINE_RANGE = (100, 300)
 
+WORK_COOLDOWN = 1800
+CRIME_COOLDOWN = 2700
+SLUT_COOLDOWN = 2700
+ROB_COOLDOWN = 3600
+
+
+def _format_remaining(delta: datetime.timedelta) -> str:
+    total = max(int(delta.total_seconds()), 0)
+    hours, rem = divmod(total, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
 
 class Hustle(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    async def _claim_cooldown(self, ctx: commands.Context, action: str, seconds: int) -> bool:
+        """Atomically claims `action`'s cooldown. Returns True if it was free
+        (and the cooldown now started); sends a message and returns False if
+        it's still on cooldown. Persisted in the DB so restarts don't reset it."""
+        now = datetime.datetime.utcnow()
+        ok = await self.bot.db.try_consume_cooldown(
+            ctx.author.id, action, datetime.timedelta(seconds=seconds), now
+        )
+        if not ok:
+            until = await self.bot.db.get_cooldown(ctx.author.id, action)
+            remaining = until - now if until else datetime.timedelta(0)
+            await ctx.send(f"⏳ `{action}` is on cooldown. Try again in {_format_remaining(remaining)}.")
+        return ok
+
     @commands.hybrid_command(name="work", description="Work for some balance.")
-    @commands.cooldown(1, 1800, commands.BucketType.user)
     async def work(self, ctx: commands.Context):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        if not await self._claim_cooldown(ctx, "work", WORK_COOLDOWN):
+            return
         amount = random.randint(50, 200)
         new_balance = await self.bot.db.update_balance(ctx.author.id, amount)
 
@@ -82,9 +113,10 @@ class Hustle(commands.Cog):
         await ctx.send(view=view)
 
     @commands.hybrid_command(name="crime", description="Commit a crime for a big payout — with risk.")
-    @commands.cooldown(1, 2700, commands.BucketType.user)
     async def crime(self, ctx: commands.Context):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        if not await self._claim_cooldown(ctx, "crime", CRIME_COOLDOWN):
+            return
 
         if random.random() < 0.7:
             amount = random.randint(200, 500)
@@ -102,9 +134,10 @@ class Hustle(commands.Cog):
         await ctx.send(view=view)
 
     @commands.hybrid_command(name="slut", description="Make some extra cash on the side — with risk.")
-    @commands.cooldown(1, 2700, commands.BucketType.user)
     async def slut(self, ctx: commands.Context):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        if not await self._claim_cooldown(ctx, "slut", SLUT_COOLDOWN):
+            return
 
         if random.random() < 0.65:
             amount = random.randint(150, 450)
@@ -123,15 +156,12 @@ class Hustle(commands.Cog):
 
     @commands.hybrid_command(name="rob", description="Try to steal balance from another player.")
     @app_commands.describe(user="Who to rob")
-    @commands.cooldown(1, 3600, commands.BucketType.user)
     async def rob(self, ctx: commands.Context, user: discord.User):
         if user.bot:
             await ctx.send("⚠️ You can't rob bots.")
-            self.rob.reset_cooldown(ctx)
             return
         if user.id == ctx.author.id:
             await ctx.send("⚠️ You can't rob yourself.")
-            self.rob.reset_cooldown(ctx)
             return
 
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
@@ -140,13 +170,14 @@ class Hustle(commands.Cog):
         protected_until = await self.bot.db.get_protected_until(user.id)
         if protected_until and protected_until > datetime.datetime.utcnow():
             await ctx.send(f"🛡️ {user.mention} is currently protected by a rob shield.")
-            self.rob.reset_cooldown(ctx)
             return
 
         target_balance = await self.bot.db.get_balance(user.id)
         if target_balance < MIN_ROB_TARGET_BALANCE:
             await ctx.send(f"⚠️ {user.mention} doesn't have enough balance to be worth robbing.")
-            self.rob.reset_cooldown(ctx)
+            return
+
+        if not await self._claim_cooldown(ctx, "rob", ROB_COOLDOWN):
             return
 
         success = random.random() < ROB_SUCCESS_CHANCE
