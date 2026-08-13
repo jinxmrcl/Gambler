@@ -6,6 +6,7 @@ from database.db import InsufficientFunds
 from utils.cards import BACK_EMOJI, Deck, hand_str, hand_value, is_blackjack
 from utils.checks import game_enabled
 from utils.economy import fmt, game_container, resolve_bet
+from utils.ratelimit import limited_edit
 
 
 class HitButton(ui.Button):
@@ -182,7 +183,7 @@ class BlackjackView(ui.LayoutView):
                 await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
             await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
             self.render(reveal=True, footer="⏱️ Time's up — resolved automatically.")
-            await self.message.edit(view=self)
+            await limited_edit(self.message, view=self)
 
 
 class Blackjack(commands.Cog):

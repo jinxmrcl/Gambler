@@ -1,0 +1,33 @@
+2026-08-13 23:49:05,490 [INFO] discord.client: logging in using static token
+2026-08-13 23:49:06,146 [INFO] gambler: Connected to MySQL database.
+2026-08-13 23:49:06,148 [INFO] gambler: Loaded cog: events.error_handler
+2026-08-13 23:49:06,148 [INFO] gambler: Loaded cog: events.on_ready
+2026-08-13 23:49:06,152 [INFO] gambler: Loaded cog: commands.admin
+2026-08-13 23:49:06,153 [INFO] gambler: Loaded cog: commands.bank
+2026-08-13 23:49:06,155 [INFO] gambler: Loaded cog: commands.blackjack
+2026-08-13 23:49:06,155 [INFO] gambler: Loaded cog: commands.coinflip
+2026-08-13 23:49:06,156 [INFO] gambler: Loaded cog: commands.cooldowns
+2026-08-13 23:49:06,157 [INFO] gambler: Loaded cog: commands.dice
+2026-08-13 23:49:06,158 [INFO] gambler: Loaded cog: commands.economy
+2026-08-13 23:49:06,163 [INFO] gambler: Loaded cog: commands.help
+2026-08-13 23:49:06,164 [INFO] gambler: Loaded cog: commands.hilo
+2026-08-13 23:49:06,165 [INFO] gambler: Loaded cog: commands.hustle
+2026-08-13 23:49:06,165 [INFO] gambler: Loaded cog: commands.keno
+2026-08-13 23:49:06,166 [INFO] gambler: Loaded cog: commands.limbo
+2026-08-13 23:49:06,168 [INFO] gambler: Loaded cog: commands.lottery
+2026-08-13 23:49:06,169 [INFO] gambler: Loaded cog: commands.marriage
+2026-08-13 23:49:06,170 [INFO] gambler: Loaded cog: commands.mines
+2026-08-13 23:49:06,171 [INFO] gambler: Loaded cog: commands.plinko
+2026-08-13 23:49:06,172 [INFO] gambler: Loaded cog: commands.profile
+2026-08-13 23:49:06,172 [INFO] gambler: Loaded cog: commands.roulette
+2026-08-13 23:49:06,175 [INFO] gambler: Loaded cog: commands.rpg_arena
+2026-08-13 23:49:06,177 [INFO] gambler: Loaded cog: commands.rpg_character
+2026-08-13 23:49:06,179 [INFO] gambler: Loaded cog: commands.rpg_dungeon
+2026-08-13 23:49:06,180 [INFO] gambler: Loaded cog: commands.rpg_shop
+2026-08-13 23:49:06,182 [INFO] gambler: Loaded cog: commands.settings
+2026-08-13 23:49:06,184 [INFO] gambler: Loaded cog: commands.shop
+2026-08-13 23:49:06,185 [INFO] gambler: Loaded cog: commands.slots
+2026-08-13 23:49:06,186 [INFO] gambler: Loaded cog: commands.trade
+2026-08-13 23:49:06,535 [INFO] gambler: Synced 59 slash commands.
+2026-08-13 23:49:07,314 [INFO] discord.gateway: Shard ID None has connected to Gateway (Session ID: ae489e1ed00e00f93ae28213e8561668).
+2026-08-13 23:49:09,324 [INFO] gambler: Logged in as Gambler#4914 (ID: 1537515505374601246)

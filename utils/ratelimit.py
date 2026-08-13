@@ -1,18 +1,12 @@
 import asyncio
 import time
+from collections import defaultdict
 
 
 class RateLimiter:
     """A token-bucket limiter for our own outgoing Discord API calls.
 
-    discord.py already queues and retries requests against Discord's per-route
-    buckets, so a 429 here wouldn't crash anything — but under concurrent load
-    (e.g. many players spinning an animated game at once) that just means
-    requests silently stall waiting on Discord's backoff. Throttling
-    proactively on our side keeps request bursts (like a multi-frame spin
-    animation) well under Discord's global limit instead of relying on
-    Discord to tell us to slow down.
-    """
+    discord.py already queues and retries requests against Discord's. """
 
     def __init__(self, rate: float, per: float):
         self._rate = rate
@@ -34,13 +28,14 @@ class RateLimiter:
                 await asyncio.sleep((1 - self._tokens) * (self._per / self._rate))
 
 
-# Discord's global limit is 50 requests/second bot-wide. Staying well under it
-# leaves headroom for everything else the bot is doing (commands, other
-# messages) alongside bursty edit sequences like game animations.
-global_limiter = RateLimiter(rate=35, per=1.0)
+
+_EDIT_RATE = 3
+_EDIT_PER = 5.0
+_channel_limiters: dict[int, RateLimiter] = defaultdict(lambda: RateLimiter(_EDIT_RATE, _EDIT_PER))
 
 
 async def limited_edit(message, **kwargs) -> None:
-    """Edits a message through the shared global limiter."""
-    await global_limiter.acquire()
+    """Edits a message through a per-channel limiter, throttled well under
+    Discord's actual per-channel edit rate limit."""
+    await _channel_limiters[message.channel.id].acquire()
     await message.edit(**kwargs)

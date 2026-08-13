@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
+from utils.ratelimit import limited_edit
 
 POOL_SIZE = 25
 DRAWN_COUNT = 10
@@ -114,7 +115,7 @@ class KenoView(ui.LayoutView):
             await self.cog.bot.db.update_balance(self.ctx.author.id, self.bet)
             self.text.content = "## 🔢 Keno\n⏱️ No selection made — bet was refunded."
             self.container.accent_colour = discord.Color.greyple()
-            await self.message.edit(view=self)
+            await limited_edit(self.message, view=self)
 
 
 class Keno(commands.Cog):

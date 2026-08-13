@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
+from utils.ratelimit import limited_edit
 
 COLS = 5
 ROWS = 4
@@ -161,7 +162,7 @@ class MinesView(ui.LayoutView):
                 await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
             await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
             self.render(footer="⏱️ Time's up — cashed out automatically.")
-            await self.message.edit(view=self)
+            await limited_edit(self.message, view=self)
 
 
 class Mines(commands.Cog):

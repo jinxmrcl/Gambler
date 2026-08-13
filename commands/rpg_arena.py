@@ -1,0 +1,163 @@
+import random
+
+import discord
+from discord import app_commands, ui
+from discord.ext import commands
+
+from rpg.character import to_fighter
+from rpg.combat import simulate
+from rpg.leveling import apply_xp
+from utils.economy import StaticView, fmt, game_container, resolve_display_name
+from utils.ratelimit import limited_edit
+
+DUEL_GOLD_REWARD = (75, 150)
+DUEL_XP_REWARD = 40
+
+
+class AcceptButton(ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.success, label="Accept", emoji="⚔️")
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.accept(interaction)
+
+
+class DeclineButton(ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.danger, label="Decline", emoji="❌")
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.decline(interaction)
+
+
+class DuelView(ui.LayoutView):
+    def __init__(self, cog: "RPGArena", challenger: discord.abc.User, opponent: discord.abc.User):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.challenger = challenger
+        self.opponent = opponent
+        self.finished = False
+        self.message: discord.Message | None = None
+
+        self.container, self.text = game_container(
+            "⚔️ Duel Challenge",
+            f"{challenger.mention} challenges {opponent.mention} to a duel!\n{opponent.mention}, do you accept?",
+        )
+        self.accept_button = AcceptButton()
+        self.decline_button = DeclineButton()
+        row = ui.ActionRow()
+        row.add_item(self.accept_button)
+        row.add_item(self.decline_button)
+        self.container.add_item(row)
+        self.add_item(self.container)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.opponent.id:
+            await interaction.response.send_message("Only the challenged player can respond to this.", ephemeral=True)
+            return False
+        return True
+
+    def _disable_buttons(self):
+        self.accept_button.disabled = True
+        self.decline_button.disabled = True
+
+    async def accept(self, interaction: discord.Interaction):
+        if self.finished:
+            return
+        self.finished = True
+        self._disable_buttons()
+
+        challenger_char = await self.cog.bot.db.get_character(self.challenger.id)
+        opponent_char = await self.cog.bot.db.get_character(self.opponent.id)
+
+        fighter_a = to_fighter(challenger_char, self.challenger.display_name)
+        fighter_b = to_fighter(opponent_char, self.opponent.display_name)
+        result = simulate(fighter_a, fighter_b)
+
+        winner_user, loser_user = (
+            (self.challenger, self.opponent) if result["winner"] is fighter_a else (self.opponent, self.challenger)
+        )
+
+        await self.cog.bot.db.record_duel_result(winner_user.id, loser_user.id)
+        gold = random.randint(*DUEL_GOLD_REWARD)
+        await self.cog.bot.db.update_balance(winner_user.id, gold)
+
+        winner_char = challenger_char if winner_user is self.challenger else opponent_char
+        new_level, new_xp, levels_gained = apply_xp(winner_char["level"], winner_char["xp"], DUEL_XP_REWARD)
+        await self.cog.bot.db.set_character_level(winner_user.id, new_level, new_xp)
+
+        log_tail = "\n".join(result["log"][-8:])
+        footer = f"🏆 **{winner_user.display_name} wins!** +{fmt(gold)}  •  +{DUEL_XP_REWARD} XP"
+        if levels_gained:
+            footer += f"\n⬆️ {winner_user.display_name} leveled up to {new_level}!"
+
+        self.text.content = f"## ⚔️ Duel Result\n{log_tail}\n\n{footer}"
+        self.container.accent_colour = discord.Color.gold()
+        await interaction.response.edit_message(view=self)
+        self.stop()
+
+    async def decline(self, interaction: discord.Interaction):
+        if self.finished:
+            return
+        self.finished = True
+        self._disable_buttons()
+        self.text.content = f"## ⚔️ Duel Challenge\n{self.opponent.mention} declined the duel."
+        self.container.accent_colour = discord.Color.greyple()
+        await interaction.response.edit_message(view=self)
+        self.stop()
+
+    async def on_timeout(self):
+        if self.finished:
+            return
+        self.finished = True
+        self._disable_buttons()
+        if self.message:
+            self.text.content = f"## ⚔️ Duel Challenge\n⏱️ {self.opponent.mention} didn't respond in time."
+            self.container.accent_colour = discord.Color.greyple()
+            await limited_edit(self.message, view=self)
+
+
+class RPGArena(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    @commands.hybrid_command(name="duel", description="Challenge another player to a PvP duel.")
+    @app_commands.describe(user="Who to challenge")
+    async def duel(self, ctx: commands.Context, user: discord.User):
+        if user.bot or user.id == ctx.author.id:
+            await ctx.send("⚠️ Invalid duel target.")
+            return
+
+        challenger_char = await self.bot.db.get_character(ctx.author.id)
+        if not challenger_char:
+            await ctx.send("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            return
+
+        opponent_char = await self.bot.db.get_character(user.id)
+        if not opponent_char:
+            await ctx.send(f"⚠️ {user.mention} doesn't have a character yet.")
+            return
+
+        view = DuelView(self, ctx.author, user)
+        message = await ctx.send(view=view)
+        view.message = message
+
+    @commands.hybrid_command(name="arena", description="Shows the top duelists.")
+    @app_commands.describe(limit="Number of players (default: 10)")
+    async def arena(self, ctx: commands.Context, limit: app_commands.Range[int, 1, 25] = 10):
+        rows = await self.bot.db.top_arena(limit)
+        if not rows:
+            await ctx.send("There are no duelists yet.")
+            return
+
+        lines = []
+        for i, (user_id, wins, losses) in enumerate(rows, start=1):
+            name = await resolve_display_name(self.bot, ctx.guild, user_id)
+            lines.append(f"**{i}.** {name} — {wins}W / {losses}L")
+
+        view = StaticView("🏆 Arena Leaderboard", "\n".join(lines))
+        await ctx.send(view=view)
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(RPGArena(bot))

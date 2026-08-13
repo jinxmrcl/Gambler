@@ -1,5 +1,7 @@
 import asyncio
+import json
 import random
+from pathlib import Path
 
 import discord
 from discord import ui
@@ -20,6 +22,38 @@ SYMBOLS = [
     ("💎", 7, 25),
     ("7️⃣", 3, 50),
 ]
+
+# Custom card-style symbol emojis uploaded via scripts/upload_slot_emojis.py
+# (assets/slots/). Falls back to the plain unicode emoji if the manifest is
+# missing or a symbol hasn't been uploaded yet.
+_MANIFEST_PATH = Path(__file__).parent.parent / "assets" / "slots" / "manifest.json"
+_SYMBOL_KEYS = {
+    "🍒": "cherry",
+    "🍋": "lemon",
+    "🍇": "grape",
+    "🔔": "bell",
+    "💎": "diamond",
+    "7️⃣": "seven",
+}
+
+
+def _load_symbol_emojis() -> dict[str, str]:
+    try:
+        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    return {
+        unicode_emoji: f"<:{manifest[key]['emoji_name']}:{manifest[key]['id']}>"
+        for unicode_emoji, key in _SYMBOL_KEYS.items()
+        if key in manifest
+    }
+
+
+SYMBOL_EMOJIS = _load_symbol_emojis()
+
+
+def display(symbol: str) -> str:
+    return SYMBOL_EMOJIS.get(symbol, symbol)
 
 PAYLINES = [
     (0, 1, 2),
@@ -49,7 +83,7 @@ def spin_grid() -> list[str]:
 
 
 def render_grid(grid: list[str]) -> str:
-    return "\n".join(" ".join(grid[r * 3 : r * 3 + 3]) for r in range(3))
+    return "\n".join(" ".join(display(s) for s in grid[r * 3 : r * 3 + 3]) for r in range(3))
 
 
 def evaluate(grid: list[str], bet: int) -> tuple[int, list[str]]:
@@ -60,7 +94,8 @@ def evaluate(grid: list[str], bet: int) -> tuple[int, list[str]]:
             multiplier = PAYOUTS[grid[a]]
             line_payout = int(bet * multiplier)
             total_payout += line_payout
-            winning_lines.append(f"{name}: {grid[a]}{grid[b]}{grid[c]} → {multiplier:g}x = {fmt(line_payout)}")
+            symbols = f"{display(grid[a])}{display(grid[b])}{display(grid[c])}"
+            winning_lines.append(f"{name}: {symbols} → {multiplier:g}x = {fmt(line_payout)}")
     return total_payout, winning_lines
 
 
@@ -125,7 +160,7 @@ class Slots(commands.Cog):
             footer = "😢 No winning lines — better luck next spin."
 
         view.update(final_grid, footer=footer, color=discord.Color.green() if won else discord.Color.red())
-        await message.edit(view=view)
+        await limited_edit(message, view=view)
 
 
 async def setup(bot: commands.Bot):
