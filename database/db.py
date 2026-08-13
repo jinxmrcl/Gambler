@@ -1,7 +1,9 @@
 import datetime
 import logging
+import warnings
 
 import aiomysql
+import pymysql
 
 log = logging.getLogger("gambler")
 
@@ -71,6 +73,13 @@ class Database:
                 return await cur.fetchall()
 
     async def _init_tables(self) -> None:
+        # CREATE TABLE IF NOT EXISTS still emits a MySQL warning on every restart
+        # once the tables already exist; it's a no-op, so silence just that class.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=pymysql.Warning)
+            await self._create_tables()
+
+    async def _create_tables(self) -> None:
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -156,7 +165,8 @@ class Database:
                     """
                 )
                 await cur.execute(
-                    "INSERT IGNORE INTO lottery_state (id, pot, next_draw) VALUES (1, 0, %s)",
+                    "INSERT INTO lottery_state (id, pot, next_draw) VALUES (1, 0, %s) "
+                    "ON DUPLICATE KEY UPDATE id = id",
                     (datetime.datetime.utcnow() + datetime.timedelta(days=7),),
                 )
 
@@ -164,7 +174,8 @@ class Database:
 
     async def ensure_user(self, user_id: int, starting_balance: int) -> None:
         await self._execute(
-            "INSERT IGNORE INTO users (user_id, balance) VALUES (%s, %s)",
+            "INSERT INTO users (user_id, balance) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE user_id = user_id",
             (user_id, starting_balance),
         )
 
@@ -327,8 +338,8 @@ class Database:
 
     async def set_cooldown(self, user_id: int, action: str, expires_at: datetime.datetime) -> None:
         await self._execute(
-            "INSERT INTO cooldowns (user_id, action, expires_at) VALUES (%s, %s, %s) "
-            "ON DUPLICATE KEY UPDATE expires_at = VALUES(expires_at)",
+            "INSERT INTO cooldowns (user_id, action, expires_at) VALUES (%s, %s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE expires_at = new.expires_at",
             (user_id, action, expires_at),
         )
 
@@ -342,9 +353,9 @@ class Database:
         write in one statement closes the race two near-simultaneous invocations
         of the same command would otherwise hit."""
         rowcount = await self._execute(
-            "INSERT INTO cooldowns (user_id, action, expires_at) VALUES (%s, %s, %s) "
+            "INSERT INTO cooldowns (user_id, action, expires_at) VALUES (%s, %s, %s) AS new "
             "ON DUPLICATE KEY UPDATE "
-            "expires_at = IF(expires_at <= %s, VALUES(expires_at), expires_at)",
+            "expires_at = IF(expires_at <= %s, new.expires_at, expires_at)",
             (user_id, action, now + period, now),
         )
         return rowcount > 0
@@ -375,8 +386,8 @@ class Database:
 
     async def add_item(self, user_id: int, item_key: str, quantity: int) -> None:
         await self._execute(
-            "INSERT INTO inventory (user_id, item_key, quantity) VALUES (%s, %s, %s) "
-            "ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)",
+            "INSERT INTO inventory (user_id, item_key, quantity) VALUES (%s, %s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE quantity = quantity + new.quantity",
             (user_id, item_key, quantity),
         )
 
@@ -395,21 +406,21 @@ class Database:
         net = payout - wagered
         await self._execute(
             "INSERT INTO stats (user_id, games_played, total_wagered, total_won, biggest_win) "
-            "VALUES (%s, 1, %s, %s, %s) "
+            "VALUES (%s, 1, %s, %s, %s) AS new "
             "ON DUPLICATE KEY UPDATE "
             "games_played = games_played + 1, "
-            "total_wagered = total_wagered + VALUES(total_wagered), "
-            "total_won = total_won + VALUES(total_won), "
-            "biggest_win = GREATEST(biggest_win, VALUES(biggest_win))",
+            "total_wagered = total_wagered + new.total_wagered, "
+            "total_won = total_won + new.total_won, "
+            "biggest_win = GREATEST(biggest_win, new.biggest_win)",
             (user_id, wagered, payout, max(net, 0)),
         )
 
     async def record_rob_attempt(self, user_id: int, success: bool) -> None:
         await self._execute(
-            "INSERT INTO stats (user_id, robs_attempted, robs_succeeded) VALUES (%s, 1, %s) "
+            "INSERT INTO stats (user_id, robs_attempted, robs_succeeded) VALUES (%s, 1, %s) AS new "
             "ON DUPLICATE KEY UPDATE "
             "robs_attempted = robs_attempted + 1, "
-            "robs_succeeded = robs_succeeded + VALUES(robs_succeeded)",
+            "robs_succeeded = robs_succeeded + new.robs_succeeded",
             (user_id, 1 if success else 0),
         )
 
@@ -481,8 +492,8 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO guild_settings (guild_id, disabled_games) VALUES (%s, %s) "
-                    "ON DUPLICATE KEY UPDATE disabled_games = VALUES(disabled_games)",
+                    "INSERT INTO guild_settings (guild_id, disabled_games) VALUES (%s, %s) AS new "
+                    "ON DUPLICATE KEY UPDATE disabled_games = new.disabled_games",
                     (guild_id, ",".join(sorted(current_disabled))),
                 )
 
@@ -490,8 +501,8 @@ class Database:
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO guild_settings (guild_id, allowed_channels) VALUES (%s, %s) "
-                    "ON DUPLICATE KEY UPDATE allowed_channels = VALUES(allowed_channels)",
+                    "INSERT INTO guild_settings (guild_id, allowed_channels) VALUES (%s, %s) AS new "
+                    "ON DUPLICATE KEY UPDATE allowed_channels = new.allowed_channels",
                     (guild_id, ",".join(str(c) for c in sorted(channels))),
                 )
 
@@ -565,8 +576,8 @@ class Database:
                         await conn.rollback()
                         raise InsufficientFunds(f"User {user_id} cannot afford {cost}")
                     await cur.execute(
-                        "INSERT INTO lottery_tickets (user_id, quantity) VALUES (%s, %s) "
-                        "ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)",
+                        "INSERT INTO lottery_tickets (user_id, quantity) VALUES (%s, %s) AS new "
+                        "ON DUPLICATE KEY UPDATE quantity = quantity + new.quantity",
                         (user_id, quantity),
                     )
                     await cur.execute(
