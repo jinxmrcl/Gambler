@@ -193,10 +193,23 @@ class Database:
                         equipped_armor VARCHAR(32) NULL,
                         wins INT NOT NULL DEFAULT 0,
                         losses INT NOT NULL DEFAULT 0,
+                        current_hp INT NULL,
+                        hp_updated_at DATETIME NULL,
                         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
+                # Retrofit onto any characters table created before HP tracking existed.
+                # MySQL (unlike MariaDB) has no ADD COLUMN IF NOT EXISTS, so check first.
+                for column, coltype in (("current_hp", "INT NULL"), ("hp_updated_at", "DATETIME NULL")):
+                    await cur.execute(
+                        "SELECT COUNT(*) FROM information_schema.columns "
+                        "WHERE table_schema = DATABASE() AND table_name = 'characters' AND column_name = %s",
+                        (column,),
+                    )
+                    (exists,) = await cur.fetchone()
+                    if not exists:
+                        await cur.execute(f"ALTER TABLE characters ADD COLUMN {column} {coltype}")
                 await cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS rpg_equipment (
@@ -295,6 +308,14 @@ class Database:
         return await self._fetchall(
             "SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT %s",
             (limit,),
+        )
+
+    async def give_all_users(self, amount: int) -> int:
+        """Applies `amount` to every existing player's balance (floored at 0
+        so a negative amount can't push anyone below zero). Returns how many
+        rows were actually changed."""
+        return await self._execute(
+            "UPDATE users SET balance = GREATEST(balance + %s, 0)", (amount,)
         )
 
     # -- Bank ---------------------------------------------------------------
@@ -778,27 +799,37 @@ class Database:
 
     # -- RPG: characters ----------------------------------------------------
 
-    async def create_character(self, user_id: int, class_key: str) -> None:
+    async def create_character(self, user_id: int, class_key: str, starting_hp: int) -> None:
+        now = datetime.datetime.utcnow()
         await self._execute(
-            "INSERT INTO characters (user_id, class_key) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE user_id = user_id",
-            (user_id, class_key),
+            "INSERT INTO characters (user_id, class_key, current_hp, hp_updated_at) "
+            "VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE user_id = user_id",
+            (user_id, class_key, starting_hp, now),
         )
 
     async def get_character(self, user_id: int) -> dict | None:
         row = await self._fetchone(
-            "SELECT class_key, level, xp, equipped_weapon, equipped_armor, wins, losses "
-            "FROM characters WHERE user_id = %s",
+            "SELECT class_key, level, xp, equipped_weapon, equipped_armor, wins, losses, "
+            "current_hp, hp_updated_at FROM characters WHERE user_id = %s",
             (user_id,),
         )
         if not row:
             return None
-        keys = ("class_key", "level", "xp", "equipped_weapon", "equipped_armor", "wins", "losses")
+        keys = (
+            "class_key", "level", "xp", "equipped_weapon", "equipped_armor",
+            "wins", "losses", "current_hp", "hp_updated_at",
+        )
         return dict(zip(keys, row))
 
     async def set_character_level(self, user_id: int, level: int, xp: int) -> None:
         await self._execute(
             "UPDATE characters SET level = %s, xp = %s WHERE user_id = %s", (level, xp, user_id)
+        )
+
+    async def set_character_hp(self, user_id: int, hp: int, when: datetime.datetime) -> None:
+        await self._execute(
+            "UPDATE characters SET current_hp = %s, hp_updated_at = %s WHERE user_id = %s",
+            (hp, when, user_id),
         )
 
     async def set_equipped(self, user_id: int, slot: str, item_key: str) -> None:

@@ -4,7 +4,7 @@ from discord.ext import commands
 
 from utils.economy import StaticView
 
-TRACKED_COMMANDS = ("work", "crime", "slut", "rob")
+TRACKED_COMMANDS = ("work", "crime", "slut", "rob", "dungeon")
 
 
 def format_duration(seconds: float) -> str:

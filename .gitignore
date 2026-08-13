@@ -10,3 +10,5 @@ venv/
 bot_debug.log
 debug.log
 /data/ 
+*log*
+/graphify-out/

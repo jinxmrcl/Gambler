@@ -61,10 +61,10 @@ ROB_SUCCESS_CHANCE = 0.45
 ROB_STEAL_RANGE = (0.10, 0.25)
 ROB_FINE_RANGE = (100, 300)
 
-WORK_COOLDOWN = 1800
-CRIME_COOLDOWN = 2700
-SLUT_COOLDOWN = 2700
-ROB_COOLDOWN = 3600
+WORK_COOLDOWN = 60      # was 1800 (30m); reduced by 30m, floored so it isn't spammable
+CRIME_COOLDOWN = 900    # was 2700 (45m) -> 15m
+SLUT_COOLDOWN = 900     # was 2700 (45m) -> 15m
+ROB_COOLDOWN = 1800     # was 3600 (60m) -> 30m
 
 
 def _format_remaining(delta: datetime.timedelta) -> str:

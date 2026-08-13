@@ -1,17 +1,20 @@
+import datetime
 from typing import Literal
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from database.db import InsufficientFunds
 from rpg.badges import prestige_badge
-from rpg.character import full_stats
-from rpg.classes import CLASSES
+from rpg.character import current_hp, full_stats
+from rpg.classes import CLASSES, base_stats_at_level
 from rpg.equipment import EQUIPMENT
 from rpg.leveling import prestige_and_level, title_for_level, xp_for_level
 from utils.economy import StaticView, fmt
 
 ClassKey = Literal["warrior", "mage", "rogue", "paladin"]
+HEAL_COST_PER_HP = 3
 
 
 def _class_list_text() -> str:
@@ -41,7 +44,8 @@ class RPGCharacter(commands.Cog):
             return
 
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        await self.bot.db.create_character(ctx.author.id, character_class)
+        starting_hp = base_stats_at_level(character_class, 1)["hp"]
+        await self.bot.db.create_character(ctx.author.id, character_class, starting_hp)
         c = CLASSES[character_class]
         view = StaticView(
             "⚔️ Character Created",
@@ -71,6 +75,7 @@ class RPGCharacter(commands.Cog):
 
         c = CLASSES[character["class_key"]]
         stats = full_stats(character)
+        hp_now = current_hp(character, stats["hp"])
         title = title_for_level(character["level"])
         needed = xp_for_level(character["level"])
         prestige, level_in_prestige = prestige_and_level(character["level"])
@@ -93,7 +98,7 @@ class RPGCharacter(commands.Cog):
             level_line,
             f"XP: {character['xp']} / {needed}",
             "",
-            f"**HP:** {stats['hp']}  •  **ATK:** {stats['atk']}  •  **DEF:** {stats['def']}  •  **Crit:** {stats['crit']:.0%}",
+            f"**HP:** {hp_now} / {stats['hp']}  •  **ATK:** {stats['atk']}  •  **DEF:** {stats['def']}  •  **Crit:** {stats['crit']:.0%}",
             f"**Skill:** {c.skill_name} — {c.skill_desc}",
             "",
             f"**Weapon:** {weapon_text}",
@@ -103,6 +108,42 @@ class RPGCharacter(commands.Cog):
         ]
 
         view = StaticView(f"📖 {target.display_name}'s Character", "\n".join(lines))
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(
+        name="heal", description="Pay gold to restore HP instantly (also revives you from 0 HP)."
+    )
+    async def heal(self, ctx: commands.Context):
+        character = await self.bot.db.get_character(ctx.author.id)
+        if not character:
+            await ctx.send("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            return
+
+        stats = full_stats(character)
+        now = datetime.datetime.utcnow()
+        hp_now = current_hp(character, stats["hp"], now)
+        missing = stats["hp"] - hp_now
+
+        if missing <= 0:
+            await ctx.send("✨ You're already at full HP.")
+            return
+
+        cost = missing * HEAL_COST_PER_HP
+        try:
+            await self.bot.db.update_balance(ctx.author.id, -cost)
+        except InsufficientFunds:
+            await ctx.send(
+                f"⚠️ Healing {missing} HP costs {fmt(cost)}, and you don't have enough balance."
+            )
+            return
+
+        await self.bot.db.set_character_hp(ctx.author.id, stats["hp"], now)
+        revived = hp_now <= 0
+        view = StaticView(
+            "💚 Healed" + (" & Revived" if revived else ""),
+            f"Restored {missing} HP for {fmt(cost)}.\n**HP:** {stats['hp']} / {stats['hp']}",
+            color=discord.Color.green(),
+        )
         await ctx.send(view=view)
 
 

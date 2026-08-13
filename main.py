@@ -1,8 +1,10 @@
 import asyncio
+import importlib
 import json
 import logging
 import os
 import signal
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +28,21 @@ BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 RESTART_STATE_PATH = DATA_DIR / "restart_state.json"
+
+HOT_RELOAD = os.getenv("HOT_RELOAD", "true").lower() not in ("0", "false", "no")
+HOT_RELOAD_DIRS = ("commands", "events", "rpg", "utils", "database")
+HOT_RELOAD_POLL_SECONDS = 1.5
+
+
+def _scan_source_mtimes() -> dict[Path, float]:
+    result = {}
+    for folder in HOT_RELOAD_DIRS:
+        for file in (BASE_DIR / folder).rglob("*.py"):
+            try:
+                result[file] = file.stat().st_mtime
+            except OSError:
+                pass
+    return result
 
 
 def setup_discord_logger(log_filename: str = "bot_debug.log") -> None:
@@ -181,16 +198,70 @@ class GamblerBot(commands.Bot):
         synced = await self.tree.sync()
         log.info("Synced %d slash commands.", len(synced))
 
-    async def on_command(self, ctx: commands.Context) -> None:
-        log.info(
-            "[DIAG] command=%s invoked via=%s message_id=%s interaction_id=%s",
-            ctx.command.qualified_name,
-            "interaction" if ctx.interaction else "message",
-            getattr(ctx.message, "id", None),
-            getattr(ctx.interaction, "id", None),
-        )
+        if HOT_RELOAD:
+            self._hot_reload_task = asyncio.create_task(self._hot_reload_loop())
+            log.info("Hot reload enabled — watching %s for changes.", ", ".join(HOT_RELOAD_DIRS))
+
+    async def _hot_reload_loop(self) -> None:
+        """Polls source files for changes and reloads them live, so local dev
+        iteration doesn't require restarting (and re-authing) the whole bot.
+
+        Plain modules (rpg/, utils/, database/) are reloaded via importlib
+        first so cogs pick up their fresh code, then every loaded cog
+        extension is reloaded so its own top-level imports re-run against
+        that fresh code, then the command tree is re-synced in case any
+        signatures or descriptions changed."""
+        mtimes = _scan_source_mtimes()
+        while True:
+            await asyncio.sleep(HOT_RELOAD_POLL_SECONDS)
+            try:
+                current = _scan_source_mtimes()
+            except Exception:
+                continue
+            changed = {f for f, t in current.items() if mtimes.get(f) != t}
+            removed = mtimes.keys() - current.keys()
+            mtimes = current
+            if not changed and not removed:
+                continue
+
+            changed_names = ", ".join(f.name for f in changed) or "(file removed)"
+            log.info("[hot-reload] change detected: %s", changed_names)
+
+            for modname, mod in list(sys.modules.items()):
+                modfile = getattr(mod, "__file__", None)
+                if not modfile:
+                    continue
+                try:
+                    modpath = Path(modfile).resolve()
+                except OSError:
+                    continue
+                if any(
+                    modpath.is_relative_to((BASE_DIR / folder).resolve())
+                    for folder in ("rpg", "utils", "database")
+                ):
+                    try:
+                        importlib.reload(mod)
+                    except Exception:
+                        log.exception("[hot-reload] failed to reload module %s", modname)
+
+            for extension in list(self.extensions):
+                try:
+                    await self.reload_extension(extension)
+                except Exception:
+                    log.exception("[hot-reload] failed to reload extension %s", extension)
+                else:
+                    log.info("[hot-reload] reloaded %s", extension)
+
+            try:
+                synced = await self.tree.sync()
+                log.info("[hot-reload] re-synced %d slash commands", len(synced))
+            except Exception:
+                log.exception("[hot-reload] failed to sync commands")
 
     async def close(self) -> None:
+        task = getattr(self, "_hot_reload_task", None)
+        if task:
+            task.cancel()
         await self.db.close()
         await super().close()
 
