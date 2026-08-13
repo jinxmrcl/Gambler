@@ -73,6 +73,46 @@ class Database:
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS guild_settings (
+                        guild_id BIGINT UNSIGNED PRIMARY KEY,
+                        disabled_games VARCHAR(255) NOT NULL DEFAULT '',
+                        allowed_channels VARCHAR(255) NOT NULL DEFAULT ''
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS marriages (
+                        user_id BIGINT UNSIGNED PRIMARY KEY,
+                        partner_id BIGINT UNSIGNED NOT NULL,
+                        married_at DATETIME NOT NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS lottery_tickets (
+                        user_id BIGINT UNSIGNED PRIMARY KEY,
+                        quantity INT NOT NULL DEFAULT 0
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS lottery_state (
+                        id TINYINT PRIMARY KEY,
+                        pot BIGINT NOT NULL DEFAULT 0,
+                        next_draw DATETIME NOT NULL,
+                        channel_id BIGINT UNSIGNED NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    "INSERT IGNORE INTO lottery_state (id, pot, next_draw) VALUES (1, 0, %s)",
+                    (datetime.datetime.utcnow() + datetime.timedelta(days=7),),
+                )
 
     # -- Wallet -----------------------------------------------------------
 
@@ -311,6 +351,160 @@ class Database:
                 )
                 return dict(zip(keys, row)) if row else dict.fromkeys(keys, 0)
 
+    # -- Leaderboards ------------------------------------------------------------
+
+    STAT_COLUMNS = {
+        "games_played": "games_played",
+        "total_wagered": "total_wagered",
+        "biggest_win": "biggest_win",
+        "robs_succeeded": "robs_succeeded",
+    }
+
+    async def top_stat(self, stat: str, limit: int = 10) -> list[tuple[int, int]]:
+        column = self.STAT_COLUMNS[stat]
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"SELECT user_id, {column} FROM stats ORDER BY {column} DESC LIMIT %s",
+                    (limit,),
+                )
+                return await cur.fetchall()
+
+    # -- Guild settings ------------------------------------------------------------
+
+    async def get_guild_settings(self, guild_id: int) -> tuple[set[str], set[int]]:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT disabled_games, allowed_channels FROM guild_settings WHERE guild_id = %s",
+                    (guild_id,),
+                )
+                row = await cur.fetchone()
+                if not row:
+                    return set(), set()
+                disabled = {g for g in row[0].split(",") if g}
+                channels = {int(c) for c in row[1].split(",") if c}
+                return disabled, channels
+
+    async def set_game_disabled(self, guild_id: int, game: str, disabled: bool) -> None:
+        current_disabled, _ = await self.get_guild_settings(guild_id)
+        if disabled:
+            current_disabled.add(game)
+        else:
+            current_disabled.discard(game)
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO guild_settings (guild_id, disabled_games) VALUES (%s, %s) "
+                    "ON DUPLICATE KEY UPDATE disabled_games = VALUES(disabled_games)",
+                    (guild_id, ",".join(sorted(current_disabled))),
+                )
+
+    async def set_allowed_channels(self, guild_id: int, channels: set[int]) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO guild_settings (guild_id, allowed_channels) VALUES (%s, %s) "
+                    "ON DUPLICATE KEY UPDATE allowed_channels = VALUES(allowed_channels)",
+                    (guild_id, ",".join(str(c) for c in sorted(channels))),
+                )
+
+    # -- Marriage ------------------------------------------------------------
+
+    async def get_marriage(self, user_id: int) -> int | None:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT partner_id FROM marriages WHERE user_id = %s", (user_id,))
+                row = await cur.fetchone()
+                return row[0] if row else None
+
+    async def marry(self, user_id: int, partner_id: int) -> None:
+        now = datetime.datetime.utcnow()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO marriages (user_id, partner_id, married_at) VALUES (%s, %s, %s)",
+                    (user_id, partner_id, now),
+                )
+                await cur.execute(
+                    "INSERT INTO marriages (user_id, partner_id, married_at) VALUES (%s, %s, %s)",
+                    (partner_id, user_id, now),
+                )
+
+    async def divorce(self, user_id: int) -> int | None:
+        partner_id = await self.get_marriage(user_id)
+        if partner_id is None:
+            return None
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("DELETE FROM marriages WHERE user_id IN (%s, %s)", (user_id, partner_id))
+        return partner_id
+
+    # -- Lottery ------------------------------------------------------------
+
+    async def get_lottery_state(self) -> dict:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT pot, next_draw, channel_id FROM lottery_state WHERE id = 1")
+                pot, next_draw, channel_id = await cur.fetchone()
+                return {"pot": pot, "next_draw": next_draw, "channel_id": channel_id}
+
+    async def set_lottery_channel(self, channel_id: int) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE lottery_state SET channel_id = %s WHERE id = 1", (channel_id,)
+                )
+
+    async def get_lottery_tickets(self, user_id: int) -> int:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT quantity FROM lottery_tickets WHERE user_id = %s", (user_id,)
+                )
+                row = await cur.fetchone()
+                return row[0] if row else 0
+
+    async def buy_lottery_tickets(self, user_id: int, quantity: int, cost: int) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await conn.begin()
+                try:
+                    await cur.execute(
+                        "UPDATE users SET balance = balance - %s "
+                        "WHERE user_id = %s AND balance >= %s",
+                        (cost, user_id, cost),
+                    )
+                    if cur.rowcount == 0:
+                        await conn.rollback()
+                        raise InsufficientFunds(f"User {user_id} cannot afford {cost}")
+                    await cur.execute(
+                        "INSERT INTO lottery_tickets (user_id, quantity) VALUES (%s, %s) "
+                        "ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)",
+                        (user_id, quantity),
+                    )
+                    await cur.execute(
+                        "UPDATE lottery_state SET pot = pot + %s WHERE id = 1", (cost,)
+                    )
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
+
+    async def all_lottery_tickets(self) -> list[tuple[int, int]]:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT user_id, quantity FROM lottery_tickets WHERE quantity > 0")
+                return await cur.fetchall()
+
+    async def reset_lottery(self, next_draw: datetime.datetime) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("DELETE FROM lottery_tickets")
+                await cur.execute(
+                    "UPDATE lottery_state SET pot = 0, next_draw = %s WHERE id = 1", (next_draw,)
+                )
+
     # -- Admin ------------------------------------------------------------------
 
     async def reset_user(self, user_id: int, starting_balance: int) -> None:
@@ -323,3 +517,5 @@ class Database:
                 )
                 await cur.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
                 await cur.execute("DELETE FROM stats WHERE user_id = %s", (user_id,))
+                await cur.execute("DELETE FROM lottery_tickets WHERE user_id = %s", (user_id,))
+        await self.divorce(user_id)

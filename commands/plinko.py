@@ -6,6 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, StaticView, fmt, resolve_bet
 
 RISK_EXPONENT = {"low": 0.3, "medium": 0.6, "high": 1.0}
@@ -50,6 +51,7 @@ class Plinko(commands.Cog):
         risk="Risk level (affects how spread out the multipliers are)",
         rows="Number of rows (8-16, default: 12)",
     )
+    @game_enabled("plinko")
     async def plinko(
         self,
         ctx: commands.Context,

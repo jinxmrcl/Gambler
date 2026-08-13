@@ -4,6 +4,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
+from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
 
 COLS = 5
@@ -170,6 +171,7 @@ class Mines(commands.Cog):
         bet="Bet (a number, 'half', 'all', or e.g. '50%')",
         mines="Number of mines on the 5x4 grid (1-19, default: 3)",
     )
+    @game_enabled("mines")
     async def mines(self, ctx: commands.Context, bet: str, mines: app_commands.Range[int, 1, TOTAL_TILES - 1] = 3):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)
