@@ -110,6 +110,8 @@ class HiloView(ui.LayoutView):
             await self.end_game(interaction, won=False, footer="😢 Wrong guess!")
 
     async def end_game(self, interaction: discord.Interaction, *, won: bool, footer: str):
+        if self.finished:
+            return
         self.finished = True
         for child in (self.higher_button, self.lower_button, self.cash_out_button):
             child.disabled = True

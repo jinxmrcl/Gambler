@@ -80,6 +80,8 @@ class BlackjackView(ui.LayoutView):
         self.text.content = "## 🃏 Blackjack\n" + "\n".join(lines)
 
     async def finish(self, interaction: discord.Interaction, outcome: str):
+        if self.finished:
+            return
         self.finished = True
         for child in (self.hit_button, self.stand_button, self.double_button):
             child.disabled = True
@@ -122,6 +124,8 @@ class BlackjackView(ui.LayoutView):
         self.stop()
 
     async def hit(self, interaction: discord.Interaction):
+        if self.finished:
+            return
         self.player.append(self.deck.draw())
         if hand_value(self.player) > 21:
             await self.finish(interaction, "bust")
@@ -132,18 +136,25 @@ class BlackjackView(ui.LayoutView):
         await interaction.response.edit_message(view=self)
 
     async def stand(self, interaction: discord.Interaction):
+        if self.finished:
+            return
         await self.finish(interaction, "stand")
 
     async def double(self, interaction: discord.Interaction):
+        if self.finished:
+            return
+        self.finished = True
         try:
             await self.cog.bot.db.update_balance(self.ctx.author.id, -self.bet)
         except InsufficientFunds:
+            self.finished = False
             await interaction.response.send_message(
                 "⚠️ You don't have enough balance to double down.", ephemeral=True
             )
             return
 
         self.bet *= 2
+        self.finished = False
         self.player.append(self.deck.draw())
         if hand_value(self.player) > 21:
             await self.finish(interaction, "bust")

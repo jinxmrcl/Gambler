@@ -1,6 +1,9 @@
 import datetime
+import logging
 
 import aiomysql
+
+log = logging.getLogger("gambler")
 
 
 class InsufficientFunds(Exception):
@@ -17,22 +20,55 @@ class Database:
         self.pool: aiomysql.Pool | None = None
 
     async def connect(self) -> None:
-        self.pool = await aiomysql.create_pool(
-            host=self._host,
-            port=self._port,
-            user=self._user,
-            password=self._password,
-            db=self._db,
-            autocommit=True,
-            minsize=1,
-            maxsize=10,
-        )
+        try:
+            self.pool = await aiomysql.create_pool(
+                host=self._host,
+                port=self._port,
+                user=self._user,
+                password=self._password,
+                db=self._db,
+                autocommit=True,
+                minsize=1,
+                maxsize=10,
+                connect_timeout=10,
+                pool_recycle=3600,  # recycle connections MySQL/proxies would otherwise drop silently
+            )
+        except Exception:
+            log.exception(
+                "Could not connect to MySQL at %s:%s (db=%s). Check DB_HOST/DB_PORT/DB_USER/"
+                "DB_PASSWORD/DB_NAME in your .env.",
+                self._host,
+                self._port,
+                self._db,
+            )
+            raise
         await self._init_tables()
 
     async def close(self) -> None:
         if self.pool is not None:
             self.pool.close()
             await self.pool.wait_closed()
+
+    # -- Low-level helpers --------------------------------------------------
+
+    async def _execute(self, query: str, args: tuple = ()) -> int:
+        """Runs a single statement outside any explicit transaction. Returns rowcount."""
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, args)
+                return cur.rowcount
+
+    async def _fetchone(self, query: str, args: tuple = ()):
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, args)
+                return await cur.fetchone()
+
+    async def _fetchall(self, query: str, args: tuple = ()):
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, args)
+                return await cur.fetchall()
 
     async def _init_tables(self) -> None:
         async with self.pool.acquire() as conn:
@@ -110,6 +146,16 @@ class Database:
                     """
                 )
                 await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS cooldowns (
+                        user_id BIGINT UNSIGNED NOT NULL,
+                        action VARCHAR(16) NOT NULL,
+                        expires_at DATETIME NOT NULL,
+                        PRIMARY KEY (user_id, action)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
                     "INSERT IGNORE INTO lottery_state (id, pot, next_draw) VALUES (1, 0, %s)",
                     (datetime.datetime.utcnow() + datetime.timedelta(days=7),),
                 )
@@ -117,71 +163,91 @@ class Database:
     # -- Wallet -----------------------------------------------------------
 
     async def ensure_user(self, user_id: int, starting_balance: int) -> None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT IGNORE INTO users (user_id, balance) VALUES (%s, %s)",
-                    (user_id, starting_balance),
-                )
+        await self._execute(
+            "INSERT IGNORE INTO users (user_id, balance) VALUES (%s, %s)",
+            (user_id, starting_balance),
+        )
 
     async def get_balance(self, user_id: int) -> int:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT balance FROM users WHERE user_id = %s", (user_id,))
-                row = await cur.fetchone()
-                return row[0] if row else 0
+        row = await self._fetchone("SELECT balance FROM users WHERE user_id = %s", (user_id,))
+        return row[0] if row else 0
 
     async def update_balance(self, user_id: int, delta: int) -> int:
         """Atomically applies a balance delta. Raises InsufficientFunds if it would go negative."""
+        rowcount = await self._execute(
+            "UPDATE users SET balance = balance + %s "
+            "WHERE user_id = %s AND balance + %s >= 0",
+            (delta, user_id, delta),
+        )
+        if rowcount == 0:
+            raise InsufficientFunds(f"User {user_id} cannot afford a change of {delta}")
+        row = await self._fetchone("SELECT balance FROM users WHERE user_id = %s", (user_id,))
+        return row[0]
+
+    async def transfer_balance(self, sender_id: int, recipient_id: int, amount: int) -> int:
+        """Atomically moves `amount` from sender to recipient in one transaction.
+        Raises InsufficientFunds if the sender can't afford it. Returns the sender's new balance."""
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "UPDATE users SET balance = balance + %s "
-                    "WHERE user_id = %s AND balance + %s >= 0",
-                    (delta, user_id, delta),
-                )
-                if cur.rowcount == 0:
-                    raise InsufficientFunds(f"User {user_id} cannot afford a change of {delta}")
-                await cur.execute("SELECT balance FROM users WHERE user_id = %s", (user_id,))
+                await conn.begin()
+                try:
+                    await cur.execute(
+                        "UPDATE users SET balance = balance - %s "
+                        "WHERE user_id = %s AND balance >= %s",
+                        (amount, sender_id, amount),
+                    )
+                    if cur.rowcount == 0:
+                        await conn.rollback()
+                        raise InsufficientFunds(f"User {sender_id} cannot afford a transfer of {amount}")
+                    await cur.execute(
+                        "UPDATE users SET balance = balance + %s WHERE user_id = %s",
+                        (amount, recipient_id),
+                    )
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
+                await cur.execute("SELECT balance FROM users WHERE user_id = %s", (sender_id,))
                 row = await cur.fetchone()
                 return row[0]
 
     async def set_balance(self, user_id: int, amount: int) -> None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("UPDATE users SET balance = %s WHERE user_id = %s", (amount, user_id))
+        await self._execute("UPDATE users SET balance = %s WHERE user_id = %s", (amount, user_id))
+
+    async def claim_daily(
+        self, user_id: int, amount: int, period: datetime.timedelta, now: datetime.datetime
+    ) -> int | None:
+        """Atomically claims the daily bonus if the cooldown has elapsed.
+
+        Returns the new balance, or None if the user is still on cooldown (no
+        row is touched in that case, closing the check-then-act race a client
+        could hit by firing the command twice at once)."""
+        cutoff = now - period
+        rowcount = await self._execute(
+            "UPDATE users SET balance = balance + %s, last_daily = %s "
+            "WHERE user_id = %s AND (last_daily IS NULL OR last_daily <= %s)",
+            (amount, now, user_id, cutoff),
+        )
+        if rowcount == 0:
+            return None
+        row = await self._fetchone("SELECT balance FROM users WHERE user_id = %s", (user_id,))
+        return row[0]
 
     async def get_last_daily(self, user_id: int) -> datetime.datetime | None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT last_daily FROM users WHERE user_id = %s", (user_id,))
-                row = await cur.fetchone()
-                return row[0] if row else None
-
-    async def set_last_daily(self, user_id: int, when: datetime.datetime) -> None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "UPDATE users SET last_daily = %s WHERE user_id = %s", (when, user_id)
-                )
+        row = await self._fetchone("SELECT last_daily FROM users WHERE user_id = %s", (user_id,))
+        return row[0] if row else None
 
     async def top_balances(self, limit: int = 10) -> list[tuple[int, int]]:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT %s",
-                    (limit,),
-                )
-                return await cur.fetchall()
+        return await self._fetchall(
+            "SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT %s",
+            (limit,),
+        )
 
     # -- Bank ---------------------------------------------------------------
 
     async def get_bank_balance(self, user_id: int) -> int:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT bank_balance FROM users WHERE user_id = %s", (user_id,))
-                row = await cur.fetchone()
-                return row[0] if row else 0
+        row = await self._fetchone("SELECT bank_balance FROM users WHERE user_id = %s", (user_id,))
+        return row[0] if row else 0
 
     async def deposit_to_bank(self, user_id: int, amount: int) -> tuple[int, int]:
         """Moves `amount` from wallet balance to bank balance. Returns (balance, bank_balance)."""
@@ -240,116 +306,136 @@ class Database:
     # -- Rob protection -------------------------------------------------------
 
     async def get_protected_until(self, user_id: int) -> datetime.datetime | None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT protected_until FROM users WHERE user_id = %s", (user_id,))
-                row = await cur.fetchone()
-                return row[0] if row else None
+        row = await self._fetchone(
+            "SELECT protected_until FROM users WHERE user_id = %s", (user_id,)
+        )
+        return row[0] if row else None
 
     async def set_protected_until(self, user_id: int, when: datetime.datetime) -> None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "UPDATE users SET protected_until = %s WHERE user_id = %s", (when, user_id)
-                )
+        await self._execute(
+            "UPDATE users SET protected_until = %s WHERE user_id = %s", (when, user_id)
+        )
+
+    # -- Cooldowns --------------------------------------------------------------
+
+    async def get_cooldown(self, user_id: int, action: str) -> datetime.datetime | None:
+        row = await self._fetchone(
+            "SELECT expires_at FROM cooldowns WHERE user_id = %s AND action = %s",
+            (user_id, action),
+        )
+        return row[0] if row else None
+
+    async def set_cooldown(self, user_id: int, action: str, expires_at: datetime.datetime) -> None:
+        await self._execute(
+            "INSERT INTO cooldowns (user_id, action, expires_at) VALUES (%s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE expires_at = VALUES(expires_at)",
+            (user_id, action, expires_at),
+        )
+
+    async def try_consume_cooldown(
+        self, user_id: int, action: str, period: datetime.timedelta, now: datetime.datetime
+    ) -> bool:
+        """Atomically claims `action` for `period` if it isn't already on cooldown.
+
+        Returns True (and starts the cooldown) if the action was free; False if
+        it's still on cooldown and nothing was changed. Doing the check and the
+        write in one statement closes the race two near-simultaneous invocations
+        of the same command would otherwise hit."""
+        rowcount = await self._execute(
+            "INSERT INTO cooldowns (user_id, action, expires_at) VALUES (%s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE "
+            "expires_at = IF(expires_at <= %s, VALUES(expires_at), expires_at)",
+            (user_id, action, now + period, now),
+        )
+        return rowcount > 0
+
+    async def clear_cooldowns(self, user_id: int, actions: tuple[str, ...]) -> None:
+        if not actions:
+            return
+        placeholders = ", ".join(["%s"] * len(actions))
+        await self._execute(
+            f"DELETE FROM cooldowns WHERE user_id = %s AND action IN ({placeholders})",
+            (user_id, *actions),
+        )
 
     # -- Inventory ------------------------------------------------------------
 
     async def get_inventory(self, user_id: int) -> list[tuple[str, int]]:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT item_key, quantity FROM inventory WHERE user_id = %s AND quantity > 0",
-                    (user_id,),
-                )
-                return await cur.fetchall()
+        return await self._fetchall(
+            "SELECT item_key, quantity FROM inventory WHERE user_id = %s AND quantity > 0",
+            (user_id,),
+        )
 
     async def get_item_quantity(self, user_id: int, item_key: str) -> int:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT quantity FROM inventory WHERE user_id = %s AND item_key = %s",
-                    (user_id, item_key),
-                )
-                row = await cur.fetchone()
-                return row[0] if row else 0
+        row = await self._fetchone(
+            "SELECT quantity FROM inventory WHERE user_id = %s AND item_key = %s",
+            (user_id, item_key),
+        )
+        return row[0] if row else 0
 
     async def add_item(self, user_id: int, item_key: str, quantity: int) -> None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO inventory (user_id, item_key, quantity) VALUES (%s, %s, %s) "
-                    "ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)",
-                    (user_id, item_key, quantity),
-                )
+        await self._execute(
+            "INSERT INTO inventory (user_id, item_key, quantity) VALUES (%s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)",
+            (user_id, item_key, quantity),
+        )
 
     async def remove_item(self, user_id: int, item_key: str, quantity: int) -> None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "UPDATE inventory SET quantity = quantity - %s "
-                    "WHERE user_id = %s AND item_key = %s AND quantity >= %s",
-                    (quantity, user_id, item_key, quantity),
-                )
-                if cur.rowcount == 0:
-                    raise InsufficientFunds(f"User {user_id} does not have {quantity}x {item_key}")
+        rowcount = await self._execute(
+            "UPDATE inventory SET quantity = quantity - %s "
+            "WHERE user_id = %s AND item_key = %s AND quantity >= %s",
+            (quantity, user_id, item_key, quantity),
+        )
+        if rowcount == 0:
+            raise InsufficientFunds(f"User {user_id} does not have {quantity}x {item_key}")
 
     # -- Stats ------------------------------------------------------------------
 
     async def record_game_result(self, user_id: int, wagered: int, payout: int) -> None:
         net = payout - wagered
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO stats (user_id, games_played, total_wagered, total_won, biggest_win) "
-                    "VALUES (%s, 1, %s, %s, %s) "
-                    "ON DUPLICATE KEY UPDATE "
-                    "games_played = games_played + 1, "
-                    "total_wagered = total_wagered + VALUES(total_wagered), "
-                    "total_won = total_won + VALUES(total_won), "
-                    "biggest_win = GREATEST(biggest_win, VALUES(biggest_win))",
-                    (user_id, wagered, payout, max(net, 0)),
-                )
+        await self._execute(
+            "INSERT INTO stats (user_id, games_played, total_wagered, total_won, biggest_win) "
+            "VALUES (%s, 1, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE "
+            "games_played = games_played + 1, "
+            "total_wagered = total_wagered + VALUES(total_wagered), "
+            "total_won = total_won + VALUES(total_won), "
+            "biggest_win = GREATEST(biggest_win, VALUES(biggest_win))",
+            (user_id, wagered, payout, max(net, 0)),
+        )
 
     async def record_rob_attempt(self, user_id: int, success: bool) -> None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO stats (user_id, robs_attempted, robs_succeeded) VALUES (%s, 1, %s) "
-                    "ON DUPLICATE KEY UPDATE "
-                    "robs_attempted = robs_attempted + 1, "
-                    "robs_succeeded = robs_succeeded + VALUES(robs_succeeded)",
-                    (user_id, 1 if success else 0),
-                )
+        await self._execute(
+            "INSERT INTO stats (user_id, robs_attempted, robs_succeeded) VALUES (%s, 1, %s) "
+            "ON DUPLICATE KEY UPDATE "
+            "robs_attempted = robs_attempted + 1, "
+            "robs_succeeded = robs_succeeded + VALUES(robs_succeeded)",
+            (user_id, 1 if success else 0),
+        )
 
     async def record_robbed(self, user_id: int) -> None:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO stats (user_id, times_robbed) VALUES (%s, 1) "
-                    "ON DUPLICATE KEY UPDATE times_robbed = times_robbed + 1",
-                    (user_id,),
-                )
+        await self._execute(
+            "INSERT INTO stats (user_id, times_robbed) VALUES (%s, 1) "
+            "ON DUPLICATE KEY UPDATE times_robbed = times_robbed + 1",
+            (user_id,),
+        )
 
     async def get_stats(self, user_id: int) -> dict:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT games_played, total_wagered, total_won, biggest_win, "
-                    "robs_attempted, robs_succeeded, times_robbed FROM stats WHERE user_id = %s",
-                    (user_id,),
-                )
-                row = await cur.fetchone()
-                keys = (
-                    "games_played",
-                    "total_wagered",
-                    "total_won",
-                    "biggest_win",
-                    "robs_attempted",
-                    "robs_succeeded",
-                    "times_robbed",
-                )
-                return dict(zip(keys, row)) if row else dict.fromkeys(keys, 0)
+        row = await self._fetchone(
+            "SELECT games_played, total_wagered, total_won, biggest_win, "
+            "robs_attempted, robs_succeeded, times_robbed FROM stats WHERE user_id = %s",
+            (user_id,),
+        )
+        keys = (
+            "games_played",
+            "total_wagered",
+            "total_won",
+            "biggest_win",
+            "robs_attempted",
+            "robs_succeeded",
+            "times_robbed",
+        )
+        return dict(zip(keys, row)) if row else dict.fromkeys(keys, 0)
 
     # -- Leaderboards ------------------------------------------------------------
 
@@ -510,12 +596,19 @@ class Database:
     async def reset_user(self, user_id: int, starting_balance: int) -> None:
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "UPDATE users SET balance = %s, bank_balance = 0, last_daily = NULL, "
-                    "protected_until = NULL WHERE user_id = %s",
-                    (starting_balance, user_id),
-                )
-                await cur.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
-                await cur.execute("DELETE FROM stats WHERE user_id = %s", (user_id,))
-                await cur.execute("DELETE FROM lottery_tickets WHERE user_id = %s", (user_id,))
+                await conn.begin()
+                try:
+                    await cur.execute(
+                        "UPDATE users SET balance = %s, bank_balance = 0, last_daily = NULL, "
+                        "protected_until = NULL WHERE user_id = %s",
+                        (starting_balance, user_id),
+                    )
+                    await cur.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
+                    await cur.execute("DELETE FROM stats WHERE user_id = %s", (user_id,))
+                    await cur.execute("DELETE FROM lottery_tickets WHERE user_id = %s", (user_id,))
+                    await cur.execute("DELETE FROM cooldowns WHERE user_id = %s", (user_id,))
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
         await self.divorce(user_id)

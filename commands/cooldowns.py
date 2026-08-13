@@ -1,3 +1,5 @@
+import datetime
+
 from discord.ext import commands
 
 from utils.economy import StaticView
@@ -22,19 +24,15 @@ class Cooldowns(commands.Cog):
 
     @commands.hybrid_command(name="cooldowns", description="Shows your remaining cooldowns.")
     async def cooldowns(self, ctx: commands.Context):
-        hustle = self.bot.get_cog("Hustle")
+        now = datetime.datetime.utcnow()
         lines = []
 
-        if hustle:
-            for cmd_name in TRACKED_COMMANDS:
-                cmd = getattr(hustle, cmd_name, None)
-                if not cmd:
-                    continue
-                retry_after = cmd.get_cooldown_retry_after(ctx)
-                if retry_after > 0:
-                    lines.append(f"`{cmd_name}` — ready in {format_duration(retry_after)}")
-                else:
-                    lines.append(f"`{cmd_name}` — ✅ ready now")
+        for cmd_name in TRACKED_COMMANDS:
+            until = await self.bot.db.get_cooldown(ctx.author.id, cmd_name)
+            if until and until > now:
+                lines.append(f"`{cmd_name}` — ready in {format_duration((until - now).total_seconds())}")
+            else:
+                lines.append(f"`{cmd_name}` — ✅ ready now")
 
         view = StaticView("⏱️ Your Cooldowns", "\n".join(lines) or "No cooldown-based commands found.")
         await ctx.send(view=view)

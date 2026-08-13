@@ -96,6 +96,8 @@ class MinesView(ui.LayoutView):
         self.text.content = "## 💣 Mines\n" + "\n".join(lines)
 
     async def end_game(self, interaction: discord.Interaction, *, won: bool, footer: str):
+        if self.finished:
+            return
         self.finished = True
         for i, button in enumerate(self.tile_buttons):
             button.disabled = True
