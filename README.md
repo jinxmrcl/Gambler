@@ -1,23 +1,28 @@
 # Gambler
 
-A Discord economy & gambling bot built with `discord.py`, featuring six casino games,
-a full virtual economy (bank, shop, robbing), and MySQL-backed persistence.
+A Discord economy & gambling bot built with `discord.py`, featuring nine casino games,
+a full virtual economy (bank, shop, trading, marriage, lottery, robbing), and
+MySQL-backed persistence.
 
-📊 **~2,100 lines of Python** across 22 files.
+📊 **~3,270 lines of Python** across 32 files.
 
 ## Features
 
-**Games** — Blackjack, Mines, Hilo, Plinko, Limbo, Keno. All games are mathematically
-fair with a fixed, transparent house edge (`HOUSE_EDGE` in `utils/economy.py`, default 3%),
-and interactive ones (Blackjack, Mines, Hilo, Keno) use Discord's native buttons and
-select menus.
+**Games** — Blackjack, Mines, Hilo, Plinko, Limbo, Keno, Slots, Roulette, Dice, plus a
+PvP `coinflip` duel between two players. All games are mathematically fair with a fixed,
+transparent house edge (`HOUSE_EDGE` in `utils/economy.py`, default 3%), and interactive
+ones (Blackjack, Mines, Hilo, Keno) use Discord's native buttons and select menus.
 
 **Economy** — a per-user virtual balance stored in MySQL, with:
 - `daily` bonus, `work`/`crime`/`slut` for risk-based income, and `rob` to steal from others
 - a `bank` to protect balance from being robbed
-- a `shop` with items (rob shield, cooldown reset) and a `gift` command
-- `profile`/`stats` tracking wagered/won amounts, biggest win, and rob success rate
-- admin commands to add, set, or reset a user's balance
+- a `shop` with items (rob shield, cooldown reset), plus `gift` and `trade` between players
+- `marry`/`divorce` and a weekly `lottery` with an automatic prize draw
+- `profile`/`stats` and multiple `leaderboard` variants (balance, games played, biggest
+  win, most successful robberies)
+- `cooldowns` to check your remaining cooldowns without triggering them
+- admin commands to add, set, or reset a user's balance, and per-server `settings` to
+  disable individual games or restrict them to specific channels
 
 **Commands** — every command is a hybrid command: it works as both a slash command
 (`/blackjack`) and a prefix command (`!blackjack`), with no code duplication.
@@ -41,7 +46,7 @@ select menus.
    CREATE DATABASE gambler CHARACTER SET utf8mb4;
    ```
 
-   The required tables (`users`, `inventory`, `stats`) are created automatically on startup.
+   All required tables are created automatically on startup.
 
 3. **Configure `.env`**
 
@@ -77,7 +82,8 @@ select menus.
 ### Economy
 - `balance [user]` — view balance
 - `daily` — claim your daily bonus
-- `leaderboard [limit]` — richest players
+- `leaderboard [board] [limit]` — leaderboard (`balance`, `games_played`,
+  `total_wagered`, `biggest_win`, or `robs_succeeded`)
 - `pay <user> <amount>` — transfer balance to another player
 
 ### Earning money (on cooldown)
@@ -87,6 +93,7 @@ select menus.
 - `rob <user>` — try to steal balance from another player; pay a fine to the victim on
   failure (cooldown: 60 min, target needs at least 100 🪙, bank balance and an active
   `shield` protect against it)
+- `cooldowns` — shows how long until your work/crime/slut/rob are ready again
 
 ### Bank
 - `bank` — shows cash and bank balance
@@ -95,13 +102,24 @@ select menus.
 
 Money in the bank can't be stolen with `rob`.
 
-### Shop & Inventory
+### Shop, Inventory & Trading
 - `shop` — shows purchasable items
 - `buy <item> [quantity=1]` — buy an item (`shield` or `cooldown_reset`)
 - `inventory` (alias `inv`) — shows your inventory
 - `use <item>` — use an item (`shield` protects you from `rob` for 2h, `cooldown_reset`
   instantly resets work/crime/slut/rob)
 - `gift <user> <item> [quantity=1]` — gift an item to another player
+- `trade <user> <give> <give_quantity> <want> <want_quantity>` — offer money or an item
+  in exchange for money or an item from another player; they must accept
+
+### Social
+- `coinflip <user> <amount>` — challenge another player to a coinflip wager; they must
+  accept before any balance changes hands
+- `marry <user>` / `divorce` / `marriage [user]` — propose marriage, end it, or check
+  someone's marriage status
+- `lottery` / `lottery_buy <quantity>` — buy tickets for the weekly lottery; a winner is
+  drawn automatically once the pot's countdown ends
+- `lottery_setchannel` (Admin) — set the channel where lottery draw results are announced
 
 ### Statistics
 - `profile [user]` (alias `stats`) — net worth, total wagered/won, biggest win, rob
@@ -111,7 +129,10 @@ Money in the bank can't be stolen with `rob`.
 Requires the **Administrator** permission on the server.
 - `addmoney <user> <amount>` — add or (with a negative amount) remove balance
 - `setbalance <user> <amount>` — set balance to an exact value
-- `resetuser <user>` — reset a user's balance, bank, inventory, and statistics
+- `resetuser <user>` — reset a user's balance, bank, inventory, marriage, and statistics
+- `settings` — shows this server's disabled games and channel restrictions
+- `togglegame <game> <enabled>` — enable or disable a specific game on this server
+- `togglechannel <add|remove|clear>` — restrict games to specific channels
 
 ### Misc
 - `help` — overview of all commands
@@ -125,24 +146,35 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 - `plinko <bet> [risk=medium] [rows=12]` — drop a ball through the Plinko board
 - `limbo <bet> <target>` — set a target multiplier, the random result must reach it
 - `keno <bet> [picks=5]` — pick numbers and hope for hits in the draw
+- `slots <bet>` — spin three reels, match all three symbols to win
+- `roulette <bet> <choice>` — bet on a number, color, or even/odd
+- `dice <bet> <prediction>` — predict the sum of two dice (2-12)
 
-All games share a 3% house edge (`HOUSE_EDGE` in `utils/economy.py`), which scales
-payout multipliers to stay mathematically fair while slightly favoring the house.
+All games share a 3% house edge (`HOUSE_EDGE` in `utils/economy.py`, or the standard
+European single-zero odds for `roulette`), which scales payout multipliers to stay
+mathematically fair while slightly favoring the house.
 
 ## Project structure
 
 ```
 main.py                 Bot entry point, loads cogs, connects to MySQL
-database/db.py           aiomysql connection pool + wallet/bank/inventory/stats functions
+database/db.py           aiomysql connection pool + wallet/bank/inventory/stats/social functions
 utils/economy.py         Bet parsing, formatting, house edge constant, UI building blocks
 utils/cards.py            Card deck for Blackjack & Hilo
 utils/items.py            Shop catalog (item keys, prices, effects)
+utils/checks.py           Per-server game enable/channel checks
 commands/economy.py       balance, daily, leaderboard, pay
 commands/hustle.py         work, crime, slut, rob
 commands/bank.py           bank, deposit, withdraw
 commands/shop.py           shop, buy, inventory, use, gift
+commands/trade.py          trade
+commands/coinflip.py       coinflip (PvP)
+commands/marriage.py       marry, divorce, marriage
+commands/lottery.py        lottery, lottery_buy, lottery_setchannel (weekly background task)
 commands/profile.py        profile / stats
+commands/cooldowns.py      cooldowns
 commands/admin.py          addmoney, setbalance, resetuser
+commands/settings.py       settings, togglegame, togglechannel
 commands/help.py           help
 commands/blackjack.py     Blackjack
 commands/mines.py         Mines
@@ -150,6 +182,9 @@ commands/hilo.py          Hilo
 commands/plinko.py        Plinko
 commands/limbo.py         Limbo
 commands/keno.py          Keno
+commands/slots.py         Slots
+commands/roulette.py      Roulette
+commands/dice.py          Dice
 events/on_ready.py        Startup logging & presence
 events/error_handler.py   Centralized error handling for text & slash commands
 ```

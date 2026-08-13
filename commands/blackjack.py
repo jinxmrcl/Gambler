@@ -4,6 +4,7 @@ from discord.ext import commands
 
 from database.db import InsufficientFunds
 from utils.cards import Deck, hand_str, hand_value, is_blackjack
+from utils.checks import game_enabled
 from utils.economy import fmt, game_container, resolve_bet
 
 
@@ -179,6 +180,7 @@ class Blackjack(commands.Cog):
 
     @commands.hybrid_command(name="blackjack", aliases=["bj"], description="Play a round of Blackjack.")
     @app_commands.describe(bet="Bet (a number, 'half', 'all', or e.g. '50%')")
+    @game_enabled("blackjack")
     async def blackjack(self, ctx: commands.Context, bet: str):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)

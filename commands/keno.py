@@ -6,6 +6,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
+from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
 
 POOL_SIZE = 25
@@ -123,6 +124,7 @@ class Keno(commands.Cog):
         bet="Bet (a number, 'half', 'all', or e.g. '50%')",
         picks="How many numbers you pick (1-10)",
     )
+    @game_enabled("keno")
     async def keno(self, ctx: commands.Context, bet: str, picks: app_commands.Range[int, 1, 10] = 5):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)

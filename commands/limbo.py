@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, StaticView, fmt, resolve_bet
 
 RTP = 1 - HOUSE_EDGE
@@ -26,6 +27,7 @@ class Limbo(commands.Cog):
         bet="Bet (a number, 'half', 'all', or e.g. '50%')",
         target="Target multiplier (min. 1.01x)",
     )
+    @game_enabled("limbo")
     async def limbo(
         self,
         ctx: commands.Context,

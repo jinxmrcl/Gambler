@@ -3,6 +3,7 @@ from discord import app_commands, ui
 from discord.ext import commands
 
 from utils.cards import Deck
+from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
 
 
@@ -144,6 +145,7 @@ class Hilo(commands.Cog):
 
     @commands.hybrid_command(name="hilo", description="Guess whether the next card is higher or lower.")
     @app_commands.describe(bet="Bet (a number, 'half', 'all', or e.g. '50%')")
+    @game_enabled("hilo")
     async def hilo(self, ctx: commands.Context, bet: str):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)

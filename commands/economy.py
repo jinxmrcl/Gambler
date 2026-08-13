@@ -1,4 +1,5 @@
 import datetime
+from typing import Literal
 
 import discord
 from discord import app_commands
@@ -6,6 +7,15 @@ from discord.ext import commands
 
 from database.db import InsufficientFunds
 from utils.economy import StaticView, fmt
+
+BOARD_TITLES = {
+    "balance": "🏆 Leaderboard — Richest Players",
+    "games_played": "🎲 Leaderboard — Most Games Played",
+    "total_wagered": "💵 Leaderboard — Biggest Spenders",
+    "biggest_win": "🎉 Leaderboard — Biggest Wins",
+    "robs_succeeded": "🥷 Leaderboard — Most Successful Robberies",
+}
+MONEY_BOARDS = {"balance", "total_wagered", "biggest_win"}
 
 
 class Economy(commands.Cog):
@@ -49,21 +59,30 @@ class Economy(commands.Cog):
         )
         await ctx.send(view=view)
 
-    @commands.hybrid_command(name="leaderboard", aliases=["lb"], description="Shows the richest players.")
-    @app_commands.describe(limit="Number of players (default: 10)")
-    async def leaderboard(self, ctx: commands.Context, limit: app_commands.Range[int, 1, 25] = 10):
-        rows = await self.bot.db.top_balances(limit)
+    @commands.hybrid_command(name="leaderboard", aliases=["lb"], description="Shows a leaderboard.")
+    @app_commands.describe(
+        board="Which leaderboard to show (default: balance)",
+        limit="Number of players (default: 10)",
+    )
+    async def leaderboard(
+        self,
+        ctx: commands.Context,
+        board: Literal["balance", "games_played", "total_wagered", "biggest_win", "robs_succeeded"] = "balance",
+        limit: app_commands.Range[int, 1, 25] = 10,
+    ):
+        rows = await self.bot.db.top_balances(limit) if board == "balance" else await self.bot.db.top_stat(board, limit)
         if not rows:
-            await ctx.send("There are no players with a balance yet.")
+            await ctx.send("There's no data for this leaderboard yet.")
             return
 
         lines = []
-        for i, (user_id, bal) in enumerate(rows, start=1):
+        for i, (user_id, value) in enumerate(rows, start=1):
             member = ctx.guild.get_member(user_id) if ctx.guild else None
             name = member.display_name if member else f"<@{user_id}>"
-            lines.append(f"**{i}.** {name} — {fmt(bal)}")
+            value_text = fmt(value) if board in MONEY_BOARDS else str(value)
+            lines.append(f"**{i}.** {name} — {value_text}")
 
-        view = StaticView("🏆 Leaderboard", "\n".join(lines))
+        view = StaticView(BOARD_TITLES[board], "\n".join(lines))
         await ctx.send(view=view)
 
     @commands.hybrid_command(name="pay", description="Transfer balance to another player.")
