@@ -129,10 +129,28 @@ class Database:
                 )
                 await cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS gamble_channels (
+                        guild_id BIGINT UNSIGNED PRIMARY KEY,
+                        channel_id BIGINT UNSIGNED NOT NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS marriages (
                         user_id BIGINT UNSIGNED PRIMARY KEY,
                         partner_id BIGINT UNSIGNED NOT NULL,
                         married_at DATETIME NOT NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS marriage_bank (
+                        user_id_a BIGINT UNSIGNED NOT NULL,
+                        user_id_b BIGINT UNSIGNED NOT NULL,
+                        balance BIGINT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (user_id_a, user_id_b)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
@@ -161,6 +179,31 @@ class Database:
                         action VARCHAR(16) NOT NULL,
                         expires_at DATETIME NOT NULL,
                         PRIMARY KEY (user_id, action)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS characters (
+                        user_id BIGINT UNSIGNED PRIMARY KEY,
+                        class_key VARCHAR(16) NOT NULL,
+                        level INT NOT NULL DEFAULT 1,
+                        xp INT NOT NULL DEFAULT 0,
+                        equipped_weapon VARCHAR(32) NULL,
+                        equipped_armor VARCHAR(32) NULL,
+                        wins INT NOT NULL DEFAULT 0,
+                        losses INT NOT NULL DEFAULT 0,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS rpg_equipment (
+                        user_id BIGINT UNSIGNED NOT NULL,
+                        item_key VARCHAR(32) NOT NULL,
+                        quantity INT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (user_id, item_key)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
@@ -506,6 +549,24 @@ class Database:
                     (guild_id, ",".join(str(c) for c in sorted(channels))),
                 )
 
+    # -- Gamble channel (bot-wide, not just games) ---------------------------------
+
+    async def get_gamble_channel(self, guild_id: int) -> int | None:
+        row = await self._fetchone(
+            "SELECT channel_id FROM gamble_channels WHERE guild_id = %s", (guild_id,)
+        )
+        return row[0] if row else None
+
+    async def set_gamble_channel(self, guild_id: int, channel_id: int) -> None:
+        await self._execute(
+            "INSERT INTO gamble_channels (guild_id, channel_id) VALUES (%s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE channel_id = new.channel_id",
+            (guild_id, channel_id),
+        )
+
+    async def clear_gamble_channel(self, guild_id: int) -> None:
+        await self._execute("DELETE FROM gamble_channels WHERE guild_id = %s", (guild_id,))
+
     # -- Marriage ------------------------------------------------------------
 
     async def get_marriage(self, user_id: int) -> int | None:
@@ -534,8 +595,121 @@ class Database:
             return None
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("DELETE FROM marriages WHERE user_id IN (%s, %s)", (user_id, partner_id))
+                await conn.begin()
+                try:
+                    await cur.execute("DELETE FROM marriages WHERE user_id IN (%s, %s)", (user_id, partner_id))
+                    a, b = (user_id, partner_id) if user_id < partner_id else (partner_id, user_id)
+                    await cur.execute(
+                        "SELECT balance FROM marriage_bank WHERE user_id_a = %s AND user_id_b = %s FOR UPDATE",
+                        (a, b),
+                    )
+                    row = await cur.fetchone()
+                    if row and row[0] > 0:
+                        pot = row[0]
+                        half = pot // 2
+                        await cur.execute(
+                            "UPDATE users SET balance = balance + %s WHERE user_id = %s", (half, user_id)
+                        )
+                        await cur.execute(
+                            "UPDATE users SET balance = balance + %s WHERE user_id = %s",
+                            (pot - half, partner_id),
+                        )
+                    await cur.execute(
+                        "DELETE FROM marriage_bank WHERE user_id_a = %s AND user_id_b = %s", (a, b)
+                    )
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
         return partner_id
+
+    # -- Marriage bank --------------------------------------------------------
+
+    async def get_marriage_bank(self, user_id: int) -> int | None:
+        """Returns the couple's shared balance, or None if `user_id` isn't married."""
+        partner_id = await self.get_marriage(user_id)
+        if partner_id is None:
+            return None
+        a, b = (user_id, partner_id) if user_id < partner_id else (partner_id, user_id)
+        row = await self._fetchone(
+            "SELECT balance FROM marriage_bank WHERE user_id_a = %s AND user_id_b = %s", (a, b)
+        )
+        return row[0] if row else 0
+
+    async def deposit_marriage_bank(self, user_id: int, amount: int) -> tuple[int, int]:
+        """Moves `amount` from `user_id`'s wallet into their shared marriage bank.
+        Raises InsufficientFunds if they can't afford it or aren't married.
+        Returns (wallet_balance, marriage_bank_balance)."""
+        partner_id = await self.get_marriage(user_id)
+        if partner_id is None:
+            raise InsufficientFunds(f"User {user_id} is not married")
+        a, b = (user_id, partner_id) if user_id < partner_id else (partner_id, user_id)
+
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await conn.begin()
+                try:
+                    await cur.execute(
+                        "UPDATE users SET balance = balance - %s "
+                        "WHERE user_id = %s AND balance >= %s",
+                        (amount, user_id, amount),
+                    )
+                    if cur.rowcount == 0:
+                        await conn.rollback()
+                        raise InsufficientFunds(f"User {user_id} cannot deposit {amount}")
+                    await cur.execute(
+                        "INSERT INTO marriage_bank (user_id_a, user_id_b, balance) VALUES (%s, %s, %s) AS new "
+                        "ON DUPLICATE KEY UPDATE balance = marriage_bank.balance + new.balance",
+                        (a, b, amount),
+                    )
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
+                await cur.execute("SELECT balance FROM users WHERE user_id = %s", (user_id,))
+                wallet = (await cur.fetchone())[0]
+                await cur.execute(
+                    "SELECT balance FROM marriage_bank WHERE user_id_a = %s AND user_id_b = %s", (a, b)
+                )
+                bank = (await cur.fetchone())[0]
+                return wallet, bank
+
+    async def withdraw_marriage_bank(self, user_id: int, amount: int) -> tuple[int, int]:
+        """Moves `amount` from the shared marriage bank into `user_id`'s wallet —
+        either spouse can withdraw funds either of them deposited.
+        Raises InsufficientFunds if the pool can't afford it or they aren't married.
+        Returns (wallet_balance, marriage_bank_balance)."""
+        partner_id = await self.get_marriage(user_id)
+        if partner_id is None:
+            raise InsufficientFunds(f"User {user_id} is not married")
+        a, b = (user_id, partner_id) if user_id < partner_id else (partner_id, user_id)
+
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await conn.begin()
+                try:
+                    await cur.execute(
+                        "UPDATE marriage_bank SET balance = balance - %s "
+                        "WHERE user_id_a = %s AND user_id_b = %s AND balance >= %s",
+                        (amount, a, b, amount),
+                    )
+                    if cur.rowcount == 0:
+                        await conn.rollback()
+                        raise InsufficientFunds(f"Marriage bank for {user_id} cannot afford {amount}")
+                    await cur.execute(
+                        "UPDATE users SET balance = balance + %s WHERE user_id = %s", (amount, user_id)
+                    )
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
+                await cur.execute("SELECT balance FROM users WHERE user_id = %s", (user_id,))
+                wallet = (await cur.fetchone())[0]
+                await cur.execute(
+                    "SELECT balance FROM marriage_bank WHERE user_id_a = %s AND user_id_b = %s", (a, b)
+                )
+                bank = (await cur.fetchone())[0]
+                return wallet, bank
 
     # -- Lottery ------------------------------------------------------------
 
@@ -602,6 +776,68 @@ class Database:
                     "UPDATE lottery_state SET pot = 0, next_draw = %s WHERE id = 1", (next_draw,)
                 )
 
+    # -- RPG: characters ----------------------------------------------------
+
+    async def create_character(self, user_id: int, class_key: str) -> None:
+        await self._execute(
+            "INSERT INTO characters (user_id, class_key) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE user_id = user_id",
+            (user_id, class_key),
+        )
+
+    async def get_character(self, user_id: int) -> dict | None:
+        row = await self._fetchone(
+            "SELECT class_key, level, xp, equipped_weapon, equipped_armor, wins, losses "
+            "FROM characters WHERE user_id = %s",
+            (user_id,),
+        )
+        if not row:
+            return None
+        keys = ("class_key", "level", "xp", "equipped_weapon", "equipped_armor", "wins", "losses")
+        return dict(zip(keys, row))
+
+    async def set_character_level(self, user_id: int, level: int, xp: int) -> None:
+        await self._execute(
+            "UPDATE characters SET level = %s, xp = %s WHERE user_id = %s", (level, xp, user_id)
+        )
+
+    async def set_equipped(self, user_id: int, slot: str, item_key: str) -> None:
+        column = "equipped_weapon" if slot == "weapon" else "equipped_armor"
+        await self._execute(
+            f"UPDATE characters SET {column} = %s WHERE user_id = %s", (item_key, user_id)
+        )
+
+    async def record_duel_result(self, winner_id: int, loser_id: int) -> None:
+        await self._execute("UPDATE characters SET wins = wins + 1 WHERE user_id = %s", (winner_id,))
+        await self._execute("UPDATE characters SET losses = losses + 1 WHERE user_id = %s", (loser_id,))
+
+    async def top_arena(self, limit: int = 10) -> list[tuple[int, int, int]]:
+        return await self._fetchall(
+            "SELECT user_id, wins, losses FROM characters ORDER BY wins DESC LIMIT %s", (limit,)
+        )
+
+    # -- RPG: equipment -------------------------------------------------------
+
+    async def get_rpg_inventory(self, user_id: int) -> list[tuple[str, int]]:
+        return await self._fetchall(
+            "SELECT item_key, quantity FROM rpg_equipment WHERE user_id = %s AND quantity > 0",
+            (user_id,),
+        )
+
+    async def get_rpg_item_quantity(self, user_id: int, item_key: str) -> int:
+        row = await self._fetchone(
+            "SELECT quantity FROM rpg_equipment WHERE user_id = %s AND item_key = %s",
+            (user_id, item_key),
+        )
+        return row[0] if row else 0
+
+    async def add_rpg_item(self, user_id: int, item_key: str, quantity: int) -> None:
+        await self._execute(
+            "INSERT INTO rpg_equipment (user_id, item_key, quantity) VALUES (%s, %s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE quantity = rpg_equipment.quantity + new.quantity",
+            (user_id, item_key, quantity),
+        )
+
     # -- Admin ------------------------------------------------------------------
 
     async def reset_user(self, user_id: int, starting_balance: int) -> None:
@@ -618,6 +854,8 @@ class Database:
                     await cur.execute("DELETE FROM stats WHERE user_id = %s", (user_id,))
                     await cur.execute("DELETE FROM lottery_tickets WHERE user_id = %s", (user_id,))
                     await cur.execute("DELETE FROM cooldowns WHERE user_id = %s", (user_id,))
+                    await cur.execute("DELETE FROM characters WHERE user_id = %s", (user_id,))
+                    await cur.execute("DELETE FROM rpg_equipment WHERE user_id = %s", (user_id,))
                     await conn.commit()
                 except Exception:
                     await conn.rollback()

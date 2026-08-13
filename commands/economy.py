@@ -6,7 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from database.db import InsufficientFunds
-from utils.economy import StaticView, fmt
+from utils.economy import StaticView, fmt, resolve_display_name
 
 BOARD_TITLES = {
     "balance": "🏆 Leaderboard — Richest Players",
@@ -74,8 +74,7 @@ class Economy(commands.Cog):
 
         lines = []
         for i, (user_id, value) in enumerate(rows, start=1):
-            member = ctx.guild.get_member(user_id) if ctx.guild else None
-            name = member.display_name if member else f"<@{user_id}>"
+            name = await resolve_display_name(self.bot, ctx.guild, user_id)
             value_text = fmt(value) if board in MONEY_BOARDS else str(value)
             lines.append(f"**{i}.** {name} — {value_text}")
 

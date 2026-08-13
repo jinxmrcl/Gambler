@@ -7,6 +7,7 @@ from discord.ext import commands
 from database.db import InsufficientFunds
 from utils.economy import fmt, game_container
 from utils.items import ITEMS
+from utils.ratelimit import limited_edit
 
 TradeAsset = Literal["money", "shield", "cooldown_reset"]
 
@@ -145,7 +146,7 @@ class TradeView(ui.LayoutView):
         if self.message:
             self.text.content = f"## 🤝 Trade Offer\n⏱️ {self.target.mention} didn't respond in time."
             self.container.accent_colour = discord.Color.greyple()
-            await self.message.edit(view=self)
+            await limited_edit(self.message, view=self)
 
 
 class Trade(commands.Cog):

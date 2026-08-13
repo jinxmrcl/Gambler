@@ -6,3 +6,7 @@ __pycache__/
 venv/
 *.egg-info/
 .DS_Store
+/scripts/
+bot_debug.log
+debug.log
+/data/ 

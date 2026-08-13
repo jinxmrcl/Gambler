@@ -2,7 +2,9 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from utils.economy import StaticView, game_container
+from database.db import InsufficientFunds
+from utils.economy import StaticView, fmt, game_container, resolve_bet
+from utils.ratelimit import limited_edit
 
 
 class AcceptButton(ui.Button):
@@ -94,7 +96,7 @@ class ProposalView(ui.LayoutView):
         if self.message:
             self.text.content = f"## 💍 Marriage Proposal\n⏱️ {self.target.mention} didn't respond in time."
             self.container.accent_colour = discord.Color.greyple()
-            await self.message.edit(view=self)
+            await limited_edit(self.message, view=self)
 
 
 class Marriage(commands.Cog):
@@ -141,6 +143,79 @@ class Marriage(commands.Cog):
             text = f"{target.mention} is married to <@{partner_id}>. 💍"
 
         view = StaticView("💍 Marriage Status", text)
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(name="spousebank", description="Shows your shared marriage bank balance.")
+    async def spousebank(self, ctx: commands.Context):
+        bank = await self.bot.db.get_marriage_bank(ctx.author.id)
+        if bank is None:
+            await ctx.send("⚠️ You're not married.")
+            return
+
+        partner_id = await self.bot.db.get_marriage(ctx.author.id)
+        view = StaticView(
+            "💍 Marriage Bank",
+            f"**Shared balance:** {fmt(bank)}\n"
+            f"-# Either you or <@{partner_id}> can deposit or withdraw from this pool.",
+        )
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(name="spousedeposit", description="Deposit cash into your shared marriage bank.")
+    @app_commands.describe(amount="Amount (number, 'half', or 'all')")
+    async def spousedeposit(self, ctx: commands.Context, amount: str):
+        if await self.bot.db.get_marriage(ctx.author.id) is None:
+            await ctx.send("⚠️ You're not married.")
+            return
+
+        value = await resolve_bet(self.bot, ctx.author.id, amount)
+        try:
+            wallet, bank = await self.bot.db.deposit_marriage_bank(ctx.author.id, value)
+        except InsufficientFunds:
+            await ctx.send("⚠️ You don't have enough cash for that.")
+            return
+
+        view = StaticView(
+            "💍 Deposit",
+            f"Deposited {fmt(value)} into the shared bank.\n**Your cash:** {fmt(wallet)}\n**Shared balance:** {fmt(bank)}",
+            color=discord.Color.green(),
+        )
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(name="spousewithdraw", description="Withdraw cash from your shared marriage bank.")
+    @app_commands.describe(amount="Amount (number, 'half', or 'all')")
+    async def spousewithdraw(self, ctx: commands.Context, amount: str):
+        bank = await self.bot.db.get_marriage_bank(ctx.author.id)
+        if bank is None:
+            await ctx.send("⚠️ You're not married.")
+            return
+
+        raw = amount.strip().lower()
+        if raw in ("all", "max"):
+            value = bank
+        elif raw == "half":
+            value = bank // 2
+        else:
+            try:
+                value = int(raw.replace(",", ""))
+            except ValueError:
+                await ctx.send(f"⚠️ `{raw}` is not a valid amount.")
+                return
+
+        if value <= 0:
+            await ctx.send("⚠️ The amount must be greater than 0.")
+            return
+
+        try:
+            wallet, bank = await self.bot.db.withdraw_marriage_bank(ctx.author.id, value)
+        except InsufficientFunds:
+            await ctx.send("⚠️ The shared bank doesn't have enough balance for that.")
+            return
+
+        view = StaticView(
+            "💍 Withdrawal",
+            f"Withdrew {fmt(value)} from the shared bank.\n**Your cash:** {fmt(wallet)}\n**Shared balance:** {fmt(bank)}",
+            color=discord.Color.green(),
+        )
         await ctx.send(view=view)
 
 

@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from database.db import InsufficientFunds
 from utils.economy import HOUSE_EDGE, fmt, game_container
+from utils.ratelimit import limited_edit
 
 
 class AcceptButton(ui.Button):
@@ -116,7 +117,7 @@ class CoinflipView(ui.LayoutView):
         if self.message:
             self.text.content = f"## 🪙 Coinflip Challenge\n⏱️ {self.opponent.mention} didn't respond in time."
             self.container.accent_colour = discord.Color.greyple()
-            await self.message.edit(view=self)
+            await limited_edit(self.message, view=self)
 
 
 class Coinflip(commands.Cog):

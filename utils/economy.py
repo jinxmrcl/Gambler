@@ -49,6 +49,29 @@ async def resolve_bet(bot: commands.Bot, user_id: int, raw: str, *, min_bet: int
     return amount
 
 
+async def resolve_display_name(bot: commands.Bot, guild: discord.Guild | None, user_id: int) -> str:
+    """Best-effort name lookup for leaderboards: guild nickname if the member
+    is cached, then the bot's global user cache, then one API fetch as a last
+    resort, falling back to a raw mention only if the user can't be found at
+    all (e.g. a deleted account)."""
+    if guild:
+        member = guild.get_member(user_id)
+        if member:
+            return member.display_name
+
+    user = bot.get_user(user_id)
+    if user:
+        return user.display_name
+
+    try:
+        user = await bot.fetch_user(user_id)
+        return user.display_name
+    except discord.NotFound:
+        return f"<@{user_id}>"
+    except discord.HTTPException:
+        return f"<@{user_id}>"
+
+
 def game_container(title: str, body: str = "", *, color: discord.Color | None = None) -> tuple[ui.Container, ui.TextDisplay]:
     """Builds a Components V2 Container with a single mutable TextDisplay.
 

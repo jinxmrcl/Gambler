@@ -22,6 +22,10 @@ COG_TITLES = {
     "Roulette": "🎡 Roulette",
     "Dice": "🎲 Dice",
     "Coinflip": "🪙 Coinflip",
+    "RPGCharacter": "⚔️ RPG: Character",
+    "RPGDungeon": "🗺️ RPG: Dungeons",
+    "RPGShop": "🛒 RPG: Equipment",
+    "RPGArena": "🏆 RPG: Arena",
     "Settings": "🛠️ Server Settings",
     "Admin": "🛠️ Admin",
 }

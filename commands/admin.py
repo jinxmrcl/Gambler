@@ -1,8 +1,17 @@
+from typing import Literal
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from rpg.equipment import EQUIPMENT
+from rpg.leveling import MAX_LEVEL, xp_for_level
 from utils.economy import StaticView, fmt
+
+RPGItemKey = Literal[
+    "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
+    "leather_armor", "chainmail", "plate_armor", "dragonscale_armor", "void_plate", "worldguard",
+]
 
 
 class Admin(commands.Cog):
@@ -48,6 +57,52 @@ class Admin(commands.Cog):
             "🛠️ User Reset",
             f"{user.mention} was reset to {fmt(self.bot.starting_balance)} "
             f"(bank, inventory, and statistics cleared).",
+            color=discord.Color.blue(),
+        )
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(name="rpgsetlevel", description="[Admin] Set a player's RPG level (and optionally XP).")
+    @app_commands.describe(user="Target user", level="New level (1-1500)", xp="XP toward the next level (default: 0)")
+    @commands.has_permissions(administrator=True)
+    async def rpgsetlevel(
+        self,
+        ctx: commands.Context,
+        user: discord.User,
+        level: app_commands.Range[int, 1, MAX_LEVEL],
+        xp: app_commands.Range[int, 0] = 0,
+    ):
+        character = await self.bot.db.get_character(user.id)
+        if not character:
+            await ctx.send(f"⚠️ {user.mention} doesn't have a character yet.")
+            return
+
+        capped_xp = min(xp, max(xp_for_level(level) - 1, 0)) if level < MAX_LEVEL else 0
+        await self.bot.db.set_character_level(user.id, level, capped_xp)
+
+        view = StaticView(
+            "🛠️ Level Set",
+            f"Set {user.mention}'s RPG level to **{level}** (XP: {capped_xp}).",
+            color=discord.Color.blue(),
+        )
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(name="rpggive", description="[Admin] Give a player a piece of equipment for free.")
+    @app_commands.describe(user="Target user", item="Which item to give", quantity="How many (default: 1)")
+    @commands.has_permissions(administrator=True)
+    async def rpggive(
+        self, ctx: commands.Context, user: discord.User, item: RPGItemKey, quantity: app_commands.Range[int, 1, 99] = 1
+    ):
+        character = await self.bot.db.get_character(user.id)
+        if not character:
+            await ctx.send(f"⚠️ {user.mention} doesn't have a character yet.")
+            return
+
+        await self.bot.db.add_rpg_item(user.id, item, quantity)
+        info = EQUIPMENT[item]
+
+        view = StaticView(
+            "🛠️ Equipment Given",
+            f"Gave {quantity}x {info.name} to {user.mention}.\nThey can equip it with `/rpgequip {item}`.",
             color=discord.Color.blue(),
         )
         await ctx.send(view=view)

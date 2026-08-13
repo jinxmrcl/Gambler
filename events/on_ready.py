@@ -16,6 +16,7 @@ class OnReady(commands.Cog):
             activity=discord.Activity(type=discord.ActivityType.watching, name="/blackjack 🎰")
         )
         log.info("Logged in as %s (ID: %s)", self.bot.user, self.bot.user.id)
+        await self.bot.report_startup_state()
 
 
 async def setup(bot: commands.Bot):
