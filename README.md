@@ -258,7 +258,8 @@ Requires the **Administrator** permission on the server.
 ### Games
 All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 
-- `blackjack <bet>` — classic Blackjack with Hit/Stand/Double buttons
+- `blackjack <bet>` — classic Blackjack with Hit/Stand/Double/Split buttons; cards are
+  dealt and drawn with an animated reveal instead of appearing instantly
 - `mines <bet> [mines=3] [cols=5] [rows=4]` — customizable grid (2-5 cols, 2-4 rows),
   avoid mines, cash out anytime
 - `hilo <bet>` — guess higher/lower, multiplier grows with each correct card
