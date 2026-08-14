@@ -6,9 +6,13 @@ from discord.ext import commands
 
 from utils.economy import StaticView
 
-GAMES = ("blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip")
+GAMES = (
+    "blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip",
+    "scratchcard", "horserace", "baccarat",
+)
 GameName = Literal[
-    "blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip"
+    "blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip",
+    "scratchcard", "horserace", "baccarat",
 ]
 
 
