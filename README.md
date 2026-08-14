@@ -17,7 +17,7 @@ games, a full virtual economy (bank, shop, trading, marriage, lottery, robbing),
 from-scratch RPG (7 classes, 16 dungeons, level 1-1500 with prestige), and
 MySQL-backed persistence.
 
-📊 **~7,650 lines of Python** across 51 files.
+📊 **~7,830 lines of Python** across 51 files.
 
 ## Features
 
@@ -27,11 +27,13 @@ Limbo, Keno, Slots, Roulette, Dice, Baccarat, Horse Race, Scratchcard, and Solo 
 All games are mathematically fair with a fixed, transparent house edge (`HOUSE_EDGE` in
 `utils/economy.py`, default 3%); Horse Race and Baccarat derive their odds directly from
 simulating the actual game rules (validated against real-world baccarat statistics)
-rather than hand-picked numbers. Interactive ones (Blackjack, Mines, Hilo, Keno) use
-Discord's native buttons and select menus, and several (Blackjack, Slots, Scratchcard,
-Horse Race, Baccarat) play out with a timed animated reveal instead of showing the
-result instantly. Blackjack and Hilo render playing cards with custom Discord emojis
-(`assets/cards/`, mapped in `utils/cards.py`) instead of plain text.
+rather than hand-picked numbers. Interactive ones (Blackjack, Mines, Hilo, Keno,
+Scratchcard, Horse Race) use Discord's native buttons and select menus — Scratchcard is
+click-to-reveal tile by tile, and Horse Race lets you pick your horse from a dropdown
+after betting — and several (Blackjack, Slots, Horse Race, Baccarat) play out with a
+timed animated reveal instead of showing the result instantly. Blackjack and Hilo render
+playing cards with custom Discord emojis (`assets/cards/`, mapped in `utils/cards.py`)
+instead of plain text.
 
 **RPG** (`rpg/`, `commands/rpg_*.py`) — a full slash-only RPG sharing the same wallet as
 the casino:
@@ -277,10 +279,11 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 - `roulette <bet> <choice>` — bet on a number, color, or even/odd
 - `dice <bet> <prediction>` — predict the sum of two dice (2-12)
 - `soloflip <bet> [call=heads]` (alias `cf`) — call heads or tails against the house
-- `scratchcard <bet>` (alias `scratch`) — scratch off a 3x3 card one tile at a time;
-  match 4 or more of the same symbol to win
-- `horserace <bet> <horse>` (alias `horse`) — bet on one of 6 horses with individually
-  simulated odds (2.7x favorite up to ~40x longshot) and watch the animated race
+- `scratchcard <bet>` (alias `scratch`) — click each of the 9 tiles yourself to scratch
+  it off; match 4 or more of the same symbol to win
+- `horserace <bet>` (alias `horse`) — place your bet, then pick from 6 randomly-named
+  horses in a dropdown (odds shown per horse, individually simulated: ~2.7x favorite up
+  to ~40x longshot) and watch the animated race
 - `baccarat <bet> <choice>` — bet on Player, Banker, or Tie; plays out the real casino
   drawing rules (natural 8/9, third-card rules for both hands) with an animated reveal
 
