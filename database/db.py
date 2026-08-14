@@ -9,7 +9,7 @@ log = logging.getLogger("gambler")
 
 
 class InsufficientFunds(Exception):
-    """Raised when a balance change would take a user's balance below zero."""
+    pass
 
 
 class Database:
@@ -33,7 +33,7 @@ class Database:
                 minsize=1,
                 maxsize=10,
                 connect_timeout=10,
-                pool_recycle=3600,  # recycle connections MySQL/proxies would otherwise drop silently
+                pool_recycle=3600,
             )
         except Exception:
             log.exception(
@@ -51,10 +51,8 @@ class Database:
             self.pool.close()
             await self.pool.wait_closed()
 
-    # -- Low-level helpers --------------------------------------------------
 
     async def _execute(self, query: str, args: tuple = ()) -> int:
-        """Runs a single statement outside any explicit transaction. Returns rowcount."""
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(query, args)
@@ -73,8 +71,6 @@ class Database:
                 return await cur.fetchall()
 
     async def _init_tables(self) -> None:
-        # CREATE TABLE IF NOT EXISTS still emits a MySQL warning on every restart
-        # once the tables already exist; it's a no-op, so silence just that class.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=pymysql.Warning)
             await self._create_tables()
@@ -191,17 +187,26 @@ class Database:
                         xp INT NOT NULL DEFAULT 0,
                         equipped_weapon VARCHAR(32) NULL,
                         equipped_armor VARCHAR(32) NULL,
+                        equipped_accessory VARCHAR(32) NULL,
                         wins INT NOT NULL DEFAULT 0,
                         losses INT NOT NULL DEFAULT 0,
                         current_hp INT NULL,
                         hp_updated_at DATETIME NULL,
+                        weapon_enchant INT NOT NULL DEFAULT 0,
+                        armor_enchant INT NOT NULL DEFAULT 0,
+                        accessory_enchant INT NOT NULL DEFAULT 0,
                         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
-                # Retrofit onto any characters table created before HP tracking existed.
-                # MySQL (unlike MariaDB) has no ADD COLUMN IF NOT EXISTS, so check first.
-                for column, coltype in (("current_hp", "INT NULL"), ("hp_updated_at", "DATETIME NULL")):
+                for column, coltype in (
+                    ("current_hp", "INT NULL"),
+                    ("hp_updated_at", "DATETIME NULL"),
+                    ("equipped_accessory", "VARCHAR(32) NULL"),
+                    ("weapon_enchant", "INT NOT NULL DEFAULT 0"),
+                    ("armor_enchant", "INT NOT NULL DEFAULT 0"),
+                    ("accessory_enchant", "INT NOT NULL DEFAULT 0"),
+                ):
                     await cur.execute(
                         "SELECT COUNT(*) FROM information_schema.columns "
                         "WHERE table_schema = DATABASE() AND table_name = 'characters' AND column_name = %s",
@@ -221,12 +226,21 @@ class Database:
                     """
                 )
                 await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS boss_kills (
+                        user_id BIGINT UNSIGNED NOT NULL,
+                        dungeon_key VARCHAR(32) NOT NULL,
+                        kills INT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (user_id, dungeon_key)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
                     "INSERT INTO lottery_state (id, pot, next_draw) VALUES (1, 0, %s) "
                     "ON DUPLICATE KEY UPDATE id = id",
                     (datetime.datetime.utcnow() + datetime.timedelta(days=7),),
                 )
 
-    # -- Wallet -----------------------------------------------------------
 
     async def ensure_user(self, user_id: int, starting_balance: int) -> None:
         await self._execute(
@@ -240,7 +254,6 @@ class Database:
         return row[0] if row else 0
 
     async def update_balance(self, user_id: int, delta: int) -> int:
-        """Atomically applies a balance delta. Raises InsufficientFunds if it would go negative."""
         rowcount = await self._execute(
             "UPDATE users SET balance = balance + %s "
             "WHERE user_id = %s AND balance + %s >= 0",
@@ -252,8 +265,6 @@ class Database:
         return row[0]
 
     async def transfer_balance(self, sender_id: int, recipient_id: int, amount: int) -> int:
-        """Atomically moves `amount` from sender to recipient in one transaction.
-        Raises InsufficientFunds if the sender can't afford it. Returns the sender's new balance."""
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await conn.begin()
@@ -284,11 +295,6 @@ class Database:
     async def claim_daily(
         self, user_id: int, amount: int, period: datetime.timedelta, now: datetime.datetime
     ) -> int | None:
-        """Atomically claims the daily bonus if the cooldown has elapsed.
-
-        Returns the new balance, or None if the user is still on cooldown (no
-        row is touched in that case, closing the check-then-act race a client
-        could hit by firing the command twice at once)."""
         cutoff = now - period
         rowcount = await self._execute(
             "UPDATE users SET balance = balance + %s, last_daily = %s "
@@ -311,21 +317,16 @@ class Database:
         )
 
     async def give_all_users(self, amount: int) -> int:
-        """Applies `amount` to every existing player's balance (floored at 0
-        so a negative amount can't push anyone below zero). Returns how many
-        rows were actually changed."""
         return await self._execute(
             "UPDATE users SET balance = GREATEST(balance + %s, 0)", (amount,)
         )
 
-    # -- Bank ---------------------------------------------------------------
 
     async def get_bank_balance(self, user_id: int) -> int:
         row = await self._fetchone("SELECT bank_balance FROM users WHERE user_id = %s", (user_id,))
         return row[0] if row else 0
 
     async def deposit_to_bank(self, user_id: int, amount: int) -> tuple[int, int]:
-        """Moves `amount` from wallet balance to bank balance. Returns (balance, bank_balance)."""
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await conn.begin()
@@ -352,7 +353,6 @@ class Database:
                 return await cur.fetchone()
 
     async def withdraw_from_bank(self, user_id: int, amount: int) -> tuple[int, int]:
-        """Moves `amount` from bank balance to wallet balance. Returns (balance, bank_balance)."""
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await conn.begin()
@@ -378,7 +378,6 @@ class Database:
                 )
                 return await cur.fetchone()
 
-    # -- Rob protection -------------------------------------------------------
 
     async def get_protected_until(self, user_id: int) -> datetime.datetime | None:
         row = await self._fetchone(
@@ -391,7 +390,6 @@ class Database:
             "UPDATE users SET protected_until = %s WHERE user_id = %s", (when, user_id)
         )
 
-    # -- Cooldowns --------------------------------------------------------------
 
     async def get_cooldown(self, user_id: int, action: str) -> datetime.datetime | None:
         row = await self._fetchone(
@@ -410,12 +408,6 @@ class Database:
     async def try_consume_cooldown(
         self, user_id: int, action: str, period: datetime.timedelta, now: datetime.datetime
     ) -> bool:
-        """Atomically claims `action` for `period` if it isn't already on cooldown.
-
-        Returns True (and starts the cooldown) if the action was free; False if
-        it's still on cooldown and nothing was changed. Doing the check and the
-        write in one statement closes the race two near-simultaneous invocations
-        of the same command would otherwise hit."""
         rowcount = await self._execute(
             "INSERT INTO cooldowns (user_id, action, expires_at) VALUES (%s, %s, %s) AS new "
             "ON DUPLICATE KEY UPDATE "
@@ -433,7 +425,6 @@ class Database:
             (user_id, *actions),
         )
 
-    # -- Inventory ------------------------------------------------------------
 
     async def get_inventory(self, user_id: int) -> list[tuple[str, int]]:
         return await self._fetchall(
@@ -464,7 +455,6 @@ class Database:
         if rowcount == 0:
             raise InsufficientFunds(f"User {user_id} does not have {quantity}x {item_key}")
 
-    # -- Stats ------------------------------------------------------------------
 
     async def record_game_result(self, user_id: int, wagered: int, payout: int) -> None:
         net = payout - wagered
@@ -512,7 +502,6 @@ class Database:
         )
         return dict(zip(keys, row)) if row else dict.fromkeys(keys, 0)
 
-    # -- Leaderboards ------------------------------------------------------------
 
     STAT_COLUMNS = {
         "games_played": "games_played",
@@ -531,7 +520,6 @@ class Database:
                 )
                 return await cur.fetchall()
 
-    # -- Guild settings ------------------------------------------------------------
 
     async def get_guild_settings(self, guild_id: int) -> tuple[set[str], set[int]]:
         async with self.pool.acquire() as conn:
@@ -570,7 +558,6 @@ class Database:
                     (guild_id, ",".join(str(c) for c in sorted(channels))),
                 )
 
-    # -- Gamble channel (bot-wide, not just games) ---------------------------------
 
     async def get_gamble_channel(self, guild_id: int) -> int | None:
         row = await self._fetchone(
@@ -588,7 +575,6 @@ class Database:
     async def clear_gamble_channel(self, guild_id: int) -> None:
         await self._execute("DELETE FROM gamble_channels WHERE guild_id = %s", (guild_id,))
 
-    # -- Marriage ------------------------------------------------------------
 
     async def get_marriage(self, user_id: int) -> int | None:
         async with self.pool.acquire() as conn:
@@ -644,10 +630,8 @@ class Database:
                     raise
         return partner_id
 
-    # -- Marriage bank --------------------------------------------------------
 
     async def get_marriage_bank(self, user_id: int) -> int | None:
-        """Returns the couple's shared balance, or None if `user_id` isn't married."""
         partner_id = await self.get_marriage(user_id)
         if partner_id is None:
             return None
@@ -658,9 +642,6 @@ class Database:
         return row[0] if row else 0
 
     async def deposit_marriage_bank(self, user_id: int, amount: int) -> tuple[int, int]:
-        """Moves `amount` from `user_id`'s wallet into their shared marriage bank.
-        Raises InsufficientFunds if they can't afford it or aren't married.
-        Returns (wallet_balance, marriage_bank_balance)."""
         partner_id = await self.get_marriage(user_id)
         if partner_id is None:
             raise InsufficientFunds(f"User {user_id} is not married")
@@ -696,10 +677,6 @@ class Database:
                 return wallet, bank
 
     async def withdraw_marriage_bank(self, user_id: int, amount: int) -> tuple[int, int]:
-        """Moves `amount` from the shared marriage bank into `user_id`'s wallet —
-        either spouse can withdraw funds either of them deposited.
-        Raises InsufficientFunds if the pool can't afford it or they aren't married.
-        Returns (wallet_balance, marriage_bank_balance)."""
         partner_id = await self.get_marriage(user_id)
         if partner_id is None:
             raise InsufficientFunds(f"User {user_id} is not married")
@@ -732,7 +709,6 @@ class Database:
                 bank = (await cur.fetchone())[0]
                 return wallet, bank
 
-    # -- Lottery ------------------------------------------------------------
 
     async def get_lottery_state(self) -> dict:
         async with self.pool.acquire() as conn:
@@ -797,7 +773,6 @@ class Database:
                     "UPDATE lottery_state SET pot = 0, next_draw = %s WHERE id = 1", (next_draw,)
                 )
 
-    # -- RPG: characters ----------------------------------------------------
 
     async def create_character(self, user_id: int, class_key: str, starting_hp: int) -> None:
         now = datetime.datetime.utcnow()
@@ -809,15 +784,17 @@ class Database:
 
     async def get_character(self, user_id: int) -> dict | None:
         row = await self._fetchone(
-            "SELECT class_key, level, xp, equipped_weapon, equipped_armor, wins, losses, "
-            "current_hp, hp_updated_at FROM characters WHERE user_id = %s",
+            "SELECT class_key, level, xp, equipped_weapon, equipped_armor, equipped_accessory, "
+            "wins, losses, current_hp, hp_updated_at, weapon_enchant, armor_enchant, accessory_enchant "
+            "FROM characters WHERE user_id = %s",
             (user_id,),
         )
         if not row:
             return None
         keys = (
-            "class_key", "level", "xp", "equipped_weapon", "equipped_armor",
+            "class_key", "level", "xp", "equipped_weapon", "equipped_armor", "equipped_accessory",
             "wins", "losses", "current_hp", "hp_updated_at",
+            "weapon_enchant", "armor_enchant", "accessory_enchant",
         )
         return dict(zip(keys, row))
 
@@ -832,11 +809,49 @@ class Database:
             (hp, when, user_id),
         )
 
+    _EQUIP_COLUMNS = {
+        "weapon": "equipped_weapon",
+        "armor": "equipped_armor",
+        "accessory": "equipped_accessory",
+    }
+
     async def set_equipped(self, user_id: int, slot: str, item_key: str) -> None:
-        column = "equipped_weapon" if slot == "weapon" else "equipped_armor"
+        column = self._EQUIP_COLUMNS[slot]
         await self._execute(
             f"UPDATE characters SET {column} = %s WHERE user_id = %s", (item_key, user_id)
         )
+
+    _ENCHANT_COLUMNS = {
+        "weapon": "weapon_enchant",
+        "armor": "armor_enchant",
+        "accessory": "accessory_enchant",
+    }
+
+    async def set_enchant_level(self, user_id: int, slot: str, level: int) -> None:
+        column = self._ENCHANT_COLUMNS[slot]
+        await self._execute(
+            f"UPDATE characters SET {column} = %s WHERE user_id = %s", (level, user_id)
+        )
+
+    async def get_boss_kills(self, user_id: int, dungeon_key: str) -> int:
+        row = await self._fetchone(
+            "SELECT kills FROM boss_kills WHERE user_id = %s AND dungeon_key = %s",
+            (user_id, dungeon_key),
+        )
+        return row[0] if row else 0
+
+    async def record_boss_kill(self, user_id: int, dungeon_key: str) -> None:
+        await self._execute(
+            "INSERT INTO boss_kills (user_id, dungeon_key, kills) VALUES (%s, %s, 1) AS new "
+            "ON DUPLICATE KEY UPDATE kills = boss_kills.kills + new.kills",
+            (user_id, dungeon_key),
+        )
+
+    async def total_boss_kills(self, user_id: int) -> int:
+        row = await self._fetchone(
+            "SELECT COALESCE(SUM(kills), 0) FROM boss_kills WHERE user_id = %s", (user_id,)
+        )
+        return row[0] if row else 0
 
     async def record_duel_result(self, winner_id: int, loser_id: int) -> None:
         await self._execute("UPDATE characters SET wins = wins + 1 WHERE user_id = %s", (winner_id,))
@@ -847,7 +862,6 @@ class Database:
             "SELECT user_id, wins, losses FROM characters ORDER BY wins DESC LIMIT %s", (limit,)
         )
 
-    # -- RPG: equipment -------------------------------------------------------
 
     async def get_rpg_inventory(self, user_id: int) -> list[tuple[str, int]]:
         return await self._fetchall(
@@ -869,7 +883,15 @@ class Database:
             (user_id, item_key, quantity),
         )
 
-    # -- Admin ------------------------------------------------------------------
+    async def remove_rpg_item(self, user_id: int, item_key: str, quantity: int) -> None:
+        rowcount = await self._execute(
+            "UPDATE rpg_equipment SET quantity = quantity - %s "
+            "WHERE user_id = %s AND item_key = %s AND quantity >= %s",
+            (quantity, user_id, item_key, quantity),
+        )
+        if rowcount == 0:
+            raise InsufficientFunds(f"User {user_id} does not have {quantity}x {item_key}")
+
 
     async def reset_user(self, user_id: int, starting_balance: int) -> None:
         async with self.pool.acquire() as conn:
@@ -887,6 +909,7 @@ class Database:
                     await cur.execute("DELETE FROM cooldowns WHERE user_id = %s", (user_id,))
                     await cur.execute("DELETE FROM characters WHERE user_id = %s", (user_id,))
                     await cur.execute("DELETE FROM rpg_equipment WHERE user_id = %s", (user_id,))
+                    await cur.execute("DELETE FROM boss_kills WHERE user_id = %s", (user_id,))
                     await conn.commit()
                 except Exception:
                     await conn.rollback()

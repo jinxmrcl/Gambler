@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from rpg.consumables import CONSUMABLES
 from rpg.equipment import EQUIPMENT
 from rpg.leveling import MAX_LEVEL, xp_for_level
 from utils.economy import StaticView, fmt
@@ -11,6 +12,8 @@ from utils.economy import StaticView, fmt
 RPGItemKey = Literal[
     "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
     "leather_armor", "chainmail", "plate_armor", "dragonscale_armor", "void_plate", "worldguard",
+    "lucky_charm", "hawk_eye_ring", "assassins_pendant", "phoenix_feather", "void_sigil", "crown_of_fate",
+    "minor_potion", "greater_potion", "superior_potion",
 ]
 
 
@@ -74,19 +77,19 @@ class Admin(commands.Cog):
         )
         await ctx.send(view=view)
 
-    @commands.hybrid_command(name="rpgsetlevel", description="[Admin] Set a player's RPG level (and optionally XP).")
+    @app_commands.command(name="rpgsetlevel", description="[Admin] Set a player's RPG level (and optionally XP).")
     @app_commands.describe(user="Target user", level="New level (1-1500)", xp="XP toward the next level (default: 0)")
-    @commands.has_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
     async def rpgsetlevel(
         self,
-        ctx: commands.Context,
+        interaction: discord.Interaction,
         user: discord.User,
         level: app_commands.Range[int, 1, MAX_LEVEL],
         xp: app_commands.Range[int, 0] = 0,
     ):
         character = await self.bot.db.get_character(user.id)
         if not character:
-            await ctx.send(f"⚠️ {user.mention} doesn't have a character yet.")
+            await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
             return
 
         capped_xp = min(xp, max(xp_for_level(level) - 1, 0)) if level < MAX_LEVEL else 0
@@ -97,28 +100,33 @@ class Admin(commands.Cog):
             f"Set {user.mention}'s RPG level to **{level}** (XP: {capped_xp}).",
             color=discord.Color.blue(),
         )
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
 
-    @commands.hybrid_command(name="rpggive", description="[Admin] Give a player a piece of equipment for free.")
+    @app_commands.command(name="rpggive", description="[Admin] Give a player a piece of equipment for free.")
     @app_commands.describe(user="Target user", item="Which item to give", quantity="How many (default: 1)")
-    @commands.has_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
     async def rpggive(
-        self, ctx: commands.Context, user: discord.User, item: RPGItemKey, quantity: app_commands.Range[int, 1, 99] = 1
+        self,
+        interaction: discord.Interaction,
+        user: discord.User,
+        item: RPGItemKey,
+        quantity: app_commands.Range[int, 1, 99] = 1,
     ):
         character = await self.bot.db.get_character(user.id)
         if not character:
-            await ctx.send(f"⚠️ {user.mention} doesn't have a character yet.")
+            await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
             return
 
         await self.bot.db.add_rpg_item(user.id, item, quantity)
-        info = EQUIPMENT[item]
+        info = EQUIPMENT.get(item) or CONSUMABLES[item]
+        followup = f"They can equip it with `/rpgequip {item}`." if item in EQUIPMENT else f"They can use it with `/rpguse {item}`."
 
         view = StaticView(
             "🛠️ Equipment Given",
-            f"Gave {quantity}x {info.name} to {user.mention}.\nThey can equip it with `/rpgequip {item}`.",
+            f"Gave {quantity}x {info.name} to {user.mention}.\n{followup}",
             color=discord.Color.blue(),
         )
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
 
 
 async def setup(bot: commands.Bot):

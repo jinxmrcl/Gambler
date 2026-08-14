@@ -4,25 +4,28 @@ from rpg.classes import CLASSES, base_stats_at_level
 from rpg.combat import Fighter
 from rpg.equipment import equipment_multipliers
 
-REGEN_PCT_PER_MINUTE = 0.05  # a full heal from 0 takes ~20 minutes of real time
+REGEN_PCT_PER_MINUTE = 0.05
 
 
 def full_stats(character: dict) -> dict:
-    """Combines class/level base stats with equipped gear percentage bonuses."""
     base = base_stats_at_level(character["class_key"], character["level"])
-    mult = equipment_multipliers(character["equipped_weapon"], character["equipped_armor"])
+    mult = equipment_multipliers(
+        character["equipped_weapon"],
+        character["equipped_armor"],
+        character.get("equipped_accessory"),
+        character.get("weapon_enchant", 0),
+        character.get("armor_enchant", 0),
+        character.get("accessory_enchant", 0),
+    )
     return {
         "hp": int(base["hp"] * mult["hp"]),
         "atk": int(base["atk"] * mult["atk"]),
         "def": int(base["def"] * mult["def"]),
-        "crit": base["crit"],
+        "crit": min(1.0, base["crit"] + mult["crit_add"]),
     }
 
 
 def current_hp(character: dict, max_hp: int, now: datetime.datetime | None = None) -> int:
-    """The character's HP right now, accounting for passive regen since their
-    last recorded value. Doesn't write anything — callers persist the result
-    themselves once they know the final post-fight HP."""
     stored = character.get("current_hp")
     if stored is None:
         return max_hp
@@ -38,9 +41,6 @@ def current_hp(character: dict, max_hp: int, now: datetime.datetime | None = Non
 
 
 def to_fighter(character: dict, name: str, *, hp: int | None = None) -> Fighter:
-    """Builds a combat Fighter from a character. Pass `hp` to fight at less
-    than full (e.g. PvE dungeons, which track persistent HP); omit it for a
-    full-HP fight (e.g. the PvP arena, which is always a fair fight)."""
     stats = full_stats(character)
     class_def = CLASSES[character["class_key"]]
     return Fighter(

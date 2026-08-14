@@ -16,5 +16,4 @@ PRESTIGE_BADGES = _load()
 
 
 def prestige_badge(prestige: int) -> str:
-    """Returns the custom badge emoji for a prestige tier, or "" for prestige 0."""
     return PRESTIGE_BADGES.get(prestige, "")

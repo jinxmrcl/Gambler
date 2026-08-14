@@ -14,9 +14,14 @@ from rpg.leveling import apply_xp
 from rpg.monsters import DUNGEONS, scaled_monster
 from utils.economy import StaticView, fmt
 
-DungeonKey = Literal["forest", "cave", "crypt", "volcano", "abyss", "celestial"]
+DungeonKey = Literal[
+    "forest", "cave", "crypt", "volcano", "abyss", "celestial",
+    "ruins", "frostpeak", "wastes", "nightmare_realm", "sunken_city",
+    "voidscar", "titan_forge", "chaos_rift", "eternal_throne", "world_ender",
+]
 
 DUNGEON_COOLDOWN = 20
+BOSS_COOLDOWN = 300
 
 
 def _dungeon_list_text() -> str:
@@ -30,73 +35,80 @@ class RPGDungeon(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="dungeons", description="Shows the available RPG dungeons.")
-    async def dungeons(self, ctx: commands.Context):
+    @app_commands.command(name="dungeons", description="Shows the available RPG dungeons.")
+    async def dungeons(self, interaction: discord.Interaction):
         view = StaticView("🗺️ Dungeons", _dungeon_list_text())
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
 
-    @commands.hybrid_command(name="dungeon", description="Fight your way through a dungeon.")
+    @app_commands.command(name="dungeon", description="Fight your way through a dungeon.")
     @app_commands.describe(dungeon="Which dungeon to enter")
-    async def dungeon(self, ctx: commands.Context, dungeon: DungeonKey):
-        character = await self.bot.db.get_character(ctx.author.id)
+    async def dungeon(self, interaction: discord.Interaction, dungeon: DungeonKey):
+        character = await self.bot.db.get_character(interaction.user.id)
         if not character:
-            await ctx.send("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
 
         d = DUNGEONS[dungeon]
         if character["level"] < d.min_level:
-            await ctx.send(f"⚠️ {d.name} recommends level {d.min_level}+. You're level {character['level']}.")
+            await interaction.response.send_message(
+                f"⚠️ {d.name} recommends level {d.min_level}+. You're level {character['level']}."
+            )
             return
 
         now = datetime.datetime.utcnow()
         player_stats = full_stats(character)
         hp_now = current_hp(character, player_stats["hp"], now)
         if hp_now <= 0:
-            await ctx.send("💀 You're too hurt to fight. Use `/heal` or wait for your HP to regenerate.")
+            await interaction.response.send_message(
+                "💀 You're too hurt to fight. Use `/heal` or wait for your HP to regenerate."
+            )
             return
 
         ok = await self.bot.db.try_consume_cooldown(
-            ctx.author.id, "dungeon", datetime.timedelta(seconds=DUNGEON_COOLDOWN), now
+            interaction.user.id, "dungeon", datetime.timedelta(seconds=DUNGEON_COOLDOWN), now
         )
         if not ok:
-            until = await self.bot.db.get_cooldown(ctx.author.id, "dungeon")
+            until = await self.bot.db.get_cooldown(interaction.user.id, "dungeon")
             remaining = int((until - now).total_seconds())
-            await ctx.send(f"⏳ You're still resting. Try again in {remaining // 60}m {remaining % 60}s.")
+            await interaction.response.send_message(
+                f"⏳ You're still resting. Try again in {remaining // 60}m {remaining % 60}s."
+            )
             return
 
         event = roll_event()
 
         if event == TREASURE:
             gold = random.randint(50, 150) + character["level"] * 5
-            await self.bot.db.update_balance(ctx.author.id, gold)
+            await self.bot.db.update_balance(interaction.user.id, gold)
             view = StaticView(
                 f"{d.emoji} {d.name}",
                 f"💰 **Treasure Chest!** You found {fmt(gold)} without a fight.",
                 color=discord.Color.gold(),
             )
-            await ctx.send(view=view)
+            await interaction.response.send_message(view=view)
             return
 
         if event == MERCHANT:
             gold = random.randint(30, 80)
-            await self.bot.db.update_balance(ctx.author.id, gold)
+            await self.bot.db.update_balance(interaction.user.id, gold)
             view = StaticView(
                 f"{d.emoji} {d.name}",
                 f"🧙 **A wandering merchant** pays you {fmt(gold)} for old supplies you didn't need.",
                 color=discord.Color.blue(),
             )
-            await ctx.send(view=view)
+            await interaction.response.send_message(view=view)
             return
 
         monster = random.choice(d.monsters)
         stats = scaled_monster(monster, character["level"], d.min_level)
         elite = event == AMBUSH
         if elite:
-            for key in ("hp", "atk", "def", "xp"):
-                stats[key] = int(stats[key] * 1.4)
+            for key in ("hp", "atk", "def"):
+                stats[key] = int(stats[key] * 1.15)
+            stats["xp"] = int(stats["xp"] * 1.4)
             stats["gold"] = (int(stats["gold"][0] * 1.4), int(stats["gold"][1] * 1.4))
 
-        player_fighter = to_fighter(character, ctx.author.display_name, hp=hp_now)
+        player_fighter = to_fighter(character, interaction.user.display_name, hp=hp_now)
         if event == CURSED:
             player_fighter.crit = max(0.0, player_fighter.crit - 0.10)
 
@@ -108,7 +120,7 @@ class RPGDungeon(commands.Cog):
         result = simulate(player_fighter, monster_fighter)
         won = result["winner"] is player_fighter
 
-        await self.bot.db.set_character_hp(ctx.author.id, player_fighter.hp, now)
+        await self.bot.db.set_character_hp(interaction.user.id, player_fighter.hp, now)
         hp_line = f"\n**HP:** {player_fighter.hp} / {player_fighter.max_hp}"
 
         header_bits = []
@@ -122,10 +134,10 @@ class RPGDungeon(commands.Cog):
 
         if won:
             gold = random.randint(*stats["gold"])
-            await self.bot.db.update_balance(ctx.author.id, gold)
+            await self.bot.db.update_balance(interaction.user.id, gold)
             new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], stats["xp"])
-            await self.bot.db.set_character_level(ctx.author.id, new_level, new_xp)
-            await self.bot.db.record_game_result(ctx.author.id, 0, gold)
+            await self.bot.db.set_character_level(interaction.user.id, new_level, new_xp)
+            await self.bot.db.record_game_result(interaction.user.id, 0, gold)
 
             footer = f"\n\n🎉 **Victory!** +{fmt(gold)}  •  +{stats['xp']} XP"
             if levels_gained:
@@ -134,7 +146,7 @@ class RPGDungeon(commands.Cog):
             loot_text = ""
             if monster.loot_pool and random.random() < monster.loot_chance:
                 item_key = random.choice(monster.loot_pool)
-                await self.bot.db.add_rpg_item(ctx.author.id, item_key, 1)
+                await self.bot.db.add_rpg_item(interaction.user.id, item_key, 1)
                 loot_text = f"\n🎁 **Loot!** {EQUIPMENT[item_key].name} dropped."
 
             body = f"{header}You defeated the {monster_name}!\n\n{log_tail}{footer}{loot_text}{hp_line}"
@@ -145,7 +157,87 @@ class RPGDungeon(commands.Cog):
             color = discord.Color.red()
 
         view = StaticView(f"{d.emoji} {d.name}", body, color=color)
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
+
+    @app_commands.command(name="dungeonboss", description="Challenge a dungeon's boss for big rewards.")
+    @app_commands.describe(dungeon="Which dungeon's boss to fight")
+    async def dungeonboss(self, interaction: discord.Interaction, dungeon: DungeonKey):
+        character = await self.bot.db.get_character(interaction.user.id)
+        if not character:
+            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            return
+
+        d = DUNGEONS[dungeon]
+        if character["level"] < d.min_level:
+            await interaction.response.send_message(
+                f"⚠️ {d.name} recommends level {d.min_level}+. You're level {character['level']}."
+            )
+            return
+
+        now = datetime.datetime.utcnow()
+        player_stats = full_stats(character)
+        hp_now = current_hp(character, player_stats["hp"], now)
+        if hp_now <= 0:
+            await interaction.response.send_message(
+                "💀 You're too hurt to fight. Use `/heal` or wait for your HP to regenerate."
+            )
+            return
+
+        cooldown_key = f"boss_{dungeon}"
+        ok = await self.bot.db.try_consume_cooldown(
+            interaction.user.id, cooldown_key, datetime.timedelta(seconds=BOSS_COOLDOWN), now
+        )
+        if not ok:
+            until = await self.bot.db.get_cooldown(interaction.user.id, cooldown_key)
+            remaining = int((until - now).total_seconds())
+            await interaction.response.send_message(
+                f"⏳ {d.boss.name} isn't ready to be challenged again yet. Try again in "
+                f"{remaining // 60}m {remaining % 60}s."
+            )
+            return
+
+        stats = scaled_monster(d.boss, character["level"], d.min_level)
+        player_fighter = to_fighter(character, interaction.user.display_name, hp=hp_now)
+        boss_name = f"{d.boss.emoji} {d.boss.name}"
+        boss_fighter = Fighter(
+            name=boss_name, max_hp=stats["hp"], atk=stats["atk"], defense=stats["def"], crit=stats["crit"]
+        )
+
+        result = simulate(player_fighter, boss_fighter)
+        won = result["winner"] is player_fighter
+
+        await self.bot.db.set_character_hp(interaction.user.id, player_fighter.hp, now)
+        hp_line = f"\n**HP:** {player_fighter.hp} / {player_fighter.max_hp}"
+        log_tail = "\n".join(result["log"][-10:])
+
+        if won:
+            gold = random.randint(*stats["gold"])
+            await self.bot.db.update_balance(interaction.user.id, gold)
+            new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], stats["xp"])
+            await self.bot.db.set_character_level(interaction.user.id, new_level, new_xp)
+            await self.bot.db.record_game_result(interaction.user.id, 0, gold)
+            await self.bot.db.record_boss_kill(interaction.user.id, dungeon)
+            kills = await self.bot.db.get_boss_kills(interaction.user.id, dungeon)
+
+            footer = f"\n\n👑 **BOSS DEFEATED!** +{fmt(gold)}  •  +{stats['xp']} XP  •  Kills: {kills}"
+            if levels_gained:
+                footer += f"\n⬆️ **Level up!** You're now level {new_level}."
+
+            loot_text = ""
+            if d.boss.loot_pool and random.random() < d.boss.loot_chance:
+                item_key = random.choice(d.boss.loot_pool)
+                await self.bot.db.add_rpg_item(interaction.user.id, item_key, 1)
+                loot_text = f"\n🎁 **Loot!** {EQUIPMENT[item_key].name} dropped."
+
+            body = f"You defeated **{boss_name}**!\n\n{log_tail}{footer}{loot_text}{hp_line}"
+            color = discord.Color.gold()
+        else:
+            downed_text = "\n💀 You've been knocked out! Use `/heal` or wait to recover." if player_fighter.hp <= 0 else ""
+            body = f"**{boss_name}** was too strong...\n\n{log_tail}\n\n😢 No rewards this time.{hp_line}{downed_text}"
+            color = discord.Color.red()
+
+        view = StaticView(f"👑 {d.name} — Boss", body, color=color)
+        await interaction.response.send_message(view=view)
 
 
 async def setup(bot: commands.Bot):

@@ -1,7 +1,5 @@
 import random
 
-# Rolled once per /dungeon run before the fight, so no two runs play out the
-# same way even in the same dungeon against the same monster pool.
 NORMAL = "normal"
 TREASURE = "treasure"
 AMBUSH = "ambush"

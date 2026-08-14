@@ -7,8 +7,6 @@ SUITS = ["♠", "♥", "♦", "♣"]
 BACK_EMOJI = "<:7426playingcardbackside:1537551988689211412>"
 JOKER_EMOJI = "<:7882playingcardjoker:1537551990513475686>"
 
-# Custom card emojis uploaded via the Discord Developer Portal (assets/cards/).
-# Jack of hearts is missing from the uploaded set, so it falls back to plain text.
 CARD_EMOJIS = {
     ("2", "♠"): "<:8524playingcardspadestwo:1537552011774664854>",
     ("2", "♥"): "<:7102playingcardheartstwo:1537551919101247599>",
@@ -78,7 +76,6 @@ class Card:
 
     @property
     def rank_index(self) -> int:
-        """0 (2) through 12 (Ace) — ascending order, used by Hilo."""
         return RANKS.index(self.rank)
 
     @property

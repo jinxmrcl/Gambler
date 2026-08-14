@@ -23,7 +23,6 @@ def build_multipliers(rows: int, risk: str) -> list[float]:
 
 
 def drop_ball(rows: int) -> tuple[int, list[bool]]:
-    """Returns (bucket_index, path) where path[i] is True for a step to the right."""
     path = [random.random() < 0.5 for _ in range(rows)]
     bucket = sum(path)
     return bucket, path

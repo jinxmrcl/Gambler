@@ -13,7 +13,7 @@ from rpg.equipment import EQUIPMENT
 from rpg.leveling import prestige_and_level, title_for_level, xp_for_level
 from utils.economy import StaticView, fmt
 
-ClassKey = Literal["warrior", "mage", "rogue", "paladin"]
+ClassKey = Literal["warrior", "mage", "rogue", "paladin", "necromancer", "ranger", "berserker"]
 HEAL_COST_PER_HP = 3
 
 
@@ -32,45 +32,45 @@ class RPGCharacter(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="rpgstart", description="Create your RPG character.")
+    @app_commands.command(name="rpgstart", description="Create your RPG character.")
     @app_commands.describe(character_class="Which class to play")
-    async def rpgstart(self, ctx: commands.Context, character_class: ClassKey):
-        existing = await self.bot.db.get_character(ctx.author.id)
+    async def rpgstart(self, interaction: discord.Interaction, character_class: ClassKey):
+        existing = await self.bot.db.get_character(interaction.user.id)
         if existing:
             c = CLASSES[existing["class_key"]]
-            await ctx.send(
+            await interaction.response.send_message(
                 f"⚠️ You already have a {c.emoji} {c.name}. Use `/character` to view your sheet."
             )
             return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        await self.bot.db.ensure_user(interaction.user.id, self.bot.starting_balance)
         starting_hp = base_stats_at_level(character_class, 1)["hp"]
-        await self.bot.db.create_character(ctx.author.id, character_class, starting_hp)
+        await self.bot.db.create_character(interaction.user.id, character_class, starting_hp)
         c = CLASSES[character_class]
         view = StaticView(
             "⚔️ Character Created",
-            f"Welcome, **{ctx.author.display_name}** the {c.emoji} {c.name}!\n{c.description}\n\n"
+            f"Welcome, **{interaction.user.display_name}** the {c.emoji} {c.name}!\n{c.description}\n\n"
             f"Skill: *{c.skill_name}* — {c.skill_desc}\n\n"
             f"Head to `/dungeon` to start fighting, or `/rpgshop` to gear up.",
             color=discord.Color.gold(),
         )
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
 
-    @commands.hybrid_command(name="classes", description="Shows the available RPG classes.")
-    async def classes(self, ctx: commands.Context):
+    @app_commands.command(name="classes", description="Shows the available RPG classes.")
+    async def classes(self, interaction: discord.Interaction):
         view = StaticView("📜 Classes", _class_list_text())
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
 
-    @commands.hybrid_command(name="character", aliases=["char"], description="Shows your (or another player's) character sheet.")
+    @app_commands.command(name="character", description="Shows your (or another player's) character sheet.")
     @app_commands.describe(user="Optional: view another player's character")
-    async def character(self, ctx: commands.Context, user: discord.User | None = None):
-        target = user or ctx.author
+    async def character(self, interaction: discord.Interaction, user: discord.User | None = None):
+        target = user or interaction.user
         character = await self.bot.db.get_character(target.id)
         if not character:
-            if target == ctx.author:
-                await ctx.send("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            if target == interaction.user:
+                await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             else:
-                await ctx.send(f"⚠️ {target.mention} doesn't have a character yet.")
+                await interaction.response.send_message(f"⚠️ {target.mention} doesn't have a character yet.")
             return
 
         c = CLASSES[character["class_key"]]
@@ -82,11 +82,14 @@ class RPGCharacter(commands.Cog):
 
         weapon = EQUIPMENT.get(character["equipped_weapon"])
         armor = EQUIPMENT.get(character["equipped_armor"])
-        weapon_text = weapon.name if weapon else "*None*"
-        armor_text = armor.name if armor else "*None*"
+        accessory = EQUIPMENT.get(character.get("equipped_accessory"))
+        weapon_text = f"{weapon.name} (+{character['weapon_enchant']})" if weapon else "*None*"
+        armor_text = f"{armor.name} (+{character['armor_enchant']})" if armor else "*None*"
+        accessory_text = f"{accessory.name} (+{character['accessory_enchant']})" if accessory else "*None*"
 
         total_duels = character["wins"] + character["losses"]
         winrate = f"{character['wins'] / total_duels * 100:.0f}%" if total_duels else "—"
+        boss_kills = await self.bot.db.total_boss_kills(target.id)
 
         if prestige > 0:
             level_line = f"{prestige_badge(prestige)} **Prestige {prestige}, Level {level_in_prestige}** (total level {character['level']})"
@@ -103,20 +106,20 @@ class RPGCharacter(commands.Cog):
             "",
             f"**Weapon:** {weapon_text}",
             f"**Armor:** {armor_text}",
+            f"**Accessory:** {accessory_text}",
             "",
             f"**Duels:** {character['wins']}W / {character['losses']}L ({winrate})",
+            f"**Boss Kills:** {boss_kills}",
         ]
 
         view = StaticView(f"📖 {target.display_name}'s Character", "\n".join(lines))
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
 
-    @commands.hybrid_command(
-        name="heal", description="Pay gold to restore HP instantly (also revives you from 0 HP)."
-    )
-    async def heal(self, ctx: commands.Context):
-        character = await self.bot.db.get_character(ctx.author.id)
+    @app_commands.command(name="heal", description="Pay gold to restore HP instantly (also revives you from 0 HP).")
+    async def heal(self, interaction: discord.Interaction):
+        character = await self.bot.db.get_character(interaction.user.id)
         if not character:
-            await ctx.send("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
 
         stats = full_stats(character)
@@ -125,26 +128,26 @@ class RPGCharacter(commands.Cog):
         missing = stats["hp"] - hp_now
 
         if missing <= 0:
-            await ctx.send("✨ You're already at full HP.")
+            await interaction.response.send_message("✨ You're already at full HP.")
             return
 
         cost = missing * HEAL_COST_PER_HP
         try:
-            await self.bot.db.update_balance(ctx.author.id, -cost)
+            await self.bot.db.update_balance(interaction.user.id, -cost)
         except InsufficientFunds:
-            await ctx.send(
+            await interaction.response.send_message(
                 f"⚠️ Healing {missing} HP costs {fmt(cost)}, and you don't have enough balance."
             )
             return
 
-        await self.bot.db.set_character_hp(ctx.author.id, stats["hp"], now)
+        await self.bot.db.set_character_hp(interaction.user.id, stats["hp"], now)
         revived = hp_now <= 0
         view = StaticView(
             "💚 Healed" + (" & Revived" if revived else ""),
             f"Restored {missing} HP for {fmt(cost)}.\n**HP:** {stats['hp']} / {stats['hp']}",
             color=discord.Color.green(),
         )
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
 
 
 async def setup(bot: commands.Bot):

@@ -3,7 +3,7 @@ from discord import ui
 from discord.ext import commands
 
 CURRENCY = "🪙"
-HOUSE_EDGE = 0.03  # 3% house edge applied to fair multipliers across all games
+HOUSE_EDGE = 0.03
 
 
 def fmt(amount: int) -> str:
@@ -17,9 +17,6 @@ class BetError(commands.CheckFailure):
 
 
 async def resolve_bet(bot: commands.Bot, user_id: int, raw: str, *, min_bet: int = 1) -> int:
-    """Parses a bet string ('all', 'half', '50%', or a plain number) against the
-    user's current balance and returns the bet amount. Raises BetError on any
-    invalid or unaffordable bet."""
     balance = await bot.db.get_balance(user_id)
     raw = raw.strip().lower()
 
@@ -50,10 +47,6 @@ async def resolve_bet(bot: commands.Bot, user_id: int, raw: str, *, min_bet: int
 
 
 async def resolve_display_name(bot: commands.Bot, guild: discord.Guild | None, user_id: int) -> str:
-    """Best-effort name lookup for leaderboards: guild nickname if the member
-    is cached, then the bot's global user cache, then one API fetch as a last
-    resort, falling back to a raw mention only if the user can't be found at
-    all (e.g. a deleted account)."""
     if guild:
         member = guild.get_member(user_id)
         if member:
@@ -73,10 +66,6 @@ async def resolve_display_name(bot: commands.Bot, guild: discord.Guild | None, u
 
 
 def game_container(title: str, body: str = "", *, color: discord.Color | None = None) -> tuple[ui.Container, ui.TextDisplay]:
-    """Builds a Components V2 Container with a single mutable TextDisplay.
-
-    Returns (container, text_display) — mutate text_display.content and re-send
-    the view to update the rendered message."""
     heading = f"## {title}"
     text = ui.TextDisplay(f"{heading}\n{body}" if body else heading)
     container = ui.Container(text, accent_colour=color or discord.Color.blurple())
@@ -84,7 +73,6 @@ def game_container(title: str, body: str = "", *, color: discord.Color | None = 
 
 
 class StaticView(ui.LayoutView):
-    """A one-shot, non-interactive Components V2 message (no buttons)."""
 
     def __init__(self, title: str, body: str = "", *, color: discord.Color | None = None):
         super().__init__(timeout=None)
