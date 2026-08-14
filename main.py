@@ -29,6 +29,9 @@ DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 RESTART_STATE_PATH = DATA_DIR / "restart_state.json"
 
+LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+
 HOT_RELOAD = os.getenv("HOT_RELOAD", "true").lower() not in ("0", "false", "no")
 HOT_RELOAD_DIRS = ("commands", "events", "rpg", "utils", "database")
 HOT_RELOAD_POLL_SECONDS = 1.5
@@ -46,13 +49,7 @@ def _scan_source_mtimes() -> dict[Path, float]:
 
 
 def setup_discord_logger(log_filename: str = "bot_debug.log") -> None:
-    """File-based debug logging, in addition to the console output used
-    during local runs.
-
-    `log_filename` gets everything DEBUG+ from this run only (truncated on
-    every restart). `debug.log` accumulates ERROR+ across restarts — since it
-    appends rather than truncates, it survives the process dying and is what
-    a startup-state check could tail to report what killed the last run."""
+    
     formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
     root = logging.getLogger()
@@ -63,12 +60,12 @@ def setup_discord_logger(log_filename: str = "bot_debug.log") -> None:
     console_handler.setFormatter(formatter)
     root.addHandler(console_handler)
 
-    debug_file_handler = logging.FileHandler(log_filename, mode="w", encoding="utf-8")
+    debug_file_handler = logging.FileHandler(LOGS_DIR / log_filename, mode="w", encoding="utf-8")
     debug_file_handler.setLevel(logging.DEBUG)
     debug_file_handler.setFormatter(formatter)
     root.addHandler(debug_file_handler)
 
-    error_handler = logging.FileHandler("debug.log", encoding="utf-8")
+    error_handler = logging.FileHandler(LOGS_DIR / "debug.log", encoding="utf-8")
     error_handler.setLevel(logging.ERROR)
     error_handler.setFormatter(formatter)
     root.addHandler(error_handler)
@@ -78,7 +75,7 @@ def setup_discord_logger(log_filename: str = "bot_debug.log") -> None:
 
 
 def _recent_error_lines(limit: int = 8) -> str:
-    path = Path("debug.log")
+    path = LOGS_DIR / "debug.log"
     if not path.exists():
         return ""
     try:
@@ -141,9 +138,6 @@ class GamblerBot(commands.Bot):
             pass
 
     async def report_startup_state(self) -> None:
-        """Announces to RESTART_LOG_CHANNEL_ID whether the previous run shut
-        down cleanly or crashed. Guarded so it only fires once per process,
-        since on_ready can refire on gateway reconnects."""
         if self._startup_reported:
             return
         self._startup_reported = True
@@ -203,14 +197,6 @@ class GamblerBot(commands.Bot):
             log.info("Hot reload enabled — watching %s for changes.", ", ".join(HOT_RELOAD_DIRS))
 
     async def _hot_reload_loop(self) -> None:
-        """Polls source files for changes and reloads them live, so local dev
-        iteration doesn't require restarting (and re-authing) the whole bot.
-
-        Plain modules (rpg/, utils/, database/) are reloaded via importlib
-        first so cogs pick up their fresh code, then every loaded cog
-        extension is reloaded so its own top-level imports re-run against
-        that fresh code, then the command tree is re-synced in case any
-        signatures or descriptions changed."""
         mtimes = _scan_source_mtimes()
         while True:
             await asyncio.sleep(HOT_RELOAD_POLL_SECONDS)
@@ -271,8 +257,6 @@ def _install_signal_handlers(loop: asyncio.AbstractEventLoop, bot: GamblerBot) -
         try:
             loop.add_signal_handler(sig, lambda: asyncio.ensure_future(bot.graceful_shutdown()))
         except (NotImplementedError, AttributeError):
-            # Not supported on Windows; deployments that need graceful-shutdown
-            # announcements should run this under a Unix-like environment.
             pass
 
 
@@ -289,4 +273,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nShutting down.")

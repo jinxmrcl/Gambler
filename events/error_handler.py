@@ -28,9 +28,6 @@ def _friendly_message(error: Exception) -> str | None:
     if isinstance(error, commands.CommandNotFound):
         return None
     if isinstance(error, commands.UserInputError):
-        # Catches every other converter/parsing failure (bad union args, too
-        # many arguments, unclosed quotes, etc.) with a reasonable fallback
-        # instead of falling through to the scary "something went wrong".
         return "One of the provided values is invalid."
     return None
 
@@ -51,9 +48,6 @@ class ErrorHandler(commands.Cog):
             try:
                 await ctx.send(f"⚠️ {message}")
             except (discord.HTTPException, aiohttp.ClientError, ConnectionError, OSError):
-                # Best-effort: if we can't even deliver the error notification
-                # (network blip, Discord hiccup), don't let that itself blow
-                # up as an unhandled exception in the event loop.
                 log.warning("Failed to send error message for command %s", ctx.command)
 
     async def on_app_command_error(

@@ -1,3 +1,4 @@
+import datetime
 import random
 
 import discord
@@ -12,6 +13,7 @@ from utils.ratelimit import limited_edit
 
 DUEL_GOLD_REWARD = (75, 150)
 DUEL_XP_REWARD = 40
+DUEL_COOLDOWN = 60
 
 
 class AcceptButton(ui.Button):
@@ -69,6 +71,12 @@ class DuelView(ui.LayoutView):
 
         challenger_char = await self.cog.bot.db.get_character(self.challenger.id)
         opponent_char = await self.cog.bot.db.get_character(self.opponent.id)
+        if challenger_char is None or opponent_char is None:
+            self.text.content = "## ⚔️ Duel Challenge\n⚠️ One of you no longer has a character."
+            self.container.accent_colour = discord.Color.red()
+            await interaction.response.edit_message(view=self)
+            self.stop()
+            return
 
         fighter_a = to_fighter(challenger_char, self.challenger.display_name)
         fighter_b = to_fighter(opponent_char, self.opponent.display_name)
@@ -121,42 +129,54 @@ class RPGArena(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="duel", description="Challenge another player to a PvP duel.")
+    @app_commands.command(name="duel", description="Challenge another player to a PvP duel.")
     @app_commands.describe(user="Who to challenge")
-    async def duel(self, ctx: commands.Context, user: discord.User):
-        if user.bot or user.id == ctx.author.id:
-            await ctx.send("⚠️ Invalid duel target.")
+    async def duel(self, interaction: discord.Interaction, user: discord.User):
+        if user.bot or user.id == interaction.user.id:
+            await interaction.response.send_message("⚠️ Invalid duel target.")
             return
 
-        challenger_char = await self.bot.db.get_character(ctx.author.id)
+        challenger_char = await self.bot.db.get_character(interaction.user.id)
         if not challenger_char:
-            await ctx.send("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
 
         opponent_char = await self.bot.db.get_character(user.id)
         if not opponent_char:
-            await ctx.send(f"⚠️ {user.mention} doesn't have a character yet.")
+            await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
             return
 
-        view = DuelView(self, ctx.author, user)
-        message = await ctx.send(view=view)
-        view.message = message
+        now = datetime.datetime.utcnow()
+        ok = await self.bot.db.try_consume_cooldown(
+            interaction.user.id, "duel", datetime.timedelta(seconds=DUEL_COOLDOWN), now
+        )
+        if not ok:
+            until = await self.bot.db.get_cooldown(interaction.user.id, "duel")
+            remaining = int((until - now).total_seconds())
+            await interaction.response.send_message(
+                f"⏳ You're still cooling down from your last duel. Try again in {remaining}s."
+            )
+            return
 
-    @commands.hybrid_command(name="arena", description="Shows the top duelists.")
+        view = DuelView(self, interaction.user, user)
+        await interaction.response.send_message(view=view)
+        view.message = await interaction.original_response()
+
+    @app_commands.command(name="arena", description="Shows the top duelists.")
     @app_commands.describe(limit="Number of players (default: 10)")
-    async def arena(self, ctx: commands.Context, limit: app_commands.Range[int, 1, 25] = 10):
+    async def arena(self, interaction: discord.Interaction, limit: app_commands.Range[int, 1, 25] = 10):
         rows = await self.bot.db.top_arena(limit)
         if not rows:
-            await ctx.send("There are no duelists yet.")
+            await interaction.response.send_message("There are no duelists yet.")
             return
 
         lines = []
         for i, (user_id, wins, losses) in enumerate(rows, start=1):
-            name = await resolve_display_name(self.bot, ctx.guild, user_id)
+            name = await resolve_display_name(self.bot, interaction.guild, user_id)
             lines.append(f"**{i}.** {name} — {wins}W / {losses}L")
 
         view = StaticView("🏆 Arena Leaderboard", "\n".join(lines))
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
 
 
 async def setup(bot: commands.Bot):

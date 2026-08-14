@@ -7,8 +7,11 @@ venv/
 *.egg-info/
 .DS_Store
 /scripts/
-bot_debug.log
-debug.log
-/data/ 
-*log*
+/data/
+/logs/
 /graphify-out/
+.obsidian/
+*.obsidian.vault
+*.log
+.vscode/
+.idea/

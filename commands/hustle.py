@@ -61,10 +61,10 @@ ROB_SUCCESS_CHANCE = 0.45
 ROB_STEAL_RANGE = (0.10, 0.25)
 ROB_FINE_RANGE = (100, 300)
 
-WORK_COOLDOWN = 60      # was 1800 (30m); reduced by 30m, floored so it isn't spammable
-CRIME_COOLDOWN = 900    # was 2700 (45m) -> 15m
-SLUT_COOLDOWN = 900     # was 2700 (45m) -> 15m
-ROB_COOLDOWN = 1800     # was 3600 (60m) -> 30m
+WORK_COOLDOWN = 60
+CRIME_COOLDOWN = 900
+SLUT_COOLDOWN = 900
+ROB_COOLDOWN = 1800
 
 
 def _format_remaining(delta: datetime.timedelta) -> str:
@@ -83,9 +83,6 @@ class Hustle(commands.Cog):
         self.bot = bot
 
     async def _claim_cooldown(self, ctx: commands.Context, action: str, seconds: int) -> bool:
-        """Atomically claims `action`'s cooldown. Returns True if it was free
-        (and the cooldown now started); sends a message and returns False if
-        it's still on cooldown. Persisted in the DB so restarts don't reset it."""
         now = datetime.datetime.utcnow()
         ok = await self.bot.db.try_consume_cooldown(
             ctx.author.id, action, datetime.timedelta(seconds=seconds), now

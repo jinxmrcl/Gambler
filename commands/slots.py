@@ -23,9 +23,6 @@ SYMBOLS = [
     ("7️⃣", 3, 50),
 ]
 
-# Custom card-style symbol emojis uploaded via scripts/upload_slot_emojis.py
-# (assets/slots/). Falls back to the plain unicode emoji if the manifest is
-# missing or a symbol hasn't been uploaded yet.
 _MANIFEST_PATH = Path(__file__).parent.parent / "assets" / "slots" / "manifest.json"
 _SYMBOL_KEYS = {
     "🍒": "cherry",

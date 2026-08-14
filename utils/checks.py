@@ -34,9 +34,6 @@ def game_enabled(game: str):
 
 
 async def gamble_channel_check(ctx: commands.Context) -> bool:
-    """Global bot-wide check: if a guild has designated a single gamble
-    channel via /set-gamblechannel, every command is restricted to it —
-    except for administrators, who can always use the bot to reconfigure it."""
     if ctx.guild is None:
         return True
     if isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.administrator:

@@ -23,6 +23,7 @@ class Fighter:
 def _hit(attacker: Fighter, defender: Fighter) -> tuple[int, bool, str]:
     is_crit = random.random() < attacker.crit
     dmg_mult = 1.0
+    pen_mult = 1.0
     note = ""
 
     if not attacker.skill_used:
@@ -34,18 +35,35 @@ def _hit(attacker: Fighter, defender: Fighter) -> tuple[int, bool, str]:
             dmg_mult *= 1.5
             attacker.skill_used = True
             note = " 🗡️*Backstab!*"
+        elif attacker.skill_key == "piercing_shot":
+            pen_mult = 0.35
+            attacker.skill_used = True
+            note = " 🏹*Piercing Shot!*"
+
+    if attacker.skill_key == "bloodlust" and attacker.hp / attacker.max_hp < 0.5:
+        dmg_mult *= 1.15
+        note += " 🪓*Bloodlust!*"
 
     variance = random.uniform(0.85, 1.15)
     raw = attacker.atk * variance * dmg_mult * (2.0 if is_crit else 1.0)
 
     defense_mult = 1.0
     if not defender.skill_used and defender.skill_key == "shield_wall":
-        defense_mult = 3.0
+        defense_mult = 2.0
         defender.skill_used = True
         note += " 🛡️*Shield Wall!*"
 
-    dmg = max(1, int(raw - defender.defense * 0.5 * defense_mult))
+    effective_defense = defender.defense * defense_mult * pen_mult
+    mitigation = effective_defense / (effective_defense + attacker.atk)
+    dmg = max(1, round(raw * (1 - mitigation)))
     defender.hp = max(0, defender.hp - dmg)
+
+    if attacker.skill_key == "life_drain" and not attacker.skill_used:
+        healed = dmg * 2 // 3
+        attacker.hp = min(attacker.max_hp, attacker.hp + healed)
+        attacker.skill_used = True
+        note += f" 💀*Life Drain!* (+{healed} HP)"
+
     return dmg, is_crit, note
 
 
@@ -63,8 +81,6 @@ def _maybe_heal(fighter: Fighter, log: list[str]) -> None:
 
 
 def simulate(fighter_a: Fighter, fighter_b: Fighter) -> dict:
-    """Turn-based fight, A swings first. Returns a log and the winner
-    (None on a draw, which only happens if MAX_ROUNDS is exhausted)."""
     log: list[str] = []
     turn = 0
     while fighter_a.hp > 0 and fighter_b.hp > 0 and turn < MAX_ROUNDS * 2:
