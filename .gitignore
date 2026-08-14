@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+/secrets/
 .claude/
 __pycache__/
 *.pyc
@@ -18,3 +19,4 @@ Thumbs.db
 *.log
 .vscode/
 .idea/
+/deploy/

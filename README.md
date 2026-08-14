@@ -128,18 +128,22 @@ only — reachable from the bot process on the same VPS, never from the public i
    npm install -g pm2
    ```
 
-2. Create `.env`:
+2. Create `.env` and generate the DB secret files:
 
    ```bash
    cp .env.example .env
+   bash deploy/init_secrets.sh
    ```
 
-   Fill in `DISCORD_TOKEN`, and generate strong random values for `MYSQL_ROOT_PASSWORD`
-   and `DB_PASSWORD` (`openssl rand -base64 24`). Set `DB_HOST=127.0.0.1`,
-   `DB_USER=gambler_bot`, `DB_PORT=3306` to match the Docker MySQL setup below — unless
+   Fill in `DISCORD_TOKEN` in `.env`. The DB password itself is never stored in `.env` —
+   `init_secrets.sh` generates `secrets/mysql_root_password.txt` and
+   `secrets/db_password.txt` (gitignored), which `docker-compose.yml` reads directly via
+   Docker secrets. Point `.env`'s `DB_PASSWORD_FILE` at the same `db_password.txt` path it
+   printed, and set `DB_HOST=127.0.0.1`, `DB_USER=gambler_bot`, `DB_PORT=3306` — unless
    the VPS already has its own MySQL/MariaDB bound to port 3306 (`sudo ss -tlnp | grep
    3306` to check), in which case use `DB_PORT=3307` and update the port mapping in
-   `docker-compose.yml` to `127.0.0.1:3307:3306` to match.
+   `docker-compose.yml` to `127.0.0.1:3307:3306` to match. Using the same file on both
+   sides means the bot and MySQL can never end up with mismatched credentials.
 
 3. Start MySQL:
 

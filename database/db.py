@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 import warnings
@@ -21,29 +22,41 @@ class Database:
         self._db = db
         self.pool: aiomysql.Pool | None = None
 
-    async def connect(self) -> None:
-        try:
-            self.pool = await aiomysql.create_pool(
-                host=self._host,
-                port=self._port,
-                user=self._user,
-                password=self._password,
-                db=self._db,
-                autocommit=True,
-                minsize=1,
-                maxsize=10,
-                connect_timeout=10,
-                pool_recycle=3600,
-            )
-        except Exception:
-            log.exception(
-                "Could not connect to MySQL at %s:%s (db=%s). Check DB_HOST/DB_PORT/DB_USER/"
-                "DB_PASSWORD/DB_NAME in your .env.",
-                self._host,
-                self._port,
-                self._db,
-            )
-            raise
+    async def connect(self, *, retries: int = 5, retry_delay: float = 3.0) -> None:
+        for attempt in range(1, retries + 1):
+            try:
+                self.pool = await aiomysql.create_pool(
+                    host=self._host,
+                    port=self._port,
+                    user=self._user,
+                    password=self._password,
+                    db=self._db,
+                    autocommit=True,
+                    minsize=1,
+                    maxsize=10,
+                    connect_timeout=10,
+                    pool_recycle=3600,
+                )
+                break
+            except Exception:
+                if attempt == retries:
+                    log.exception(
+                        "Could not connect to MySQL at %s:%s (db=%s) after %d attempts. Check "
+                        "DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME in your .env.",
+                        self._host,
+                        self._port,
+                        self._db,
+                        retries,
+                    )
+                    raise
+                log.warning(
+                    "MySQL connection attempt %d/%d failed, retrying in %.0fs (server may still "
+                    "be starting up)...",
+                    attempt,
+                    retries,
+                    retry_delay,
+                )
+                await asyncio.sleep(retry_delay)
         await self._init_tables()
 
     async def close(self) -> None:
@@ -178,8 +191,6 @@ class Database:
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
-                # Retrofit onto any cooldowns table created before boss cooldown keys
-                # (e.g. "boss_nightmare_realm", 21 chars) needed more than VARCHAR(16).
                 await cur.execute("ALTER TABLE cooldowns MODIFY COLUMN action VARCHAR(32) NOT NULL")
                 await cur.execute(
                     """
