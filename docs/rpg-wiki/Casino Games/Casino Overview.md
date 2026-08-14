@@ -2,7 +2,7 @@
 
 All games share a fixed **3% house edge** (`HOUSE_EDGE` in `utils/economy.py`), applied to fair payout multipliers so every game is mathematically transparent.
 
-Server admins can disable individual games per-guild — see [[../Admin & Settings/Server Settings|Server Settings]]. Toggleable games: `blackjack`, `mines`, `hilo`, `plinko`, `limbo`, `keno`, `slots`, `roulette`, `dice`.
+Server admins can disable individual games per-guild — see [[../Admin & Settings/Server Settings|Server Settings]]. Toggleable games: `blackjack`, `mines`, `hilo`, `plinko`, `limbo`, `keno`, `slots`, `roulette`, `dice`, `soloflip`, `scratchcard`, `horserace`, `baccarat`.
 
 ## Games
 - 🃏 [[Casino Games/Blackjack]]
@@ -14,4 +14,7 @@ Server admins can disable individual games per-guild — see [[../Admin & Settin
 - 🎰 [[Casino Games/Slots]]
 - 🎡 [[Casino Games/Roulette]]
 - 🎲 [[Casino Games/Dice]]
-- 🪙 [[Casino Games/Coinflip]]
+- 🪙 [[Casino Games/Coinflip]] (PvP + Solo)
+- 🎫 [[Casino Games/Scratchcard]]
+- 🏇 [[Casino Games/Horse Race]]
+- 🎴 [[Casino Games/Baccarat]]
