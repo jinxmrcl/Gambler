@@ -114,6 +114,60 @@ configured Discord channel.
    On startup, all cogs in `commands/` and `events/` are loaded automatically and slash
    commands are synced with Discord.
 
+## Deploying to a VPS
+
+MySQL runs in Docker; the bot itself runs natively under [pm2](https://pm2.keymetrics.dev/)
+so `git pull` + a pm2 restart is all a routine update needs. MySQL is bound to `127.0.0.1`
+only — reachable from the bot process on the same VPS, never from the public internet.
+
+1. Get the code onto the VPS (`git clone` this repo, or `scp` it over), install Docker
+   and pm2 (Python deps are handled automatically — see below):
+
+   ```bash
+   curl -fsSL https://get.docker.com | sh
+   npm install -g pm2
+   ```
+
+2. Create `.env`:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Fill in `DISCORD_TOKEN`, and generate strong random values for `MYSQL_ROOT_PASSWORD`
+   and `DB_PASSWORD` (`openssl rand -base64 24`). Set `DB_HOST=127.0.0.1`,
+   `DB_USER=gambler_bot`, `DB_PORT=3306` to match the Docker MySQL setup below — unless
+   the VPS already has its own MySQL/MariaDB bound to port 3306 (`sudo ss -tlnp | grep
+   3306` to check), in which case use `DB_PORT=3307` and update the port mapping in
+   `docker-compose.yml` to `127.0.0.1:3307:3306` to match.
+
+3. Start MySQL:
+
+   ```bash
+   docker compose up -d mysql
+   ```
+
+4. Start the bot under pm2:
+
+   ```bash
+   bash deploy/install_pm2.sh
+   ```
+
+   This starts the bot as pm2 process `GamblerV2` (auto-restart on crash, daily restart at
+   4am via `cron_restart`, see `deploy/ecosystem.config.js`), runs `pm2 save`, and posts a
+   ✅/❌ status message to `RESTART_LOG_CHANNEL_ID` if it's set in `.env`. Run
+   `pm2 startup` once afterward (and follow the printed command) so pm2 itself — and
+   everything it manages — comes back up after a VPS reboot.
+
+   On first run, `main.py` bootstraps its own `venv/` and installs `requirements.txt`
+   into it automatically before importing anything third-party, then relaunches itself
+   inside that venv — no manual `pip install` step needed, and later restarts are a
+   no-op since the venv already exists.
+
+Both MySQL (`restart: unless-stopped`) and the bot (pm2 `autorestart`) recover
+automatically from a crash; pm2's `cron_restart` additionally restarts the bot process
+daily at 4am. Useful commands: `pm2 status`, `pm2 logs GamblerV2`, `pm2 restart GamblerV2`.
+
 ## Documentation
 
 An 83-note wiki at [`docs/rpg-wiki/`](docs/rpg-wiki) documents every system in the bot in
