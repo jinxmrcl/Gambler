@@ -1,3 +1,55 @@
+# ── Self-bootstrap: create venv + install requirements on first run ───────────
+# Runs BEFORE any third-party import (uses stdlib only), then relaunches the bot
+# inside the venv. If you already run ./venv/bin/python3 main.py it's a no-op.
+def _bootstrap_venv():
+    import os, sys, subprocess
+    root = os.path.dirname(os.path.abspath(__file__))
+    venv_dir = os.path.join(root, "venv")
+    bindir = "Scripts" if os.name == "nt" else "bin"
+    vpy = os.path.join(venv_dir, bindir, "python.exe" if os.name == "nt" else "python")
+
+    # Already running inside the project venv → carry on.
+    if os.path.abspath(sys.prefix) == os.path.abspath(venv_dir):
+        return
+    # Guard against an exec loop if venv detection ever fails, or an explicit opt-out.
+    if os.environ.get("_GAMBLER_BOOTSTRAPPED") == "1" or os.environ.get("GAMBLER_NO_BOOTSTRAP") == "1":
+        return
+
+    fresh = not os.path.exists(vpy)
+    try:
+        if fresh:
+            print("[bootstrap] No venv found — creating one…", flush=True)
+            subprocess.check_call([sys.executable, "-m", "venv", venv_dir])
+        req = os.path.join(root, "requirements.txt")
+        # Only install on a fresh venv (or when asked) so normal restarts stay fast.
+        if os.path.exists(req) and (fresh or os.environ.get("GAMBLER_INSTALL_DEPS") == "1"):
+            print("[bootstrap] Installing requirements…", flush=True)
+            subprocess.check_call([vpy, "-m", "pip", "install", "--upgrade", "pip", "-q"])
+            subprocess.check_call([vpy, "-m", "pip", "install", "-q", "-r", req])
+    except Exception as exc:
+        print(f"[bootstrap] setup failed ({exc}); continuing with current interpreter.", flush=True)
+        return  # let the imports below surface a clear error if deps are missing
+
+    os.environ["_GAMBLER_BOOTSTRAPPED"] = "1"
+    cmd = [vpy, os.path.abspath(__file__), *sys.argv[1:]]
+    if os.name == "nt":
+        print("[bootstrap] Launching inside venv…", flush=True)
+        raise SystemExit(subprocess.call(cmd))
+    # Linux/macOS: restore the executable bit (Syncthing tends to strip it) then exec.
+    try:
+        bindir_path = os.path.dirname(vpy)
+        for f in os.listdir(bindir_path):
+            fp = os.path.join(bindir_path, f)
+            if os.path.isfile(fp):
+                os.chmod(fp, 0o755)
+    except OSError:
+        pass
+    print("[bootstrap] Launching inside venv…", flush=True)
+    os.execv(vpy, cmd)
+
+
+_bootstrap_venv()
+
 import asyncio
 import importlib
 import json

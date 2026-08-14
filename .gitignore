@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .claude/
 __pycache__/
 *.pyc
@@ -6,6 +8,7 @@ __pycache__/
 venv/
 *.egg-info/
 .DS_Store
+Thumbs.db
 /scripts/
 /data/
 /logs/
