@@ -17,7 +17,7 @@ games, a full virtual economy (bank, shop, trading, marriage, lottery, robbing),
 from-scratch RPG (7 classes, 16 dungeons, level 1-1500 with prestige), and
 MySQL-backed persistence.
 
-📊 **~5,900 lines of Python** across 47 files.
+📊 **~7,000 lines of Python** across 48 files.
 
 ## Features
 
@@ -252,7 +252,8 @@ Requires the **Administrator** permission on the server.
 - `togglechannel <add|remove|clear>` — restrict games to specific channels
 
 ### Misc
-- `help` — overview of all commands
+- `help` — interactive command browser with a category dropdown (economy, games, RPG,
+  admin, etc.) instead of one long wall of text
 
 ### Games
 All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).

@@ -106,9 +106,15 @@ class Marriage(commands.Cog):
     @commands.hybrid_command(name="marry", description="Propose marriage to another player.")
     @app_commands.describe(user="Who to propose to")
     async def marry(self, ctx: commands.Context, user: discord.User):
-        if user.bot or user.id == ctx.author.id:
-            await ctx.send("⚠️ Invalid proposal target.")
+        if user.bot:
+            await ctx.send("⚠️ You can't propose to a bot.")
             return
+        if user.id == ctx.author.id:
+            await ctx.send("⚠️ You can't propose to yourself.")
+            return
+
+        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
 
         if await self.bot.db.get_marriage(ctx.author.id) is not None:
             await ctx.send("⚠️ You're already married. Use `/divorce` first.")

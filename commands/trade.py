@@ -170,8 +170,11 @@ class Trade(commands.Cog):
         want: TradeAsset,
         want_quantity: app_commands.Range[int, 1],
     ):
-        if user.bot or user.id == ctx.author.id:
-            await ctx.send("⚠️ Invalid trade partner.")
+        if user.bot:
+            await ctx.send("⚠️ You can't trade with a bot.")
+            return
+        if user.id == ctx.author.id:
+            await ctx.send("⚠️ You can't trade with yourself.")
             return
 
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)

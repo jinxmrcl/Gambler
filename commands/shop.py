@@ -83,8 +83,11 @@ class Shop(commands.Cog):
     async def gift(
         self, ctx: commands.Context, user: discord.User, item: ItemKey, quantity: app_commands.Range[int, 1, 99] = 1
     ):
-        if user.bot or user.id == ctx.author.id:
-            await ctx.send("⚠️ Invalid recipient.")
+        if user.bot:
+            await ctx.send("⚠️ You can't gift items to a bot.")
+            return
+        if user.id == ctx.author.id:
+            await ctx.send("⚠️ You can't gift items to yourself.")
             return
 
         try:
