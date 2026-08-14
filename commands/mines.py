@@ -11,8 +11,17 @@ from utils.ratelimit import limited_edit
 DEFAULT_COLS = 5
 DEFAULT_ROWS = 4
 MIN_COLS, MAX_COLS = 2, 5
-MIN_ROWS, MAX_ROWS = 2, 4
-MAX_TOTAL_TILES = MAX_COLS * MAX_ROWS
+MIN_ROWS, MAX_ROWS = 2, 5
+
+
+def compute_total_tiles(rows: int, cols: int) -> int:
+    if rows < MAX_ROWS:
+        return rows * cols
+    last_row_cols = cols - 1 if cols == MAX_COLS else cols
+    return (rows - 1) * cols + last_row_cols
+
+
+MAX_TOTAL_TILES = compute_total_tiles(MAX_ROWS, MAX_COLS)
 
 
 def multiplier_for(safe_revealed: int, mines: int, total_tiles: int) -> float:
@@ -52,29 +61,35 @@ class MinesView(ui.LayoutView):
         self.mines = mines
         self.rows = rows
         self.cols = cols
-        self.total_tiles = rows * cols
+        self.total_tiles = compute_total_tiles(rows, cols)
         self.mine_positions = set(random.sample(range(self.total_tiles), mines))
         self.revealed = 0
         self.finished = False
         self.message: discord.Message | None = None
 
         self.container, self.text = game_container("💣 Mines", color=discord.Color.dark_gold())
+        self.cash_out_button = CashOutButton()
+        self.cash_out_button.disabled = True
 
+        needs_shared_row = rows >= MAX_ROWS
         self.tile_buttons: list[TileButton] = []
+        index = 0
         for r in range(rows):
             row = ui.ActionRow()
-            for c in range(cols):
-                index = r * cols + c
+            row_cols = cols - 1 if (needs_shared_row and r == rows - 1 and cols == MAX_COLS) else cols
+            for c in range(row_cols):
                 button = TileButton(index)
                 self.tile_buttons.append(button)
                 row.add_item(button)
+                index += 1
+            if needs_shared_row and r == rows - 1:
+                row.add_item(self.cash_out_button)
             self.container.add_item(row)
 
-        self.cash_out_button = CashOutButton()
-        self.cash_out_button.disabled = True
-        cash_row = ui.ActionRow()
-        cash_row.add_item(self.cash_out_button)
-        self.container.add_item(cash_row)
+        if not needs_shared_row:
+            cash_row = ui.ActionRow()
+            cash_row.add_item(self.cash_out_button)
+            self.container.add_item(cash_row)
 
         self.add_item(self.container)
         self.render()
@@ -191,7 +206,7 @@ class Mines(commands.Cog):
         cols: app_commands.Range[int, MIN_COLS, MAX_COLS] = DEFAULT_COLS,
         rows: app_commands.Range[int, MIN_ROWS, MAX_ROWS] = DEFAULT_ROWS,
     ):
-        total_tiles = cols * rows
+        total_tiles = compute_total_tiles(rows, cols)
         if mines >= total_tiles:
             await ctx.send(
                 f"⚠️ Too many mines for a {cols}x{rows} grid ({total_tiles} tiles). "

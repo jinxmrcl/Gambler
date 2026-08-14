@@ -77,6 +77,17 @@ class Admin(commands.Cog):
         )
         await ctx.send(view=view)
 
+    @commands.hybrid_command(name="restart", description="[Admin] Restart the bot process.")
+    @commands.has_permissions(administrator=True)
+    async def restart(self, ctx: commands.Context):
+        view = StaticView(
+            "🔁 Restarting",
+            "Restarting the bot now — back online in a few seconds.",
+            color=discord.Color.blue(),
+        )
+        await ctx.send(view=view)
+        await self.bot.graceful_shutdown()
+
     @app_commands.command(name="rpgsetlevel", description="[Admin] Set a player's RPG level (and optionally XP).")
     @app_commands.describe(user="Target user", level="New level (1-1500)", xp="XP toward the next level (default: 0)")
     @app_commands.checks.has_permissions(administrator=True)

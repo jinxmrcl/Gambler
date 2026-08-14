@@ -10,6 +10,9 @@ from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, StaticView, fmt, game_container, resolve_bet
 from utils.ratelimit import limited_edit
 
+BASE_WIN_CHANCE = (1 - HOUSE_EDGE) / 2
+WIN_CHANCE_JITTER = 0.02
+
 
 class AcceptButton(ui.Button):
     def __init__(self):
@@ -159,10 +162,10 @@ class Coinflip(commands.Cog):
         amount = await resolve_bet(self.bot, ctx.author.id, bet)
         await self.bot.db.update_balance(ctx.author.id, -amount)
 
-        result = random.choice(["heads", "tails"])
-        won = result == call
-        multiplier = 2 * (1 - HOUSE_EDGE)
-        payout = int(amount * multiplier) if won else 0
+        win_chance = random.uniform(BASE_WIN_CHANCE - WIN_CHANCE_JITTER, BASE_WIN_CHANCE + WIN_CHANCE_JITTER)
+        won = random.random() < win_chance
+        result = call if won else ("tails" if call == "heads" else "heads")
+        payout = amount * 2 if won else 0
         if payout:
             await self.bot.db.update_balance(ctx.author.id, payout)
         await self.bot.db.record_game_result(ctx.author.id, amount, payout)
