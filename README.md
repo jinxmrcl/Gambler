@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="assets/economy_bot_icon.png" width="120" alt="Economy Bot icon">
-
 ![Economy Bot](assets/economy_bot_banner_1.png)
 
 ![discord.py](https://img.shields.io/badge/discord.py-2.6%2B-5865F2?logo=discord&logoColor=white)
