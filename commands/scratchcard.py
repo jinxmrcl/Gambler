@@ -1,4 +1,3 @@
-import asyncio
 import math
 import random
 
@@ -6,12 +5,12 @@ import discord
 from discord import ui
 from discord.ext import commands
 
+from database.db import InsufficientFunds
 from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
 from utils.ratelimit import limited_edit
 
 RTP = 1 - HOUSE_EDGE
-REVEAL_DELAY = 0.3
 GRID_SIZE = 9
 MATCH_THRESHOLD = 4
 HIDDEN = "❔"
@@ -83,27 +82,109 @@ def evaluate(grid: list[str], bet: int) -> tuple[int, str | None]:
     return int(bet * PAYOUTS[winner]), winner
 
 
-def render_grid(grid: list[str], revealed: set[int]) -> str:
-    cells = [grid[i] if i in revealed else HIDDEN for i in range(GRID_SIZE)]
-    return "\n".join(" ".join(cells[r * 3 : r * 3 + 3]) for r in range(3))
+class ScratchTileButton(ui.Button):
+    def __init__(self, index: int):
+        super().__init__(style=discord.ButtonStyle.secondary, label=HIDDEN, row=index // 3)
+        self.index = index
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.reveal(interaction, self)
 
 
 class ScratchcardView(ui.LayoutView):
-    def __init__(self, bet: int):
-        super().__init__(timeout=None)
+    def __init__(self, cog: "Scratchcard", ctx: commands.Context, bet: int, grid: list[str]):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.ctx = ctx
         self.bet = bet
-        self.container, self.text = game_container(
-            "🎫 Scratchcard", f"{render_grid([HIDDEN] * GRID_SIZE, set())}\n\n**Bet:** {fmt(bet)}\n🎫 Scratching..."
-        )
+        self.grid = grid
+        self.revealed: set[int] = set()
+        self.finished = False
+        self.message: discord.Message | None = None
+
+        self.container, self.text = game_container("🎫 Scratchcard", f"**Bet:** {fmt(bet)}\n🎫 Scratch a tile to reveal it!")
+        self.tile_buttons = [ScratchTileButton(i) for i in range(GRID_SIZE)]
+
+        for r in range(3):
+            row = ui.ActionRow()
+            for c in range(3):
+                row.add_item(self.tile_buttons[r * 3 + c])
+            self.container.add_item(row)
         self.add_item(self.container)
 
-    def update(self, grid: list[str], revealed: set[int], *, footer: str | None = None, color: discord.Color | None = None):
-        body = f"{render_grid(grid, revealed)}\n\n**Bet:** {fmt(self.bet)}"
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message("This isn't your scratchcard!", ephemeral=True)
+            return False
+        return True
+
+    def render(self, *, footer: str | None = None):
+        body = f"**Bet:** {fmt(self.bet)}"
         if footer:
             body += f"\n{footer}"
+        else:
+            body += f"\n🎫 {len(self.revealed)}/{GRID_SIZE} tiles scratched"
         self.text.content = f"## 🎫 Scratchcard\n{body}"
-        if color:
-            self.container.accent_colour = color
+
+    async def reveal(self, interaction: discord.Interaction, button: ScratchTileButton):
+        if self.finished or button.disabled:
+            return
+
+        button.label = None
+        button.emoji = self.grid[button.index]
+        button.disabled = True
+        self.revealed.add(button.index)
+
+        if len(self.revealed) == GRID_SIZE:
+            await self._finish(interaction)
+        else:
+            self.render()
+            await interaction.response.edit_message(view=self)
+
+    async def _finish(self, interaction: discord.Interaction):
+        self.finished = True
+        payout, winner = evaluate(self.grid, self.bet)
+        if payout:
+            await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
+        await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
+
+        won = payout > 0
+        if won:
+            footer = f"🎉 **4x {winner} matched!** {PAYOUTS[winner]:g}x → Payout {fmt(payout)}"
+        else:
+            footer = "😢 No match — better luck next time."
+
+        self.render(footer=footer)
+        self.container.accent_colour = discord.Color.green() if won else discord.Color.red()
+        await interaction.response.edit_message(view=self)
+        self.stop()
+
+    async def on_timeout(self):
+        if self.finished:
+            return
+        self.finished = True
+        for button in self.tile_buttons:
+            if not button.disabled:
+                button.label = None
+                button.emoji = self.grid[button.index]
+                button.disabled = True
+                self.revealed.add(button.index)
+
+        payout, winner = evaluate(self.grid, self.bet)
+        if payout:
+            await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
+        await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
+
+        won = payout > 0
+        if won:
+            footer = f"⏱️ Time's up — revealed automatically. 4x {winner} matched! {PAYOUTS[winner]:g}x → Payout {fmt(payout)}"
+        else:
+            footer = "⏱️ Time's up — revealed automatically. No match."
+
+        self.render(footer=footer)
+        self.container.accent_colour = discord.Color.green() if won else discord.Color.red()
+        if self.message:
+            await limited_edit(self.message, view=self)
 
 
 class Scratchcard(commands.Cog):
@@ -120,31 +201,9 @@ class Scratchcard(commands.Cog):
         await self.bot.db.update_balance(ctx.author.id, -amount)
 
         grid = draw_grid()
-        view = ScratchcardView(amount)
+        view = ScratchcardView(self, ctx, amount, grid)
         message = await ctx.send(view=view)
-
-        order = list(range(GRID_SIZE))
-        random.shuffle(order)
-        revealed: set[int] = set()
-        for index in order:
-            await asyncio.sleep(REVEAL_DELAY)
-            revealed.add(index)
-            view.update(grid, revealed, footer="🎫 Scratching...")
-            await limited_edit(message, view=view)
-
-        payout, winner = evaluate(grid, amount)
-        if payout:
-            await self.bot.db.update_balance(ctx.author.id, payout)
-        await self.bot.db.record_game_result(ctx.author.id, amount, payout)
-
-        won = payout > 0
-        if won:
-            footer = f"🎉 **4x {winner} matched!** {PAYOUTS[winner]:g}x → Payout {fmt(payout)}"
-        else:
-            footer = "😢 No match — better luck next time."
-
-        view.update(grid, revealed, footer=footer, color=discord.Color.green() if won else discord.Color.red())
-        await limited_edit(message, view=view)
+        view.message = message
 
 
 async def setup(bot: commands.Bot):
