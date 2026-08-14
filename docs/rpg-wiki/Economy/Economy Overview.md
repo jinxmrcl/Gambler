@@ -5,6 +5,7 @@ safe from `/rob`).
 
 ## Topics
 - [[Balance & Daily]] — checking balance, daily bonus, leaderboards, paying other players
+- [[Payday]] — fully passive, no command — random amount at a random personal interval
 - [[Bank]] — depositing/withdrawing to protect money from robbery
 - [[Hustle (Work Crime Rob)]] — risk-based income commands
 - [[Shop & Inventory]] — the rob shield and cooldown-reset items
