@@ -19,6 +19,12 @@ def _friendly_message(error: Exception) -> str | None:
     if isinstance(error, commands.BadLiteralArgument):
         choices = ", ".join(f"`{c}`" for c in error.literals)
         return f"Invalid value for `{error.param.name}`. Choose one of: {choices}."
+    if isinstance(error, (commands.UserNotFound, commands.MemberNotFound)):
+        return (
+            f"Couldn't find a user matching `{error.argument}`. "
+            "Try @mentioning them, or use their exact user ID — they need to share a "
+            "server with the bot (or have interacted with it before) to be found by name."
+        )
     if isinstance(error, commands.BadArgument):
         return "One of the provided values is invalid."
     if isinstance(error, commands.CommandOnCooldown):
