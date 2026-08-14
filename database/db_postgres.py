@@ -376,6 +376,20 @@ class PostgresDatabase:
             list(actions),
         )
 
+    async def get_users_needing_payday_schedule(self) -> list[int]:
+        rows = await self._fetchall(
+            "SELECT u.user_id FROM users u "
+            "LEFT JOIN cooldowns c ON c.user_id = u.user_id AND c.action = 'payday' "
+            "WHERE c.user_id IS NULL"
+        )
+        return [row[0] for row in rows]
+
+    async def get_due_paydays(self, now: datetime.datetime) -> list[int]:
+        rows = await self._fetchall(
+            "SELECT user_id FROM cooldowns WHERE action = 'payday' AND expires_at <= $1", now
+        )
+        return [row[0] for row in rows]
+
 
     async def get_inventory(self, user_id: int) -> list[tuple[str, int]]:
         rows = await self._fetchall(

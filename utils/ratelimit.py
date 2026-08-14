@@ -29,7 +29,17 @@ _EDIT_RATE = 3
 _EDIT_PER = 5.0
 _channel_limiters: dict[int, RateLimiter] = defaultdict(lambda: RateLimiter(_EDIT_RATE, _EDIT_PER))
 
+_GLOBAL_RATE = 45
+_GLOBAL_PER = 1.0
+_global_limiter = RateLimiter(_GLOBAL_RATE, _GLOBAL_PER)
+
 
 async def limited_edit(message, **kwargs) -> None:
+    await _global_limiter.acquire()
     await _channel_limiters[message.channel.id].acquire()
     await message.edit(**kwargs)
+
+
+async def limited_send(sendable, **kwargs):
+    await _global_limiter.acquire()
+    return await sendable.send(**kwargs)
