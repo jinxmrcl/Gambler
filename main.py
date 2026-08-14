@@ -298,21 +298,28 @@ class GamblerBot(commands.Bot):
                 log.exception("[git-watch] check failed")
 
     async def _git_watch_check(self) -> None:
-        await _run_git("remote", "set-url", "origin", GIT_REPO_URL)
-        code, _ = await _run_git("fetch", "--quiet", "origin")
+        code, _ = await _run_git("remote", "set-url", "origin", GIT_REPO_URL)
+        if code != 0:
+            await _run_git("remote", "add", "origin", GIT_REPO_URL)
+
+        code, branch = await _run_git("rev-parse", "--abbrev-ref", "HEAD")
+        if code != 0 or not branch or branch == "HEAD":
+            return
+
+        code, _ = await _run_git("fetch", "--quiet", "origin", branch)
         if code != 0:
             return
 
-        code, local_sha = await _run_git("rev-parse", "@")
+        code, local_sha = await _run_git("rev-parse", "HEAD")
         if code != 0:
             return
-        code, remote_sha = await _run_git("rev-parse", "@{u}")
+        code, remote_sha = await _run_git("rev-parse", f"origin/{branch}")
         if code != 0:
             return
         if local_sha == remote_sha:
             return
 
-        code, _ = await _run_git("pull", "--quiet", "--ff-only")
+        code, _ = await _run_git("merge", "--quiet", "--ff-only", f"origin/{branch}")
         if code == 0:
             log.info("[git-watch] pulled new commits (%s -> %s)", local_sha[:7], remote_sha[:7])
             await self._send_to_restart_channel(
