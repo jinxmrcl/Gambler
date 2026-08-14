@@ -172,12 +172,15 @@ class Database:
                     """
                     CREATE TABLE IF NOT EXISTS cooldowns (
                         user_id BIGINT UNSIGNED NOT NULL,
-                        action VARCHAR(16) NOT NULL,
+                        action VARCHAR(32) NOT NULL,
                         expires_at DATETIME NOT NULL,
                         PRIMARY KEY (user_id, action)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
+                # Retrofit onto any cooldowns table created before boss cooldown keys
+                # (e.g. "boss_nightmare_realm", 21 chars) needed more than VARCHAR(16).
+                await cur.execute("ALTER TABLE cooldowns MODIFY COLUMN action VARCHAR(32) NOT NULL")
                 await cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS characters (

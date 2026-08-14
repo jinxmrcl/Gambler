@@ -216,12 +216,14 @@ for _key, _dungeon in list(DUNGEONS.items()):
 del _key, _dungeon
 
 SCALE_PER_LEVEL = 0.05
+MAX_SCALE_LEVELS = 50
 
 MONSTER_POWER_MULTIPLIER = 2.0
 
 
 def scale_factor(player_level: int, dungeon_min_level: int) -> float:
-    return 1 + max(player_level - dungeon_min_level, 0) * SCALE_PER_LEVEL
+    diff = min(max(player_level - dungeon_min_level, 0), MAX_SCALE_LEVELS)
+    return 1 + diff * SCALE_PER_LEVEL
 
 
 def scaled_monster(monster: Monster, player_level: int, dungeon_min_level: int) -> dict:

@@ -9,7 +9,7 @@ from utils.economy import HOUSE_EDGE, StaticView, fmt, resolve_bet
 
 RTP = 1 - HOUSE_EDGE
 MIN_TARGET = 1.01
-MAX_TARGET = 1_000_000.0
+MAX_TARGET = 1_000.0
 
 
 def roll_crash_point() -> float:

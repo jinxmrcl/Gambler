@@ -1,11 +1,13 @@
 import random
+from typing import Literal
 
 import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
 from database.db import InsufficientFunds
-from utils.economy import HOUSE_EDGE, fmt, game_container
+from utils.checks import game_enabled
+from utils.economy import HOUSE_EDGE, StaticView, fmt, game_container, resolve_bet
 from utils.ratelimit import limited_edit
 
 
@@ -145,6 +147,39 @@ class Coinflip(commands.Cog):
         view = CoinflipView(self, ctx.author, user, amount)
         message = await ctx.send(view=view)
         view.message = message
+
+    @commands.hybrid_command(name="soloflip", aliases=["cf"], description="Flip a coin against the house.")
+    @app_commands.describe(
+        bet="Bet (a number, 'half', 'all', or e.g. '50%')",
+        call="Call it: heads or tails",
+    )
+    @game_enabled("soloflip")
+    async def soloflip(self, ctx: commands.Context, bet: str, call: Literal["heads", "tails"] = "heads"):
+        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(self.bot, ctx.author.id, bet)
+        await self.bot.db.update_balance(ctx.author.id, -amount)
+
+        result = random.choice(["heads", "tails"])
+        won = result == call
+        multiplier = 2 * (1 - HOUSE_EDGE)
+        payout = int(amount * multiplier) if won else 0
+        if payout:
+            await self.bot.db.update_balance(ctx.author.id, payout)
+        await self.bot.db.record_game_result(ctx.author.id, amount, payout)
+
+        emoji = "🪙" if result == "heads" else "🥈"
+        lines = [
+            f"**Bet:** {fmt(amount)}  •  **Call:** {call.capitalize()}  •  **Result:** {result.capitalize()} {emoji}",
+        ]
+        if won:
+            lines.append(f"🎉 **You won!** Payout: {fmt(payout)}")
+        else:
+            lines.append("😢 You lost.")
+
+        view = StaticView(
+            "🪙 Solo Coinflip", "\n".join(lines), color=discord.Color.green() if won else discord.Color.red()
+        )
+        await ctx.send(view=view)
 
 
 async def setup(bot: commands.Bot):

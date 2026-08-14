@@ -67,16 +67,29 @@ class Economy(commands.Cog):
         board: Literal["balance", "games_played", "total_wagered", "biggest_win", "robs_succeeded"] = "balance",
         limit: app_commands.Range[int, 1, 25] = 10,
     ):
-        rows = await self.bot.db.top_balances(limit) if board == "balance" else await self.bot.db.top_stat(board, limit)
+        fetch_limit = limit * 3
+        rows = (
+            await self.bot.db.top_balances(fetch_limit)
+            if board == "balance"
+            else await self.bot.db.top_stat(board, fetch_limit)
+        )
         if not rows:
             await ctx.send("There's no data for this leaderboard yet.")
             return
 
         lines = []
-        for i, (user_id, value) in enumerate(rows, start=1):
+        for user_id, value in rows:
             name = await resolve_display_name(self.bot, ctx.guild, user_id)
+            if name is None:
+                continue
             value_text = fmt(value) if board in MONEY_BOARDS else str(value)
-            lines.append(f"**{i}.** {name} — {value_text}")
+            lines.append(f"**{len(lines) + 1}.** {name} — {value_text}")
+            if len(lines) == limit:
+                break
+
+        if not lines:
+            await ctx.send("There's no data for this leaderboard yet.")
+            return
 
         view = StaticView(BOARD_TITLES[board], "\n".join(lines))
         await ctx.send(view=view)

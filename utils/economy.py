@@ -46,7 +46,9 @@ async def resolve_bet(bot: commands.Bot, user_id: int, raw: str, *, min_bet: int
     return amount
 
 
-async def resolve_display_name(bot: commands.Bot, guild: discord.Guild | None, user_id: int) -> str:
+async def resolve_display_name(bot: commands.Bot, guild: discord.Guild | None, user_id: int) -> str | None:
+    """Resolves a user_id to a display name. Returns None if the account definitely
+    doesn't exist (e.g. stale/test data), vs. a "<@id>" fallback for a transient lookup failure."""
     if guild:
         member = guild.get_member(user_id)
         if member:
@@ -60,7 +62,7 @@ async def resolve_display_name(bot: commands.Bot, guild: discord.Guild | None, u
         user = await bot.fetch_user(user_id)
         return user.display_name
     except discord.NotFound:
-        return f"<@{user_id}>"
+        return None
     except discord.HTTPException:
         return f"<@{user_id}>"
 

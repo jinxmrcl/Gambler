@@ -6,8 +6,10 @@ from discord.ext import commands
 
 from utils.economy import StaticView
 
-GAMES = ("blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice")
-GameName = Literal["blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice"]
+GAMES = ("blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip")
+GameName = Literal[
+    "blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip"
+]
 
 
 class Settings(commands.Cog):
