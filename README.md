@@ -12,20 +12,34 @@
 
 # Gambler
 
-A Discord economy & gambling bot built with `discord.py`, featuring nine casino games,
-a full virtual economy (bank, shop, trading, marriage, lottery, robbing), and
+A Discord economy, casino, and RPG bot built with `discord.py`, featuring ten casino
+games, a full virtual economy (bank, shop, trading, marriage, lottery, robbing), a
+from-scratch RPG (7 classes, 16 dungeons, level 1-1500 with prestige), and
 MySQL-backed persistence.
 
-📊 **~3,540 lines of Python** across 32 files.
+📊 **~5,900 lines of Python** across 47 files.
 
 ## Features
 
-**Games** — Blackjack, Mines, Hilo, Plinko, Limbo, Keno, Slots, Roulette, Dice, plus a
-PvP `coinflip` duel between two players. All games are mathematically fair with a fixed,
+**Casino Games** — Blackjack, Mines (customizable grid size), Hilo, Plinko, Limbo, Keno,
+Slots, Roulette, Dice, and Solo Coinflip (`/soloflip`) — all against the house — plus a
+PvP `/coinflip` duel between two players. All games are mathematically fair with a fixed,
 transparent house edge (`HOUSE_EDGE` in `utils/economy.py`, default 3%), and interactive
 ones (Blackjack, Mines, Hilo, Keno) use Discord's native buttons and select menus.
 Blackjack and Hilo render playing cards with custom Discord emojis (`assets/cards/`,
 mapped in `utils/cards.py`) instead of plain text.
+
+**RPG** (`rpg/`, `commands/rpg_*.py`) — a full slash-only RPG sharing the same wallet as
+the casino:
+- 7 classes (Warrior, Mage, Rogue, Paladin, Necromancer, Ranger, Berserker), each with a
+  unique active skill
+- 16 dungeons spanning level 1-1500, each with a programmatically-scaled boss fight
+- prestige every 50 levels (up to prestige 29) once you hit the level cap
+- 3 equipment slots (weapon/armor/accessory) across 6 tiers (common → ancient), plus a
+  gold-sink enchant/upgrade system per item
+- 3 consumable potions to heal mid-run, persistent HP with passive regen, and `/heal` to
+  pay gold for an instant restore (also revives you at 0 HP)
+- PvP `/duel` with a cooldown, and an `/arena` leaderboard of top duelists
 
 **Economy** — a per-user virtual balance stored in MySQL, with:
 - `daily` bonus, `work`/`crime`/`slut` for risk-based income, and `rob` to steal from others
@@ -35,14 +49,21 @@ mapped in `utils/cards.py`) instead of plain text.
 - `profile`/`stats` and multiple `leaderboard` variants (balance, games played, biggest
   win, most successful robberies)
 - `cooldowns` to check your remaining cooldowns without triggering them
-- admin commands to add, set, or reset a user's balance, and per-server `settings` to
-  disable individual games or restrict them to specific channels
+- admin commands to add, set, give-to-everyone, or reset a user's balance, grant RPG
+  levels/items directly, and per-server `settings` to disable individual games or
+  restrict them to specific channels
 
-**Commands** — every command is a hybrid command: it works as both a slash command
-(`/blackjack`) and a prefix command (`!blackjack`), with no code duplication.
+**Commands** — casino/economy commands are hybrid commands (work as both `/slash` and
+`!prefix`); the RPG is slash-only for simplicity.
 
 **UI** — built entirely with Discord's Components V2 (`Container`, `TextDisplay`,
 `ActionRow`) instead of classic embeds, which requires `discord.py` 2.6 or newer.
+
+**Infrastructure** — a per-channel rate limiter (`utils/ratelimit.py`) to avoid Discord
+API throttling on frequent message edits, hot code reloading in development
+(`HOT_RELOAD=true`, picks up changes to `commands/`, `events/`, `rpg/`, `utils/`, and
+`database/` within ~1.5s with no restart), and optional restart/crash announcements to a
+configured Discord channel.
 
 ## Setup
 
@@ -77,6 +98,8 @@ mapped in `utils/cards.py`) instead of plain text.
    | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | MySQL credentials |
    | `STARTING_BALANCE` | Starting balance for new players (default: 1000) |
    | `DAILY_AMOUNT` | Amount granted by the daily bonus (default: 500) |
+   | `HOT_RELOAD` | Auto-reload changed cogs/modules in development (default: `true`) |
+   | `RESTART_LOG_CHANNEL_ID` | Optional channel ID for startup/crash/restart announcements |
 
    In the Developer Portal, enable the **Message Content Intent** under **Bot** (required
    for text commands), and when inviting the bot, select the `bot` + `applications.commands`
@@ -90,6 +113,23 @@ mapped in `utils/cards.py`) instead of plain text.
 
    On startup, all cogs in `commands/` and `events/` are loaded automatically and slash
    commands are synced with Discord.
+
+## Documentation
+
+An 83-note wiki at [`docs/rpg-wiki/`](docs/rpg-wiki) documents every system in the bot in
+detail, generated from the bot's own live game data to stay accurate. Start at
+[`Home.md`](docs/rpg-wiki/Home.md) — it's an [Obsidian](https://obsidian.md) vault, so
+opening the `docs/rpg-wiki` folder in Obsidian gets you the full interlinked graph view,
+but every note is plain Markdown and browsable directly on GitHub too.
+
+| Section | Covers |
+|---|---|
+| [RPG Overview](docs/rpg-wiki/RPG%20Overview.md) | Classes, dungeons, bosses, equipment tiers, leveling & prestige (level 1-1500) |
+| [Casino Games](docs/rpg-wiki/Casino%20Games/Casino%20Overview.md) | All 10 games of chance and their odds |
+| [Economy](docs/rpg-wiki/Economy/Economy%20Overview.md) | Balance, daily, bank, hustling (work/crime/slut/rob) |
+| [Social](docs/rpg-wiki/Social/Social%20Overview.md) | Marriage, trading, the weekly lottery |
+| [Admin & Settings](docs/rpg-wiki/Admin%20%26%20Settings/Admin%20Overview.md) | Server configuration, moderation commands |
+| [Infrastructure](docs/rpg-wiki/Infrastructure/Infrastructure%20Overview.md) | Database layer, rate limiting, hot reload, error handling |
 
 ## Commands
 
@@ -143,7 +183,12 @@ Money in the bank can't be stolen with `rob`.
 Requires the **Administrator** permission on the server.
 - `addmoney <user> <amount>` — add or (with a negative amount) remove balance
 - `setbalance <user> <amount>` — set balance to an exact value
-- `resetuser <user>` — reset a user's balance, bank, inventory, marriage, and statistics
+- `giveall <amount>` — give (or take) balance from every player at once
+- `resetuser <user>` — reset a user's balance, bank, inventory, marriage, RPG character,
+  and statistics
+- `rpgsetlevel <user> <level> [xp=0]` — set a player's RPG level directly
+- `rpggive <user> <item> [quantity=1]` — give a player a piece of equipment or a potion
+  for free
 - `settings` — shows this server's disabled games and channel restrictions
 - `togglegame <game> <enabled>` — enable or disable a specific game on this server
 - `togglechannel <add|remove|clear>` — restrict games to specific channels
@@ -155,54 +200,93 @@ Requires the **Administrator** permission on the server.
 All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 
 - `blackjack <bet>` — classic Blackjack with Hit/Stand/Double buttons
-- `mines <bet> [mines=3]` — 5×4 grid, avoid mines, cash out anytime
+- `mines <bet> [mines=3] [cols=5] [rows=4]` — customizable grid (2-5 cols, 2-4 rows),
+  avoid mines, cash out anytime
 - `hilo <bet>` — guess higher/lower, multiplier grows with each correct card
 - `plinko <bet> [risk=medium] [rows=12]` — drop a ball through the Plinko board
-- `limbo <bet> <target>` — set a target multiplier, the random result must reach it
+- `limbo <bet> <target>` — set a target multiplier (up to 1,000x), the random result
+  must reach it
 - `keno <bet> [picks=5]` — pick numbers and hope for hits in the draw
 - `slots <bet>` — animated 3x3 grid with 5 paylines (rows + both diagonals); reels stop
   one column at a time before the result is revealed
 - `roulette <bet> <choice>` — bet on a number, color, or even/odd
 - `dice <bet> <prediction>` — predict the sum of two dice (2-12)
+- `soloflip <bet> [call=heads]` (alias `cf`) — call heads or tails against the house
 
 All games share a 3% house edge (`HOUSE_EDGE` in `utils/economy.py`, or the standard
 European single-zero odds for `roulette`), which scales payout multipliers to stay
 mathematically fair while slightly favoring the house.
 
+### RPG
+Slash-only. Shares the same wallet (🪙) as the casino games.
+
+- `rpgstart <class>` — create your character
+- `classes` — shows the available RPG classes and their stats
+- `character [user]` — shows a character sheet (level, gear, HP, boss kills)
+- `heal` — pay gold to restore HP instantly (also revives you from 0 HP)
+- `dungeons` — shows the available dungeons and their level requirements
+- `dungeon <name>` — fight your way through a dungeon for gold and XP
+- `dungeonboss <name>` — challenge a dungeon's boss for bigger rewards (5 min cooldown
+  per dungeon)
+- `rpgshop` — shows the equipment and potion shop
+- `rpgbuy <item> [quantity=1]` — buy a piece of equipment or a potion
+- `rpgequip <item>` — equip an owned weapon, armor, or accessory
+- `rpguse <item>` — use a potion from your inventory
+- `rpgsell <item> [quantity=1]` — sell an owned item back for gold
+- `rpgupgrade <slot>` — spend gold to enchant your equipped gear in a slot
+- `rpginventory` — shows your owned equipment and potions
+- `duel <user>` — challenge another player to a PvP duel (60s cooldown)
+- `arena` — shows the top duelists
+
 ## Project structure
 
 ```
-main.py                 Bot entry point, loads cogs, connects to MySQL
-database/db.py           aiomysql connection pool + wallet/bank/inventory/stats/social functions
-utils/economy.py         Bet parsing, formatting, house edge constant, UI building blocks
-utils/cards.py            Card deck + custom card emoji mapping for Blackjack & Hilo
-assets/cards/              Downloaded card emoji images (reference copies, not loaded at runtime)
-utils/items.py            Shop catalog (item keys, prices, effects)
-utils/checks.py           Per-server game enable/channel checks
-commands/economy.py       balance, daily, leaderboard, pay
-commands/hustle.py         work, crime, slut, rob
-commands/bank.py           bank, deposit, withdraw
-commands/shop.py           shop, buy, inventory, use, gift
-commands/trade.py          trade
-commands/coinflip.py       coinflip (PvP)
-commands/marriage.py       marry, divorce, marriage
-commands/lottery.py        lottery, lottery_buy, lottery_setchannel (weekly background task)
-commands/profile.py        profile / stats
-commands/cooldowns.py      cooldowns
-commands/admin.py          addmoney, setbalance, resetuser
-commands/settings.py       settings, togglegame, togglechannel
-commands/help.py           help
-commands/blackjack.py     Blackjack
-commands/mines.py         Mines
-commands/hilo.py          Hilo
-commands/plinko.py        Plinko
-commands/limbo.py         Limbo
-commands/keno.py          Keno
-commands/slots.py         Slots
-commands/roulette.py      Roulette
-commands/dice.py          Dice
-events/on_ready.py        Startup logging & presence
-events/error_handler.py   Centralized error handling for text & slash commands
+main.py                     Bot entry point, loads cogs, connects to MySQL, hot reload, restart announcements
+database/db.py               aiomysql connection pool + wallet/bank/inventory/stats/social/RPG functions
+utils/economy.py             Bet parsing, formatting, house edge constant, UI building blocks
+utils/cards.py                Card deck + custom card emoji mapping for Blackjack & Hilo
+assets/cards/                 Downloaded card emoji images (reference copies, not loaded at runtime)
+utils/items.py                Shop catalog (item keys, prices, effects)
+utils/checks.py               Per-server game enable/channel checks
+utils/ratelimit.py            Per-channel token-bucket rate limiter for message edits
+commands/economy.py           balance, daily, leaderboard, pay
+commands/hustle.py            work, crime, slut, rob
+commands/bank.py              bank, deposit, withdraw
+commands/shop.py              shop, buy, inventory, use, gift
+commands/trade.py             trade
+commands/coinflip.py          coinflip (PvP), soloflip (vs house)
+commands/marriage.py          marry, divorce, marriage
+commands/lottery.py           lottery, lottery_buy, lottery_setchannel (weekly background task)
+commands/profile.py           profile / stats
+commands/cooldowns.py         cooldowns
+commands/admin.py             addmoney, setbalance, giveall, resetuser, rpgsetlevel, rpggive
+commands/settings.py          settings, togglegame, togglechannel
+commands/help.py              help
+commands/blackjack.py         Blackjack
+commands/mines.py             Mines
+commands/hilo.py              Hilo
+commands/plinko.py            Plinko
+commands/limbo.py             Limbo
+commands/keno.py              Keno
+commands/slots.py             Slots
+commands/roulette.py          Roulette
+commands/dice.py              Dice
+commands/rpg_character.py     rpgstart, classes, character, heal
+commands/rpg_dungeon.py       dungeons, dungeon, dungeonboss
+commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpginventory
+commands/rpg_arena.py         duel, arena
+rpg/classes.py                7 class definitions (stats + active skill)
+rpg/combat.py                 Turn-based combat simulation, damage mitigation, class skills
+rpg/monsters.py               16 dungeons, boss generation, level-scaling
+rpg/equipment.py              6 equipment tiers, 18 items, enchant/upgrade system
+rpg/consumables.py            3 healing potions
+rpg/leveling.py               XP curve, prestige math (level cap 1500)
+rpg/character.py              Character dataclass helpers
+rpg/badges.py                 Prestige badge rendering
+rpg/events.py                 Random in-dungeon events
+events/on_ready.py            Startup logging & presence
+events/error_handler.py       Centralized error handling for text & slash commands
+docs/rpg-wiki/                Obsidian vault documenting every system, generated from live game data
 ```
 
 ## License
