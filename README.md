@@ -20,21 +20,32 @@ all backed by MySQL (or Postgres/Supabase).
 
 📊 **~7,960 lines of Python** across 52 files.
 
+## Table of contents
+
+- [Features](#features)
+- [Setup](#setup)
+- [Deploying to a VPS](#deploying-to-a-vps)
+- [Documentation](#documentation)
+- [Commands](#commands)
+- [Project structure](#project-structure)
+
 ## Features
 
-**Casino Games** — Blackjack (with Split), Mines (customizable grid size), Hilo, Plinko,
-Limbo, Keno, Slots, Roulette, Dice, Baccarat, Horse Race, Scratchcard, and Solo Coinflip
-(`/soloflip`) — all against the house — plus a PvP `/coinflip` duel between two players.
-All games are mathematically fair with a fixed, transparent house edge (`HOUSE_EDGE` in
-`utils/economy.py`, default 3%); Horse Race and Baccarat derive their odds directly from
-simulating the actual game rules (validated against real-world baccarat statistics)
-rather than hand-picked numbers. Interactive ones (Blackjack, Mines, Hilo, Keno,
-Scratchcard, Horse Race) use Discord's native buttons and select menus — Scratchcard is
-click-to-reveal tile by tile, and Horse Race lets you pick your horse from a dropdown
-after betting — and several (Blackjack, Slots, Horse Race, Baccarat) play out with a
-timed animated reveal instead of showing the result instantly. Blackjack and Hilo render
-playing cards with custom Discord emojis (`assets/cards/`, mapped in `utils/cards.py`)
-instead of plain text.
+**Casino Games** — 13 games against the house, plus a PvP duel:
+
+- Blackjack (with Split), Mines (customizable grid), Hilo, Plinko, Limbo, Keno, Slots,
+  Roulette, Dice, Baccarat, Horse Race, Scratchcard, Solo Coinflip (`/soloflip`)
+- PvP `/coinflip` — challenge another player directly instead of the house
+- Every game shares one fixed, transparent house edge (`HOUSE_EDGE` in
+  `utils/economy.py`, default 3%) — Horse Race and Baccarat derive their odds by
+  simulating the actual game rules rather than hand-picked numbers
+- Interactive games (Blackjack, Mines, Hilo, Keno, Scratchcard, Horse Race) use
+  Discord's native buttons and select menus — Scratchcard is click-to-reveal tile by
+  tile, Horse Race picks your horse from a dropdown after betting
+- Several (Blackjack, Slots, Horse Race, Baccarat) play out with a timed animated
+  reveal instead of showing the result instantly
+- Blackjack and Hilo render real playing cards via custom Discord emojis
+  (`assets/cards/`, mapped in `utils/cards.py`) instead of plain text
 
 **RPG** (`rpg/`, `commands/rpg_*.py`) — a full slash-only RPG sharing the same wallet as
 the casino:
@@ -68,15 +79,20 @@ the casino:
 **UI** — built entirely with Discord's Components V2 (`Container`, `TextDisplay`,
 `ActionRow`) instead of classic embeds, which requires `discord.py` 2.6 or newer.
 
-**Infrastructure** — a global rate limiter plus a per-channel one (`utils/ratelimit.py`),
-both congestion-aware (they throttle harder the more callers are waiting simultaneously,
-then relax back down), to avoid Discord API throttling on frequent message edits and
-sends; hot code reloading in development (`HOT_RELOAD=true`, picks up changes to
-`commands/`, `events/`, `rpg/`, `utils/`, and `database/` within ~1.5s with no restart);
-an in-process git watcher that checks `origin` every 60s and fast-forward-pulls any new
-commits (posting to the restart channel when one lands); a Supabase/Postgres fallback
-database that only kicks in if MySQL can't be reached at bot startup; and optional
-restart/crash announcements to a configured Discord channel.
+**Infrastructure**:
+
+- A global + per-channel rate limiter (`utils/ratelimit.py`), both congestion-aware —
+  they throttle harder the more callers are waiting simultaneously, then relax back
+  down — to avoid Discord API throttling on frequent message edits and sends
+- Hot code reloading in development (`HOT_RELOAD=true`, picks up changes to
+  `commands/`, `events/`, `rpg/`, `utils/`, and `database/` within ~1.5s, no restart)
+- An in-process git watcher that checks `origin` every 60s and fast-forward-pulls any
+  new commits, posting to the restart channel when one lands
+- A Supabase/Postgres fallback database that only kicks in if MySQL can't be reached
+  at bot startup
+- Optional restart/crash announcements to a configured Discord channel
+
+---
 
 ## Setup
 
@@ -130,6 +146,8 @@ restart/crash announcements to a configured Discord channel.
 
    On startup, all cogs in `commands/` and `events/` are loaded automatically and slash
    commands are synced with Discord.
+
+---
 
 ## Deploying to a VPS
 
@@ -189,6 +207,8 @@ Both MySQL (`restart: unless-stopped`) and the bot (pm2 `autorestart`) recover
 automatically from a crash; pm2's `cron_restart` additionally restarts the bot process
 daily at 4am. Useful commands: `pm2 status`, `pm2 logs GamblerV2`, `pm2 restart GamblerV2`.
 
+---
+
 ## Documentation
 
 An 83-note wiki at [`docs/rpg-wiki/`](docs/rpg-wiki) documents every system in the bot in
@@ -205,6 +225,8 @@ but every note is plain Markdown and browsable directly on GitHub too.
 | [Social](docs/rpg-wiki/Social/Social%20Overview.md) | Marriage, trading, the weekly lottery |
 | [Admin & Settings](docs/rpg-wiki/Admin%20%26%20Settings/Admin%20Overview.md) | Server configuration, moderation commands |
 | [Infrastructure](docs/rpg-wiki/Infrastructure/Infrastructure%20Overview.md) | Database layer, rate limiting, hot reload, error handling |
+
+---
 
 ## Commands
 
@@ -279,8 +301,8 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 - `blackjack <bet>` — classic Blackjack with Hit/Stand/Double/Split buttons; cards are
   dealt, drawn, and the dealer's hand is revealed with an animated reveal instead of
   appearing instantly
-- `mines <bet> [mines=3] [cols=5] [rows=4]` — customizable grid (2-5 cols, 2-4 rows),
-  avoid mines, cash out anytime
+- `mines <bet> [mines=3] [cols=5] [rows=4]` — customizable grid (2-5 cols, 2-5 rows —
+  the full 5x5 unlocks up to 23 mines), avoid mines, cash out anytime
 - `hilo <bet>` — guess higher/lower, multiplier grows with each correct card
 - `plinko <bet> [risk=medium] [rows=12]` — drop a ball through the Plinko board
 - `limbo <bet> <target>` — set a target multiplier (up to 1,000x), the random result
@@ -323,6 +345,8 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
 - `rpginventory` — shows your owned equipment and potions
 - `duel <user>` — challenge another player to a PvP duel (60s cooldown)
 - `arena` — shows the top duelists
+
+---
 
 ## Project structure
 
@@ -382,6 +406,8 @@ deploy/install_pm2.sh         Starts the bot under pm2, posts a startup status m
 deploy/init_secrets.sh        Generates the gitignored MySQL secret files docker-compose.yml reads
 docs/rpg-wiki/                Obsidian vault documenting every system, generated from live game data
 ```
+
+---
 
 ## License
 

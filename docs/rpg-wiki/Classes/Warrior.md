@@ -11,4 +11,4 @@ A frontline fighter with heavy armor and raw strength.
 ## Skill
 **Shield Wall** — Halves the damage of the first hit taken in every fight.
 
-See [[Combat System]] for how skills interact with the damage formula, and [[Equipment & Upgrades]] for gearing this class.
+See [Combat System](../Combat%20System.md) for how skills interact with the damage formula, and [Equipment & Upgrades](../Equipment%20%26%20Upgrades.md) for gearing this class.

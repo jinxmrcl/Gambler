@@ -1,5 +1,5 @@
 # Admin & Settings Overview
 
-- [[Admin Commands]] — balance/level/gear administration
-- [[Server Settings]] — per-guild game toggles, channel restrictions, bot-wide channel lock
-- [[Cooldowns]] — the `/cooldowns` self-service display
+- [Admin Commands](Admin%20Commands.md) — balance/level/gear administration
+- [Server Settings](Server%20Settings.md) — per-guild game toggles, channel restrictions, bot-wide channel lock
+- [Cooldowns](Cooldowns.md) — the `/cooldowns` self-service display

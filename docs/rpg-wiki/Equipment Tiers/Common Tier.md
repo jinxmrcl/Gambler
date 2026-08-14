@@ -9,9 +9,9 @@ Base price: 200 gold per item.
 
 ## Dropped by
 
-- [[Dungeons/Whispering Forest]] (Wild Boar)
-- [[Dungeons/Whispering Forest]] (Goblin)
-- [[Dungeons/Whispering Forest]] (Giant Spider)
-- [[Dungeons/Whispering Forest]] (Elder Treant)
+- [Whispering Forest](../Dungeons/Whispering%20Forest.md) (Wild Boar)
+- [Whispering Forest](../Dungeons/Whispering%20Forest.md) (Goblin)
+- [Whispering Forest](../Dungeons/Whispering%20Forest.md) (Giant Spider)
+- [Whispering Forest](../Dungeons/Whispering%20Forest.md) (Elder Treant)
 
-See [[Equipment & Upgrades]] for upgrading and selling.
+See [Equipment & Upgrades](../Equipment%20%26%20Upgrades.md) for upgrading and selling.
