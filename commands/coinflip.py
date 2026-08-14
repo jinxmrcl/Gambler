@@ -131,7 +131,7 @@ class Coinflip(commands.Cog):
 
     @commands.hybrid_command(name="coinflip", description="Challenge another player to a coinflip wager.")
     @app_commands.describe(user="Who to challenge", amount="Amount both players wager")
-    async def coinflip(self, ctx: commands.Context, user: discord.User, amount: app_commands.Range[int, 1]):
+    async def coinflip(self, ctx: commands.Context, user: discord.User, amount: commands.Range[int, 1]):
         if user.bot:
             await ctx.send("⚠️ You can't challenge bots.")
             return

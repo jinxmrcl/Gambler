@@ -10,32 +10,58 @@ from utils.economy import BetError
 
 log = logging.getLogger("gambler")
 
+# Errors where showing the correct command syntax actually helps the user fix their input.
+_SYNTAX_HINT_ERRORS = (
+    commands.MissingRequiredArgument,
+    commands.RangeError,
+    commands.BadLiteralArgument,
+    commands.UserNotFound,
+    commands.MemberNotFound,
+    commands.BadArgument,
+)
 
-def _friendly_message(error: Exception) -> str | None:
+
+def _usage_hint(ctx: commands.Context) -> str | None:
+    if not ctx.command:
+        return None
+    prefix = ctx.prefix or ctx.bot.prefix
+    return f"{prefix}{ctx.command.qualified_name} {ctx.command.signature}".strip()
+
+
+def _friendly_message(error: Exception, ctx: commands.Context | None = None) -> str | None:
     if isinstance(error, (BetError, GameDisabled, ChannelNotAllowed, WrongGambleChannel)):
         return error.args[0] if error.args else str(error)
     if isinstance(error, commands.MissingRequiredArgument):
-        return f"Missing argument: `{error.param.name}`."
-    if isinstance(error, commands.BadLiteralArgument):
+        text = f"Missing argument: `{error.param.name}`."
+    elif isinstance(error, commands.RangeError):
+        text = str(error).capitalize() + "."
+    elif isinstance(error, commands.BadLiteralArgument):
         choices = ", ".join(f"`{c}`" for c in error.literals)
-        return f"Invalid value for `{error.param.name}`. Choose one of: {choices}."
-    if isinstance(error, (commands.UserNotFound, commands.MemberNotFound)):
-        return (
+        text = f"Invalid value for `{error.param.name}`. Choose one of: {choices}."
+    elif isinstance(error, (commands.UserNotFound, commands.MemberNotFound)):
+        text = (
             f"Couldn't find a user matching `{error.argument}`. "
             "Try @mentioning them, or use their exact user ID — they need to share a "
             "server with the bot (or have interacted with it before) to be found by name."
         )
-    if isinstance(error, commands.BadArgument):
-        return "One of the provided values is invalid."
-    if isinstance(error, commands.CommandOnCooldown):
+    elif isinstance(error, commands.BadArgument):
+        text = "One of the provided values is invalid."
+    elif isinstance(error, commands.CommandOnCooldown):
         return f"That's on cooldown. Try again in {error.retry_after:.1f}s."
-    if isinstance(error, (commands.MissingPermissions, app_commands.MissingPermissions)):
+    elif isinstance(error, (commands.MissingPermissions, app_commands.MissingPermissions)):
         return "You're missing the required permission (Administrator)."
-    if isinstance(error, commands.CommandNotFound):
+    elif isinstance(error, commands.CommandNotFound):
         return None
-    if isinstance(error, commands.UserInputError):
-        return "One of the provided values is invalid."
-    return None
+    elif isinstance(error, commands.UserInputError):
+        text = "One of the provided values is invalid."
+    else:
+        return None
+
+    if ctx and isinstance(error, _SYNTAX_HINT_ERRORS):
+        hint = _usage_hint(ctx)
+        if hint:
+            text += f"\nUsage: `{hint}`"
+    return text
 
 
 class ErrorHandler(commands.Cog):
@@ -46,7 +72,7 @@ class ErrorHandler(commands.Cog):
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
         error = getattr(error, "original", error)
-        message = _friendly_message(error)
+        message = _friendly_message(error, ctx)
         if message is None and not isinstance(error, commands.CommandNotFound):
             log.exception("Unexpected error in command %s", ctx.command, exc_info=error)
             message = "Something went wrong. Please try again later."

@@ -226,7 +226,7 @@ class GamblerBot(commands.Bot):
     async def graceful_shutdown(self) -> None:
         if self.is_ready():
             await self._send_to_restart_channel(
-                title="🔁 Restarting",
+                title="<:restart:1537866127835799572> Restarting",
                 description="A restart was requested. The bot is shutting down cleanly and will be back shortly.",
                 color=0xFEE75C,
             )

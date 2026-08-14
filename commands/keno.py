@@ -128,7 +128,7 @@ class Keno(commands.Cog):
         picks="How many numbers you pick (1-10)",
     )
     @game_enabled("keno")
-    async def keno(self, ctx: commands.Context, bet: str, picks: app_commands.Range[int, 1, 10] = 5):
+    async def keno(self, ctx: commands.Context, bet: str, picks: commands.Range[int, 1, 10] = 5):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)
         await self.bot.db.update_balance(ctx.author.id, -amount)

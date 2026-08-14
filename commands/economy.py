@@ -65,7 +65,7 @@ class Economy(commands.Cog):
         self,
         ctx: commands.Context,
         board: Literal["balance", "games_played", "total_wagered", "biggest_win", "robs_succeeded"] = "balance",
-        limit: app_commands.Range[int, 1, 25] = 10,
+        limit: commands.Range[int, 1, 25] = 10,
     ):
         fetch_limit = limit * 3
         rows = (
@@ -96,7 +96,7 @@ class Economy(commands.Cog):
 
     @commands.hybrid_command(name="pay", description="Transfer balance to another player.")
     @app_commands.describe(user="Recipient", amount="Amount")
-    async def pay(self, ctx: commands.Context, user: discord.User, amount: app_commands.Range[int, 1]):
+    async def pay(self, ctx: commands.Context, user: discord.User, amount: commands.Range[int, 1]):
         if user.bot:
             await ctx.send("⚠️ You can't pay bots.")
             return

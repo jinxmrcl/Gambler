@@ -38,7 +38,7 @@ class Admin(commands.Cog):
     @commands.hybrid_command(name="setbalance", description="[Admin] Set a user's balance exactly.")
     @app_commands.describe(user="Target user", amount="New balance")
     @commands.has_permissions(administrator=True)
-    async def setbalance(self, ctx: commands.Context, user: discord.User, amount: app_commands.Range[int, 0]):
+    async def setbalance(self, ctx: commands.Context, user: discord.User, amount: commands.Range[int, 0]):
         await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
         await self.bot.db.set_balance(user.id, amount)
 
@@ -81,7 +81,7 @@ class Admin(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def restart(self, ctx: commands.Context):
         view = StaticView(
-            "🔁 Restarting",
+            "<:restart:1537866127835799572> Restarting",
             "Restarting the bot now — back online in a few seconds.",
             color=discord.Color.blue(),
         )

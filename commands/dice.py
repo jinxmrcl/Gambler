@@ -30,7 +30,7 @@ class Dice(commands.Cog):
         prediction="Predicted sum of the two dice (2-12)",
     )
     @game_enabled("dice")
-    async def dice(self, ctx: commands.Context, bet: str, prediction: app_commands.Range[int, 2, 12]):
+    async def dice(self, ctx: commands.Context, bet: str, prediction: commands.Range[int, 2, 12]):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)
         await self.bot.db.update_balance(ctx.author.id, -amount)

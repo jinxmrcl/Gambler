@@ -32,7 +32,7 @@ class Limbo(commands.Cog):
         self,
         ctx: commands.Context,
         bet: str,
-        target: app_commands.Range[float, MIN_TARGET, MAX_TARGET],
+        target: commands.Range[float, MIN_TARGET, MAX_TARGET],
     ):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)

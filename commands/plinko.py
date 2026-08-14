@@ -56,7 +56,7 @@ class Plinko(commands.Cog):
         ctx: commands.Context,
         bet: str,
         risk: Literal["low", "medium", "high"] = "medium",
-        rows: app_commands.Range[int, 8, 16] = 12,
+        rows: commands.Range[int, 8, 16] = 12,
     ):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)
