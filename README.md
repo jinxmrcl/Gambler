@@ -1,6 +1,8 @@
 <div align="center">
 
-![Ticket Tool](assets/gambling_bot_banner_1.png)
+<img src="assets/economy_bot_icon.png" width="120" alt="Economy Bot icon">
+
+![Economy Bot](assets/economy_bot_banner_1.png)
 
 ![discord.py](https://img.shields.io/badge/discord.py-2.6%2B-5865F2?logo=discord&logoColor=white)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)
@@ -10,14 +12,15 @@
 
 </div>
 
-# Gambler
+# Economy Bot
 
-A Discord economy, casino, and RPG bot built with `discord.py`, featuring ten casino
-games, a full virtual economy (bank, shop, trading, marriage, lottery, robbing), a
-from-scratch RPG (7 classes, 16 dungeons, level 1-1500 with prestige), and
-MySQL-backed persistence.
+An open source economy bot for your Discord server, built with `discord.py`. At its core
+is a full virtual economy (bank, shop, trading, marriage, weekly lottery, robbing, a
+random passive Payday), layered with 13 casino games of chance and a from-scratch RPG
+(7 classes, 16 dungeons, level 1-1500 with prestige) that shares the same wallet —
+all backed by MySQL (or Postgres/Supabase).
 
-📊 **~7,830 lines of Python** across 51 files.
+📊 **~7,960 lines of Python** across 52 files.
 
 ## Features
 
@@ -49,6 +52,8 @@ the casino:
 
 **Economy** — a per-user virtual balance stored in MySQL, with:
 - `daily` bonus, `work`/`crime`/`slut` for risk-based income, and `rob` to steal from others
+- a passive **Payday**: every 6-24h, a random amount (100-10,000 by default) shows up as
+  a surprise DM — no command needed
 - a `bank` to protect balance from being robbed
 - a `shop` with items (rob shield, cooldown reset), plus `gift` and `trade` between players
 - `marry`/`divorce` and a weekly `lottery` with an automatic prize draw
@@ -102,8 +107,11 @@ configured Discord channel.
    | `DISCORD_TOKEN` | Bot token from the [Discord Developer Portal](https://discord.com/developers/applications) |
    | `PREFIX` | Prefix for text commands (default: `!`) |
    | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | MySQL credentials |
+   | `DB_PASSWORD_FILE` | Optional path to a file holding the MySQL password (for Docker secrets) instead of `DB_PASSWORD` |
+   | `SUPABASE_DB_URL` / `SUPABASE_DB_URL_FILE` | Optional Postgres/Supabase connection string (or a file holding one) — if set, the bot automatically falls back to it when MySQL is unreachable at startup |
    | `STARTING_BALANCE` | Starting balance for new players (default: 1000) |
    | `DAILY_AMOUNT` | Amount granted by the daily bonus (default: 500) |
+   | `PAYDAY_MIN_AMOUNT` / `PAYDAY_MAX_AMOUNT` | Range for the random passive Payday DM every 6-24h (default: 100-10000) |
    | `HOT_RELOAD` | Auto-reload changed cogs/modules in development (default: `true`) |
    | `RESTART_LOG_CHANNEL_ID` | Optional channel ID for startup/crash/restart announcements |
 
@@ -189,7 +197,7 @@ but every note is plain Markdown and browsable directly on GitHub too.
 | Section | Covers |
 |---|---|
 | [RPG Overview](docs/rpg-wiki/RPG%20Overview.md) | Classes, dungeons, bosses, equipment tiers, leveling & prestige (level 1-1500) |
-| [Casino Games](docs/rpg-wiki/Casino%20Games/Casino%20Overview.md) | All 10 games of chance and their odds |
+| [Casino Games](docs/rpg-wiki/Casino%20Games/Casino%20Overview.md) | All 13 games of chance and their odds |
 | [Economy](docs/rpg-wiki/Economy/Economy%20Overview.md) | Balance, daily, bank, hustling (work/crime/slut/rob) |
 | [Social](docs/rpg-wiki/Social/Social%20Overview.md) | Marriage, trading, the weekly lottery |
 | [Admin & Settings](docs/rpg-wiki/Admin%20%26%20Settings/Admin%20Overview.md) | Server configuration, moderation commands |
@@ -363,6 +371,8 @@ rpg/badges.py                 Prestige badge rendering
 rpg/events.py                 Random in-dungeon events
 events/on_ready.py            Startup logging & presence
 events/error_handler.py       Centralized error handling for text & slash commands
+events/payday.py              Passive background task: random surprise balance DM every 6-24h
+database/db_postgres.py       Postgres/Supabase implementation of the same DB interface (automatic fallback)
 docs/rpg-wiki/                Obsidian vault documenting every system, generated from live game data
 ```
 
