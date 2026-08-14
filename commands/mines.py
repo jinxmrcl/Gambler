@@ -202,9 +202,9 @@ class Mines(commands.Cog):
         self,
         ctx: commands.Context,
         bet: str,
-        mines: app_commands.Range[int, 1, MAX_TOTAL_TILES - 1] = 3,
-        cols: app_commands.Range[int, MIN_COLS, MAX_COLS] = DEFAULT_COLS,
-        rows: app_commands.Range[int, MIN_ROWS, MAX_ROWS] = DEFAULT_ROWS,
+        mines: commands.Range[int, 1, MAX_TOTAL_TILES - 1] = 3,
+        cols: commands.Range[int, MIN_COLS, MAX_COLS] = DEFAULT_COLS,
+        rows: commands.Range[int, MIN_ROWS, MAX_ROWS] = DEFAULT_ROWS,
     ):
         total_tiles = compute_total_tiles(rows, cols)
         if mines >= total_tiles:

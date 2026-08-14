@@ -27,7 +27,7 @@ class Shop(commands.Cog):
 
     @commands.hybrid_command(name="buy", description="Buy an item from the shop.")
     @app_commands.describe(item="Which item", quantity="How many (default: 1)")
-    async def buy(self, ctx: commands.Context, item: ItemKey, quantity: app_commands.Range[int, 1, 99] = 1):
+    async def buy(self, ctx: commands.Context, item: ItemKey, quantity: commands.Range[int, 1, 99] = 1):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         info = ITEMS[item]
         cost = info["price"] * quantity
@@ -81,7 +81,7 @@ class Shop(commands.Cog):
     @commands.hybrid_command(name="gift", description="Gift an item from your inventory.")
     @app_commands.describe(user="Recipient", item="Which item", quantity="How many (default: 1)")
     async def gift(
-        self, ctx: commands.Context, user: discord.User, item: ItemKey, quantity: app_commands.Range[int, 1, 99] = 1
+        self, ctx: commands.Context, user: discord.User, item: ItemKey, quantity: commands.Range[int, 1, 99] = 1
     ):
         if user.bot:
             await ctx.send("⚠️ You can't gift items to a bot.")

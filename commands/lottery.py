@@ -74,7 +74,7 @@ class Lottery(commands.Cog):
 
     @commands.hybrid_command(name="lottery_buy", description="Buy lottery tickets.")
     @app_commands.describe(quantity="How many tickets to buy")
-    async def lottery_buy(self, ctx: commands.Context, quantity: app_commands.Range[int, 1, 1000] = 1):
+    async def lottery_buy(self, ctx: commands.Context, quantity: commands.Range[int, 1, 1000] = 1):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         cost = TICKET_PRICE * quantity
         balance = await self.bot.db.get_balance(ctx.author.id)

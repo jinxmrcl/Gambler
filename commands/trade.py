@@ -166,9 +166,9 @@ class Trade(commands.Cog):
         ctx: commands.Context,
         user: discord.User,
         give: TradeAsset,
-        give_quantity: app_commands.Range[int, 1],
+        give_quantity: commands.Range[int, 1],
         want: TradeAsset,
-        want_quantity: app_commands.Range[int, 1],
+        want_quantity: commands.Range[int, 1],
     ):
         if user.bot:
             await ctx.send("⚠️ You can't trade with a bot.")
