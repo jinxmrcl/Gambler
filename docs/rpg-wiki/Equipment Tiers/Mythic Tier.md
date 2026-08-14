@@ -9,21 +9,21 @@ Base price: 20,000 gold per item.
 
 ## Dropped by
 
-- [[Dungeons/Endless Abyss]] (Abyssal Horror)
-- [[Dungeons/Endless Abyss]] (Void Serpent)
-- [[Dungeons/Endless Abyss]] (Nightmare Wraith)
-- [[Dungeons/Endless Abyss]] (Abyss Devourer)
-- [[Dungeons/Frostpeak Summit]] (Frost Giant)
-- [[Dungeons/Frostpeak Summit]] (Ice Phoenix)
-- [[Dungeons/Frostpeak Summit]] (Rime Wyvern)
-- [[Dungeons/Frostpeak Summit]] (Frost Monarch)
-- [[Dungeons/Scorched Wastes]] (Sand Colossus)
-- [[Dungeons/Scorched Wastes]] (Mirage Stalker)
-- [[Dungeons/Scorched Wastes]] (Dust Wyrm)
-- [[Dungeons/Scorched Wastes]] (Storm Colossus)
-- [[Dungeons/Nightmare Realm]] (Dread Harbinger)
-- [[Dungeons/Nightmare Realm]] (Shrieking Terror)
-- [[Dungeons/Nightmare Realm]] (Living Nightmare)
-- [[Dungeons/Nightmare Realm]] (The Nightmare King)
+- [Endless Abyss](../Dungeons/Endless%20Abyss.md) (Abyssal Horror)
+- [Endless Abyss](../Dungeons/Endless%20Abyss.md) (Void Serpent)
+- [Endless Abyss](../Dungeons/Endless%20Abyss.md) (Nightmare Wraith)
+- [Endless Abyss](../Dungeons/Endless%20Abyss.md) (Abyss Devourer)
+- [Frostpeak Summit](../Dungeons/Frostpeak%20Summit.md) (Frost Giant)
+- [Frostpeak Summit](../Dungeons/Frostpeak%20Summit.md) (Ice Phoenix)
+- [Frostpeak Summit](../Dungeons/Frostpeak%20Summit.md) (Rime Wyvern)
+- [Frostpeak Summit](../Dungeons/Frostpeak%20Summit.md) (Frost Monarch)
+- [Scorched Wastes](../Dungeons/Scorched%20Wastes.md) (Sand Colossus)
+- [Scorched Wastes](../Dungeons/Scorched%20Wastes.md) (Mirage Stalker)
+- [Scorched Wastes](../Dungeons/Scorched%20Wastes.md) (Dust Wyrm)
+- [Scorched Wastes](../Dungeons/Scorched%20Wastes.md) (Storm Colossus)
+- [Nightmare Realm](../Dungeons/Nightmare%20Realm.md) (Dread Harbinger)
+- [Nightmare Realm](../Dungeons/Nightmare%20Realm.md) (Shrieking Terror)
+- [Nightmare Realm](../Dungeons/Nightmare%20Realm.md) (Living Nightmare)
+- [Nightmare Realm](../Dungeons/Nightmare%20Realm.md) (The Nightmare King)
 
-See [[Equipment & Upgrades]] for upgrading and selling.
+See [Equipment & Upgrades](../Equipment%20%26%20Upgrades.md) for upgrading and selling.

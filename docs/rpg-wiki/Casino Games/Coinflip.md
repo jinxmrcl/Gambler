@@ -8,4 +8,4 @@ check) since it's a player-vs-player wager, not a house game.
 randomized per flip (46.5%-50.5%, never a fixed 50%) so it can't be pinned down by watching
 outcomes, but averages out to the same house edge — a clean 2x payout on a win.
 
-See [[Casino Overview]] and [[../Social/Social Overview]] for other PvP features.
+See [Casino Overview](Casino%20Overview.md) and [Social Overview](../Social/Social%20Overview.md) for other PvP features.

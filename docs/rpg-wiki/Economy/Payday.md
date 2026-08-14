@@ -9,8 +9,8 @@ global across every server a user shares with the bot.
 
 Reuses the existing `cooldowns` table (`action="payday"`) rather than a new one, so it works
 identically whether the bot is running on MySQL or has fallen back to
-[[../Infrastructure/Supabase Fallback|Supabase]]. Announcements go through the global rate
-limiter (see [[../Infrastructure/Rate Limiting]]) so a burst of simultaneous paydays can't spike
+[Supabase](../Infrastructure/Supabase%20Fallback.md). Announcements go through the global rate
+limiter (see [Rate Limiting](../Infrastructure/Rate%20Limiting.md)) so a burst of simultaneous paydays can't spike
 past Discord's bot-wide request limit.
 
-See [[Economy Overview]].
+See [Economy Overview](Economy%20Overview.md).

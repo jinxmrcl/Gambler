@@ -11,6 +11,6 @@
   statement each to close check-then-act races from a command being fired twice at once.
 
 `database/db_postgres.py` mirrors every method here 1:1 for Supabase/Postgres — see
-[[Supabase Fallback]].
+[Supabase Fallback](Supabase%20Fallback.md).
 
-See [[Infrastructure Overview]].
+See [Infrastructure Overview](Infrastructure%20Overview.md).

@@ -1,7 +1,7 @@
 # Auto Updates
 
 A background task in `main.py` (`_git_watch_loop`), started in `setup_hook` alongside
-[[Hot Reload]] — runs in-process, so it shows up in the same logs/process as the bot itself
+[Hot Reload](Hot%20Reload.md) — runs in-process, so it shows up in the same logs/process as the bot itself
 rather than as a separate service.
 
 Every 60s: pins `origin` to the repo's HTTPS URL (self-healing against a misconfigured remote),
@@ -12,8 +12,8 @@ clobber anything). On a successful pull it posts to `RESTART_LOG_CHANNEL_ID`; on
 once per failing commit rather than repeating every cycle.
 
 Deliberately does **not** restart the bot itself — code changes to `commands/`, `events/`,
-`rpg/`, `utils/`, `database/` get picked up automatically by [[Hot Reload]] regardless, and
+`rpg/`, `utils/`, `database/` get picked up automatically by [Hot Reload](Hot%20Reload.md) regardless, and
 anything else (like `main.py` itself) needs an explicit `/restart` (see
-[[../Admin & Settings/Admin Commands|Admin Commands]]).
+[Admin Commands](../Admin%20%26%20Settings/Admin%20Commands.md)).
 
-See [[Infrastructure Overview]].
+See [Infrastructure Overview](Infrastructure%20Overview.md).

@@ -7,20 +7,20 @@ Recommended level: **25+**
 ### Fire Elemental 🔥
 - HP 260 • ATK 38 • DEF 14 • Crit 12%
 - Rewards: 300 XP, 400-600 gold
-- Loot (12% chance): [[Equipment Tiers/Legendary Tier|🟠 🐉 Dragon Fang]], [[Equipment Tiers/Legendary Tier|🟠 🐲 Dragonscale Armor]]
+- Loot (12% chance): [🟠 🐉 Dragon Fang](../Equipment%20Tiers/Legendary%20Tier.md), [🟠 🐲 Dragonscale Armor](../Equipment%20Tiers/Legendary%20Tier.md)
 
 ### Obsidian Golem 🗿
 - HP 340 • ATK 30 • DEF 22 • Crit 5%
 - Rewards: 320 XP, 420-650 gold
-- Loot (12% chance): [[Equipment Tiers/Legendary Tier|🟠 🐉 Dragon Fang]], [[Equipment Tiers/Legendary Tier|🟠 🐲 Dragonscale Armor]]
+- Loot (12% chance): [🟠 🐉 Dragon Fang](../Equipment%20Tiers/Legendary%20Tier.md), [🟠 🐲 Dragonscale Armor](../Equipment%20Tiers/Legendary%20Tier.md)
 
 ### Ancient Drake 🐲
 - HP 300 • ATK 42 • DEF 18 • Crit 18%
 - Rewards: 380 XP, 500-800 gold
-- Loot (12% chance): [[Equipment Tiers/Legendary Tier|🟠 🐉 Dragon Fang]], [[Equipment Tiers/Legendary Tier|🟠 🐲 Dragonscale Armor]]
+- Loot (12% chance): [🟠 🐉 Dragon Fang](../Equipment%20Tiers/Legendary%20Tier.md), [🟠 🐲 Dragonscale Armor](../Equipment%20Tiers/Legendary%20Tier.md)
 
 ## Boss
-[[Bosses/Inferno Wyrm|Inferno Wyrm 🌋]] — challenge with `/dungeonboss`
+[Inferno Wyrm 🌋](../Bosses/Inferno%20Wyrm.md) — challenge with `/dungeonboss`
 
 ## Related gear tiers
-- [[Equipment Tiers/Legendary Tier]]
+- [Legendary Tier](../Equipment%20Tiers/Legendary%20Tier.md)

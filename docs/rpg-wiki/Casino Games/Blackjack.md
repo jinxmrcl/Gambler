@@ -7,4 +7,4 @@ Classic Blackjack with Hit / Stand / Double buttons, interactive via Discord Com
 - Double down doubles the bet and draws exactly one more card
 - Dealer draws to 17
 
-Part of [[Casino Overview]]. Uses the shared 3% edge implicitly through payout ratios.
+Part of [Casino Overview](Casino%20Overview.md). Uses the shared 3% edge implicitly through payout ratios.

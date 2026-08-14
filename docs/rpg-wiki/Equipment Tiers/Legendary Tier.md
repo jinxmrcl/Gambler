@@ -9,16 +9,16 @@ Base price: 7,000 gold per item.
 
 ## Dropped by
 
-- [[Dungeons/Molten Depths]] (Fire Elemental)
-- [[Dungeons/Molten Depths]] (Obsidian Golem)
-- [[Dungeons/Molten Depths]] (Ancient Drake)
-- [[Dungeons/Molten Depths]] (Inferno Wyrm)
-- [[Dungeons/Sunken Ruins]] (Drowned Sentinel)
-- [[Dungeons/Sunken Ruins]] (Coral Wraith)
-- [[Dungeons/Sunken Ruins]] (Ancient Leviathan)
-- [[Dungeons/Sunken Ruins]] (Leviathan King)
-- [[Dungeons/Frostpeak Summit]] (Frost Giant)
-- [[Dungeons/Frostpeak Summit]] (Ice Phoenix)
-- [[Dungeons/Frostpeak Summit]] (Frost Monarch)
+- [Molten Depths](../Dungeons/Molten%20Depths.md) (Fire Elemental)
+- [Molten Depths](../Dungeons/Molten%20Depths.md) (Obsidian Golem)
+- [Molten Depths](../Dungeons/Molten%20Depths.md) (Ancient Drake)
+- [Molten Depths](../Dungeons/Molten%20Depths.md) (Inferno Wyrm)
+- [Sunken Ruins](../Dungeons/Sunken%20Ruins.md) (Drowned Sentinel)
+- [Sunken Ruins](../Dungeons/Sunken%20Ruins.md) (Coral Wraith)
+- [Sunken Ruins](../Dungeons/Sunken%20Ruins.md) (Ancient Leviathan)
+- [Sunken Ruins](../Dungeons/Sunken%20Ruins.md) (Leviathan King)
+- [Frostpeak Summit](../Dungeons/Frostpeak%20Summit.md) (Frost Giant)
+- [Frostpeak Summit](../Dungeons/Frostpeak%20Summit.md) (Ice Phoenix)
+- [Frostpeak Summit](../Dungeons/Frostpeak%20Summit.md) (Frost Monarch)
 
-See [[Equipment & Upgrades]] for upgrading and selling.
+See [Equipment & Upgrades](../Equipment%20%26%20Upgrades.md) for upgrading and selling.

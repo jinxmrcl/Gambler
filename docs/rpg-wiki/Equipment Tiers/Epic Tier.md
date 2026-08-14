@@ -9,9 +9,9 @@ Base price: 2,500 gold per item.
 
 ## Dropped by
 
-- [[Dungeons/Forgotten Crypt]] (Wraith)
-- [[Dungeons/Forgotten Crypt]] (Lich Acolyte)
-- [[Dungeons/Forgotten Crypt]] (Bone Golem)
-- [[Dungeons/Forgotten Crypt]] (Lich Lord)
+- [Forgotten Crypt](../Dungeons/Forgotten%20Crypt.md) (Wraith)
+- [Forgotten Crypt](../Dungeons/Forgotten%20Crypt.md) (Lich Acolyte)
+- [Forgotten Crypt](../Dungeons/Forgotten%20Crypt.md) (Bone Golem)
+- [Forgotten Crypt](../Dungeons/Forgotten%20Crypt.md) (Lich Lord)
 
-See [[Equipment & Upgrades]] for upgrading and selling.
+See [Equipment & Upgrades](../Equipment%20%26%20Upgrades.md) for upgrading and selling.

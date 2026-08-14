@@ -1,7 +1,7 @@
 # Supabase Fallback
 
 `database/db_postgres.py` — a `PostgresDatabase` class that mirrors `Database` (see
-[[Database Layer]]) method-for-method: same public methods, same signatures, same
+[Database Layer](Database%20Layer.md)) method-for-method: same public methods, same signatures, same
 `InsufficientFunds` exception, so calling code never needs to know which backend is active.
 
 Used only as a **startup-only failover**: `main.py`'s `setup_hook` tries MySQL first (with its
@@ -18,4 +18,4 @@ hand-translated from MySQL syntax: `ON DUPLICATE KEY UPDATE` → `ON CONFLICT ..
 Credentials never live in `.env` as literal values — `SUPABASE_DB_URL_FILE` points at a
 gitignored secret file instead, same pattern as `DB_PASSWORD_FILE` for MySQL.
 
-See [[Infrastructure Overview]].
+See [Infrastructure Overview](Infrastructure%20Overview.md).

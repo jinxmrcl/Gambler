@@ -8,4 +8,4 @@ higher risk/reward — the layout shares the last row between tiles and the Cash
 limit per message.
 
 Multiplier is the fair hypergeometric odds of avoiding all mines so far, scaled down by the
-house edge. See [[Casino Overview]].
+house edge. See [Casino Overview](Casino%20Overview.md).
