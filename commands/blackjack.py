@@ -161,6 +161,23 @@ class BlackjackView(ui.LayoutView):
 
         self.text.content = "## 🃏 Blackjack\n" + "\n".join(lines)
 
+    def _render_dealer_progress(self, *, pending: bool = False, footer: str | None = None):
+        lines = []
+        multi = len(self.hands) > 1
+        for i, hand in enumerate(self.hands):
+            total = hand_value(hand.cards)
+            label = f"Hand {i + 1}" if multi else "Your hand"
+            lines.append(f"**{label}:** {hand_str(hand.cards)}  (**{total}**)  •  Bet: {fmt(hand.bet)}")
+
+        dealer_tokens = [c.emoji for c in self.dealer]
+        if pending:
+            dealer_tokens.append(BACK_EMOJI)
+        lines.append(f"**Dealer's hand:** {' '.join(dealer_tokens)}  (**{hand_value(self.dealer)}**)")
+
+        if footer:
+            lines.append(f"-# {footer}")
+        self.text.content = "## 🃏 Blackjack\n" + "\n".join(lines)
+
     async def _advance_or_finish(self):
         if self.active_hand + 1 < len(self.hands):
             self.active_hand += 1
@@ -175,9 +192,22 @@ class BlackjackView(ui.LayoutView):
         self._set_action_buttons_disabled(True)
 
         any_hand_alive = any(hand_value(h.cards) <= 21 for h in self.hands)
+
+        self._render_dealer_progress(footer="🎴 Revealing dealer's hand...")
+        await limited_edit(self.message, view=self)
+        await asyncio.sleep(DEAL_DELAY)
+
         if any_hand_alive:
             while hand_value(self.dealer) < 17:
+                self._render_dealer_progress(pending=True, footer="🎴 Dealer draws...")
+                await limited_edit(self.message, view=self)
+                await asyncio.sleep(DRAW_DELAY)
+
                 self.dealer.append(self.deck.draw())
+                self._render_dealer_progress(footer="🎴 Dealer draws...")
+                await limited_edit(self.message, view=self)
+                await asyncio.sleep(0.4)
+
         dealer_total = hand_value(self.dealer)
 
         total_payout = 0
@@ -348,6 +378,10 @@ class Blackjack(commands.Cog):
 
         hand = view.hands[0]
         if is_blackjack(hand.cards):
+            view.render(footer="🎴 Revealing dealer's hand...")
+            await limited_edit(message, view=view)
+            await asyncio.sleep(DEAL_DELAY)
+
             if is_blackjack(view.dealer):
                 payout = amount
                 footer = f"🤝 Both have Blackjack! Bet refunded ({fmt(payout)})."
