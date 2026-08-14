@@ -96,6 +96,22 @@ HOT_RELOAD = os.getenv("HOT_RELOAD", "true").lower() not in ("0", "false", "no")
 HOT_RELOAD_DIRS = ("commands", "events", "rpg", "utils", "database")
 HOT_RELOAD_POLL_SECONDS = 1.5
 
+GIT_WATCH_INTERVAL_SECONDS = 60
+GIT_REPO_URL = "https://github.com/jinxmrcl/Gambler.git"
+
+
+async def _run_git(*args: str) -> tuple[int, str]:
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        *args,
+        cwd=BASE_DIR,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    out, _ = await proc.communicate()
+    return proc.returncode, out.decode(errors="ignore").strip()
+
 
 def _scan_source_mtimes() -> dict[Path, float]:
     result = {}
@@ -182,6 +198,7 @@ class GamblerBot(commands.Bot):
         )
 
         self._startup_reported = False
+        self._git_watch_last_failed_sha: str | None = None
 
     async def _send_to_restart_channel(self, **kwargs) -> None:
         if not RESTART_LOG_CHANNEL_ID:
@@ -268,6 +285,51 @@ class GamblerBot(commands.Bot):
             self._hot_reload_task = asyncio.create_task(self._hot_reload_loop())
             log.info("Hot reload enabled — watching %s for changes.", ", ".join(HOT_RELOAD_DIRS))
 
+        if (BASE_DIR / ".git").exists():
+            self._git_watch_task = asyncio.create_task(self._git_watch_loop())
+            log.info("Git watch enabled — checking %s every %ds.", GIT_REPO_URL, GIT_WATCH_INTERVAL_SECONDS)
+
+    async def _git_watch_loop(self) -> None:
+        while True:
+            await asyncio.sleep(GIT_WATCH_INTERVAL_SECONDS)
+            try:
+                await self._git_watch_check()
+            except Exception:
+                log.exception("[git-watch] check failed")
+
+    async def _git_watch_check(self) -> None:
+        await _run_git("remote", "set-url", "origin", GIT_REPO_URL)
+        code, _ = await _run_git("fetch", "--quiet", "origin")
+        if code != 0:
+            return
+
+        code, local_sha = await _run_git("rev-parse", "@")
+        if code != 0:
+            return
+        code, remote_sha = await _run_git("rev-parse", "@{u}")
+        if code != 0:
+            return
+        if local_sha == remote_sha:
+            return
+
+        code, _ = await _run_git("pull", "--quiet", "--ff-only")
+        if code == 0:
+            log.info("[git-watch] pulled new commits (%s -> %s)", local_sha[:7], remote_sha[:7])
+            await self._send_to_restart_channel(
+                title="📦 New update pulled",
+                description="New commits were pulled from the repo. Run `/restart` to apply them.",
+                color=0x5865F2,
+            )
+        elif self._git_watch_last_failed_sha != remote_sha:
+            self._git_watch_last_failed_sha = remote_sha
+            log.warning("[git-watch] pull failed for %s (local changes on disk?)", remote_sha[:7])
+            await self._send_to_restart_channel(
+                title="⚠️ Update available but auto-pull failed",
+                description="Likely local changes on the server conflicting with the update. "
+                "Check `git status` on the VPS.",
+                color=0xED4245,
+            )
+
     async def _hot_reload_loop(self) -> None:
         mtimes = _scan_source_mtimes()
         while True:
@@ -317,9 +379,10 @@ class GamblerBot(commands.Bot):
                 log.exception("[hot-reload] failed to sync commands")
 
     async def close(self) -> None:
-        task = getattr(self, "_hot_reload_task", None)
-        if task:
-            task.cancel()
+        for attr in ("_hot_reload_task", "_git_watch_task"):
+            task = getattr(self, attr, None)
+            if task:
+                task.cancel()
         await self.db.close()
         await super().close()
 
