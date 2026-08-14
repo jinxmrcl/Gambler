@@ -165,15 +165,23 @@ class RPGArena(commands.Cog):
     @app_commands.command(name="arena", description="Shows the top duelists.")
     @app_commands.describe(limit="Number of players (default: 10)")
     async def arena(self, interaction: discord.Interaction, limit: app_commands.Range[int, 1, 25] = 10):
-        rows = await self.bot.db.top_arena(limit)
+        rows = await self.bot.db.top_arena(limit * 3)
         if not rows:
             await interaction.response.send_message("There are no duelists yet.")
             return
 
         lines = []
-        for i, (user_id, wins, losses) in enumerate(rows, start=1):
+        for user_id, wins, losses in rows:
             name = await resolve_display_name(self.bot, interaction.guild, user_id)
-            lines.append(f"**{i}.** {name} — {wins}W / {losses}L")
+            if name is None:
+                continue
+            lines.append(f"**{len(lines) + 1}.** {name} — {wins}W / {losses}L")
+            if len(lines) == limit:
+                break
+
+        if not lines:
+            await interaction.response.send_message("There are no duelists yet.")
+            return
 
         view = StaticView("🏆 Arena Leaderboard", "\n".join(lines))
         await interaction.response.send_message(view=view)
