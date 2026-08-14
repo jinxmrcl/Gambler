@@ -1,6 +1,3 @@
-# ── Self-bootstrap: create venv + install requirements on first run ───────────
-# Runs BEFORE any third-party import (uses stdlib only), then relaunches the bot
-# inside the venv. If you already run ./venv/bin/python3 main.py it's a no-op.
 def _bootstrap_venv():
     import os, sys, subprocess
     root = os.path.dirname(os.path.abspath(__file__))
@@ -8,10 +5,8 @@ def _bootstrap_venv():
     bindir = "Scripts" if os.name == "nt" else "bin"
     vpy = os.path.join(venv_dir, bindir, "python.exe" if os.name == "nt" else "python")
 
-    # Already running inside the project venv → carry on.
     if os.path.abspath(sys.prefix) == os.path.abspath(venv_dir):
         return
-    # Guard against an exec loop if venv detection ever fails, or an explicit opt-out.
     if os.environ.get("_GAMBLER_BOOTSTRAPPED") == "1" or os.environ.get("GAMBLER_NO_BOOTSTRAP") == "1":
         return
 
@@ -21,21 +16,19 @@ def _bootstrap_venv():
             print("[bootstrap] No venv found — creating one…", flush=True)
             subprocess.check_call([sys.executable, "-m", "venv", venv_dir])
         req = os.path.join(root, "requirements.txt")
-        # Only install on a fresh venv (or when asked) so normal restarts stay fast.
         if os.path.exists(req) and (fresh or os.environ.get("GAMBLER_INSTALL_DEPS") == "1"):
             print("[bootstrap] Installing requirements…", flush=True)
             subprocess.check_call([vpy, "-m", "pip", "install", "--upgrade", "pip", "-q"])
             subprocess.check_call([vpy, "-m", "pip", "install", "-q", "-r", req])
     except Exception as exc:
         print(f"[bootstrap] setup failed ({exc}); continuing with current interpreter.", flush=True)
-        return  # let the imports below surface a clear error if deps are missing
+        return
 
     os.environ["_GAMBLER_BOOTSTRAPPED"] = "1"
     cmd = [vpy, os.path.abspath(__file__), *sys.argv[1:]]
     if os.name == "nt":
         print("[bootstrap] Launching inside venv…", flush=True)
         raise SystemExit(subprocess.call(cmd))
-    # Linux/macOS: restore the executable bit (Syncthing tends to strip it) then exec.
     try:
         bindir_path = os.path.dirname(vpy)
         for f in os.listdir(bindir_path):
@@ -64,12 +57,27 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from database import Database
+from database import Database, PostgresDatabase
 from utils.checks import gamble_channel_check
 
 load_dotenv()
 
 log = logging.getLogger("gambler")
+
+
+def _resolve_db_password() -> str:
+    password_file = os.getenv("DB_PASSWORD_FILE")
+    if password_file:
+        return Path(password_file).read_text(encoding="utf-8").strip()
+    return os.getenv("DB_PASSWORD", "")
+
+
+def _resolve_supabase_dsn() -> str | None:
+    dsn_file = os.getenv("SUPABASE_DB_URL_FILE")
+    if dsn_file:
+        return Path(dsn_file).read_text(encoding="utf-8").strip()
+    return os.getenv("SUPABASE_DB_URL") or None
+
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = os.getenv("PREFIX", "!")
@@ -169,7 +177,7 @@ class GamblerBot(commands.Bot):
             host=os.getenv("DB_HOST", "localhost"),
             port=int(os.getenv("DB_PORT", "3306")),
             user=os.getenv("DB_USER", "root"),
-            password=os.getenv("DB_PASSWORD", ""),
+            password=_resolve_db_password(),
             db=os.getenv("DB_NAME", "gambler"),
         )
 
@@ -226,8 +234,20 @@ class GamblerBot(commands.Bot):
         await self.close()
 
     async def setup_hook(self) -> None:
-        await self.db.connect()
-        log.info("Connected to MySQL database.")
+        try:
+            await self.db.connect()
+            log.info("Connected to MySQL database.")
+        except Exception:
+            dsn = _resolve_supabase_dsn()
+            if not dsn:
+                raise
+            log.warning(
+                "MySQL is unreachable and SUPABASE_DB_URL(_FILE) is set — falling back to "
+                "Supabase/Postgres for this run."
+            )
+            self.db = PostgresDatabase(dsn)
+            await self.db.connect()
+            log.info("Connected to Supabase/Postgres fallback database.")
 
         for folder in ("events", "commands"):
             folder_path = BASE_DIR / folder

@@ -11,7 +11,7 @@ from utils.ratelimit import limited_edit
 DEFAULT_COLS = 5
 DEFAULT_ROWS = 4
 MIN_COLS, MAX_COLS = 2, 5
-MIN_ROWS, MAX_ROWS = 2, 4  # capped at 4 so a 5th ActionRow is free for the Cash Out button
+MIN_ROWS, MAX_ROWS = 2, 4
 MAX_TOTAL_TILES = MAX_COLS * MAX_ROWS
 
 
