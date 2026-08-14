@@ -17,17 +17,21 @@ games, a full virtual economy (bank, shop, trading, marriage, lottery, robbing),
 from-scratch RPG (7 classes, 16 dungeons, level 1-1500 with prestige), and
 MySQL-backed persistence.
 
-📊 **~7,000 lines of Python** across 48 files.
+📊 **~7,650 lines of Python** across 51 files.
 
 ## Features
 
-**Casino Games** — Blackjack, Mines (customizable grid size), Hilo, Plinko, Limbo, Keno,
-Slots, Roulette, Dice, and Solo Coinflip (`/soloflip`) — all against the house — plus a
-PvP `/coinflip` duel between two players. All games are mathematically fair with a fixed,
-transparent house edge (`HOUSE_EDGE` in `utils/economy.py`, default 3%), and interactive
-ones (Blackjack, Mines, Hilo, Keno) use Discord's native buttons and select menus.
-Blackjack and Hilo render playing cards with custom Discord emojis (`assets/cards/`,
-mapped in `utils/cards.py`) instead of plain text.
+**Casino Games** — Blackjack (with Split), Mines (customizable grid size), Hilo, Plinko,
+Limbo, Keno, Slots, Roulette, Dice, Baccarat, Horse Race, Scratchcard, and Solo Coinflip
+(`/soloflip`) — all against the house — plus a PvP `/coinflip` duel between two players.
+All games are mathematically fair with a fixed, transparent house edge (`HOUSE_EDGE` in
+`utils/economy.py`, default 3%); Horse Race and Baccarat derive their odds directly from
+simulating the actual game rules (validated against real-world baccarat statistics)
+rather than hand-picked numbers. Interactive ones (Blackjack, Mines, Hilo, Keno) use
+Discord's native buttons and select menus, and several (Blackjack, Slots, Scratchcard,
+Horse Race, Baccarat) play out with a timed animated reveal instead of showing the
+result instantly. Blackjack and Hilo render playing cards with custom Discord emojis
+(`assets/cards/`, mapped in `utils/cards.py`) instead of plain text.
 
 **RPG** (`rpg/`, `commands/rpg_*.py`) — a full slash-only RPG sharing the same wallet as
 the casino:
@@ -273,6 +277,12 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 - `roulette <bet> <choice>` — bet on a number, color, or even/odd
 - `dice <bet> <prediction>` — predict the sum of two dice (2-12)
 - `soloflip <bet> [call=heads]` (alias `cf`) — call heads or tails against the house
+- `scratchcard <bet>` (alias `scratch`) — scratch off a 3x3 card one tile at a time;
+  match 4 or more of the same symbol to win
+- `horserace <bet> <horse>` (alias `horse`) — bet on one of 6 horses with individually
+  simulated odds (2.7x favorite up to ~40x longshot) and watch the animated race
+- `baccarat <bet> <choice>` — bet on Player, Banker, or Tie; plays out the real casino
+  drawing rules (natural 8/9, third-card rules for both hands) with an animated reveal
 
 All games share a 3% house edge (`HOUSE_EDGE` in `utils/economy.py`, or the standard
 European single-zero odds for `roulette`), which scales payout multipliers to stay
@@ -332,6 +342,9 @@ commands/keno.py              Keno
 commands/slots.py             Slots
 commands/roulette.py          Roulette
 commands/dice.py              Dice
+commands/scratchcard.py       Scratchcard
+commands/horserace.py         Horse Race
+commands/baccarat.py          Baccarat
 commands/rpg_character.py     rpgstart, classes, character, heal
 commands/rpg_dungeon.py       dungeons, dungeon, dungeonboss
 commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpginventory
