@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import json
+import logging
 import random
 from typing import Literal
 
@@ -20,14 +21,14 @@ from rpg.primordial import HIGH_END_DUNGEONS, PRIMORDIAL_BASES, PRIMORDIAL_DROP_
 from utils.economy import StaticView, fmt, game_container
 from utils.ratelimit import limited_edit
 
+log = logging.getLogger("gambler")
+
 DungeonKey = Literal[
     "forest", "cave", "crypt", "volcano", "abyss", "celestial",
     "ruins", "frostpeak", "wastes", "nightmare_realm", "sunken_city",
     "voidscar", "titan_forge", "chaos_rift", "eternal_throne", "world_ender",
 ]
 
-DUNGEON_COOLDOWN = 20
-BOSS_COOLDOWN = 300
 TEAM_LOBBY_SECONDS = 30
 TEAM_MAX_SIZE = 8
 BOSS_BONUS_LOOT_CHANCE = 0.15
@@ -343,21 +344,12 @@ class TeamLobbyView(ui.LayoutView):
             if character and character["level"] >= d.min_level:
                 roster.append((member, character))
 
-        cooldown_key = f"boss_{d.key}" if self.is_boss else "dungeon"
-        cooldown_seconds = BOSS_COOLDOWN if self.is_boss else DUNGEON_COOLDOWN
         fighters: list[Fighter] = []
         fighter_members: list[discord.abc.User] = []
         fighter_characters: list[dict] = []
         dropped: list[str] = []
 
         for member, character in roster:
-            ok = await db.try_consume_cooldown(
-                member.id, cooldown_key, datetime.timedelta(seconds=cooldown_seconds), now
-            )
-            if not ok:
-                dropped.append(f"{member.mention} (on cooldown)")
-                continue
-
             player_stats = full_stats(character)
             hp_now = current_hp(character, player_stats["hp"], now)
             if hp_now <= 0:
@@ -583,17 +575,6 @@ class RPGDungeon(commands.Cog):
             )
             return
 
-        ok = await self.bot.db.try_consume_cooldown(
-            interaction.user.id, "dungeon", datetime.timedelta(seconds=DUNGEON_COOLDOWN), now
-        )
-        if not ok:
-            until = await self.bot.db.get_cooldown(interaction.user.id, "dungeon")
-            remaining = int((until - now).total_seconds())
-            await interaction.response.send_message(
-                f"⏳ You're still resting. Try again in {remaining // 60}m {remaining % 60}s."
-            )
-            return
-
         outcome = await _resolve_dungeon_fight(
             self.bot, interaction.user.id, interaction.user.display_name, character, hp_now, d, now
         )
@@ -676,19 +657,6 @@ class RPGDungeon(commands.Cog):
             )
             return
 
-        cooldown_key = f"boss_{dungeon}"
-        ok = await self.bot.db.try_consume_cooldown(
-            interaction.user.id, cooldown_key, datetime.timedelta(seconds=BOSS_COOLDOWN), now
-        )
-        if not ok:
-            until = await self.bot.db.get_cooldown(interaction.user.id, cooldown_key)
-            remaining = int((until - now).total_seconds())
-            await interaction.response.send_message(
-                f"⏳ {d.boss.name} isn't ready to be challenged again yet. Try again in "
-                f"{remaining // 60}m {remaining % 60}s."
-            )
-            return
-
         outcome = await _resolve_boss_fight(
             self.bot, interaction.user.id, interaction.user.display_name, character, hp_now, d, now
         )
@@ -768,6 +736,7 @@ class RPGDungeon(commands.Cog):
             "gold": 0, "xp": 0, "levels_gained": 0, "loot": [], "primordial_drops": [],
         }
         deadline = datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes)
+        interrupted = False
 
         try:
             while datetime.datetime.utcnow() < deadline:
@@ -780,24 +749,20 @@ class RPGDungeon(commands.Cog):
                 hp_now = current_hp(character, player_stats["hp"], now)
 
                 if hp_now > 0:
-                    ok = await self.bot.db.try_consume_cooldown(
-                        user_id, "dungeon", datetime.timedelta(seconds=DUNGEON_COOLDOWN), now
+                    outcome = await _resolve_dungeon_fight(
+                        self.bot, user_id, display_name, character, hp_now, d, now
                     )
-                    if ok:
-                        outcome = await _resolve_dungeon_fight(
-                            self.bot, user_id, display_name, character, hp_now, d, now
-                        )
-                        if outcome["event"] in (TREASURE, MERCHANT):
-                            stats["gold"] += outcome["gold"]
-                        else:
-                            stats["dungeon_attempts"] += 1
-                            stats["gold"] += outcome["gold"]
-                            stats["xp"] += outcome["xp"]
-                            stats["levels_gained"] += outcome["levels_gained"]
-                            if outcome["won"]:
-                                stats["dungeon_wins"] += 1
-                            if outcome["loot_item"]:
-                                stats["loot"].append(outcome["loot_item"])
+                    if outcome["event"] in (TREASURE, MERCHANT):
+                        stats["gold"] += outcome["gold"]
+                    else:
+                        stats["dungeon_attempts"] += 1
+                        stats["gold"] += outcome["gold"]
+                        stats["xp"] += outcome["xp"]
+                        stats["levels_gained"] += outcome["levels_gained"]
+                        if outcome["won"]:
+                            stats["dungeon_wins"] += 1
+                        if outcome["loot_item"]:
+                            stats["loot"].append(outcome["loot_item"])
 
                 now = datetime.datetime.utcnow()
                 character = await self.bot.db.get_character(user_id)
@@ -805,29 +770,28 @@ class RPGDungeon(commands.Cog):
                     player_stats = full_stats(character)
                     hp_now = current_hp(character, player_stats["hp"], now)
                     if hp_now > 0:
-                        ok = await self.bot.db.try_consume_cooldown(
-                            user_id, f"boss_{d.key}", datetime.timedelta(seconds=BOSS_COOLDOWN), now
+                        outcome = await _resolve_boss_fight(
+                            self.bot, user_id, display_name, character, hp_now, d, now
                         )
-                        if ok:
-                            outcome = await _resolve_boss_fight(
-                                self.bot, user_id, display_name, character, hp_now, d, now
-                            )
-                            stats["boss_attempts"] += 1
-                            stats["gold"] += outcome["gold"]
-                            stats["xp"] += outcome["xp"]
-                            stats["levels_gained"] += outcome["levels_gained"]
-                            if outcome["won"]:
-                                stats["boss_wins"] += 1
-                            if outcome["loot_item"]:
-                                stats["loot"].append(outcome["loot_item"])
-                            if outcome["bonus_loot_item"]:
-                                stats["loot"].append(outcome["bonus_loot_item"])
-                            if outcome["primordial_drop"]:
-                                stats["primordial_drops"].append(outcome["primordial_drop"])
+                        stats["boss_attempts"] += 1
+                        stats["gold"] += outcome["gold"]
+                        stats["xp"] += outcome["xp"]
+                        stats["levels_gained"] += outcome["levels_gained"]
+                        if outcome["won"]:
+                            stats["boss_wins"] += 1
+                        if outcome["loot_item"]:
+                            stats["loot"].append(outcome["loot_item"])
+                        if outcome["bonus_loot_item"]:
+                            stats["loot"].append(outcome["bonus_loot_item"])
+                        if outcome["primordial_drop"]:
+                            stats["primordial_drops"].append(outcome["primordial_drop"])
 
                 await asyncio.sleep(IDLE_POLL_SECONDS)
         except asyncio.CancelledError:
-            pass
+            interrupted = True
+        except Exception:
+            interrupted = True
+            log.exception("[idle] unexpected error during idle farming for user %s", user_id)
 
         character = await self.bot.db.get_character(user_id)
         final_level = character["level"] if character else None
@@ -851,12 +815,18 @@ class RPGDungeon(commands.Cog):
         lines.append(f"💰 **+{fmt(stats['gold'])}**  •  **+{stats['xp']} XP**")
         if stats["levels_gained"] and final_level is not None:
             lines.append(f"⬆️ Leveled up to **{final_level}**!")
+        if interrupted:
+            lines.append("\n⚠️ *Stopped early — the bot restarted or updated mid-run, so this is partial progress, not the full requested time.*")
 
         body = "\n".join(lines) + loot_text
-        await limited_edit(
-            message,
-            view=StaticView(f"🏕️ Idle Farming Complete — {d.name}", body, color=discord.Color.green()),
-        )
+        title = f"🏕️ Idle Farming {'Interrupted' if interrupted else 'Complete'} — {d.name}"
+        try:
+            await limited_edit(
+                message,
+                view=StaticView(title, body, color=discord.Color.orange() if interrupted else discord.Color.green()),
+            )
+        except Exception:
+            log.exception("[idle] failed to send final summary for user %s", user_id)
 
 
 async def setup(bot: commands.Bot):

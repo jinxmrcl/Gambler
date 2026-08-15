@@ -1,6 +1,6 @@
 # The Eternal Monarch 🏰
 
-Boss of [Eternal Throne](../Dungeons/Eternal%20Throne.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Eternal Throne](../Dungeons/Eternal%20Throne.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 41475 • ATK 2504 • DEF 1160 • Crit 21%

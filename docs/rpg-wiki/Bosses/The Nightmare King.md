@@ -1,6 +1,6 @@
 # The Nightmare King 👹
 
-Boss of [Nightmare Realm](../Dungeons/Nightmare%20Realm.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Nightmare Realm](../Dungeons/Nightmare%20Realm.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 9216 • ATK 558 • DEF 254 • Crit 20%

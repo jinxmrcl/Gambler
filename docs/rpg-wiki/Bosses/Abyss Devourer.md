@@ -1,6 +1,6 @@
 # Abyss Devourer 👁️
 
-Boss of [Endless Abyss](../Dungeons/Endless%20Abyss.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Endless Abyss](../Dungeons/Endless%20Abyss.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 1470 • ATK 89 • DEF 40 • Crit 20%

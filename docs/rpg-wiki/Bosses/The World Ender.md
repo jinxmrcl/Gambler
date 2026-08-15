@@ -1,6 +1,6 @@
 # The World Ender ☄️
 
-Boss of [World Ender's Lair](../Dungeons/World%20Ender%27s%20Lair.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [World Ender's Lair](../Dungeons/World%20Ender%27s%20Lair.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 55300 • ATK 3338 • DEF 1546 • Crit 23%

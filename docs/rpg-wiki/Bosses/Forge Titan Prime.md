@@ -1,6 +1,6 @@
 # Forge Titan Prime ⚒️
 
-Boss of [Titan's Forge](../Dungeons/Titan%27s%20Forge.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Titan's Forge](../Dungeons/Titan%27s%20Forge.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 25386 • ATK 1530 • DEF 709 • Crit 20%

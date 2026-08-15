@@ -1,6 +1,6 @@
 # Avatar of Chaos ♾️
 
-Boss of [Chaos Rift](../Dungeons/Chaos%20Rift.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Chaos Rift](../Dungeons/Chaos%20Rift.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 32293 • ATK 1949 • DEF 902 • Crit 20%

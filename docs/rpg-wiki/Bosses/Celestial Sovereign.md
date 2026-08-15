@@ -1,6 +1,6 @@
 # Celestial Sovereign 🌌
 
-Boss of [Celestial Rift](../Dungeons/Celestial%20Rift.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Celestial Rift](../Dungeons/Celestial%20Rift.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 2391 • ATK 136 • DEF 66 • Crit 20%

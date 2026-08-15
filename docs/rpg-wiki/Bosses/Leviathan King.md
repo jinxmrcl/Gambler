@@ -1,6 +1,6 @@
 # Leviathan King 🐋
 
-Boss of [Sunken Ruins](../Dungeons/Sunken%20Ruins.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Sunken Ruins](../Dungeons/Sunken%20Ruins.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 3523 • ATK 209 • DEF 94 • Crit 16%
