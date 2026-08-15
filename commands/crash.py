@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import math
 import random
 import time
@@ -8,13 +9,17 @@ from discord import app_commands, ui
 from discord.ext import commands
 
 from utils.checks import game_enabled
-from utils.economy import HOUSE_EDGE, StaticView, fmt, game_container, resolve_bet
-from utils.ratelimit import limited_edit
+from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
+from utils.ratelimit import limited_edit, limited_send
+
+log = logging.getLogger("gambler")
 
 RTP = 1 - HOUSE_EDGE
 MAX_CRASH = 1_000.0
 TICK_DELAY = 0.5
 GROWTH_RATE = 0.20
+AUTO_ROUND_PAUSE = 4.0
+AUTO_ERROR_BACKOFF = 10.0
 
 
 def roll_crash_point() -> float:
@@ -27,11 +32,8 @@ def multiplier_at(elapsed_seconds: float) -> float:
     return math.exp(GROWTH_RATE * elapsed_seconds)
 
 
-def _spectator_body(player_name: str, bet: int, multiplier: float, footer: str | None = None) -> str:
-    body = f"👀 **{player_name}** is playing — Bet: {fmt(bet)}\n\n## {multiplier:.2f}x"
-    if footer:
-        body += f"\n{footer}"
-    return body
+def _auto_body(multiplier: float, footer: str) -> str:
+    return f"## {multiplier:.2f}x\n{footer}\n-# Autoplay — set with `/set-crashchannel`"
 
 
 class CashOutButton(ui.Button):
@@ -51,7 +53,6 @@ class CrashView(ui.LayoutView):
         self.current_multiplier = 1.0
         self.finished = False
         self.message: discord.Message | None = None
-        self.spectator_message: discord.Message | None = None
 
         self.container, self.text = game_container("🚀 Crash", f"**Bet:** {fmt(bet)}\n\n## 1.00x\n🚀 Launching...")
         self.cash_out_button = CashOutButton()
@@ -74,19 +75,6 @@ class CrashView(ui.LayoutView):
         if color:
             self.container.accent_colour = color
 
-    async def _update_spectator(self, footer: str | None = None, *, color: discord.Color | None = None):
-        if not self.spectator_message:
-            return
-        view = StaticView(
-            "🚀 Crash — Spectator",
-            _spectator_body(self.ctx.author.display_name, self.bet, self.current_multiplier, footer),
-            color=color,
-        )
-        try:
-            await limited_edit(self.spectator_message, view=view)
-        except discord.HTTPException:
-            pass
-
     async def cash_out(self, interaction: discord.Interaction):
         if self.finished:
             return
@@ -100,7 +88,6 @@ class CrashView(ui.LayoutView):
         footer = f"🎉 Cashed out at {self.current_multiplier:.2f}x! Payout: {fmt(payout)}"
         self.render(footer=footer, color=discord.Color.green())
         await interaction.response.edit_message(view=self)
-        await self._update_spectator(footer, color=discord.Color.green())
 
     async def on_timeout(self):
         if self.finished:
@@ -111,20 +98,83 @@ class CrashView(ui.LayoutView):
             await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, 0)
             self.render(footer="⏱️ Round timed out — treated as a crash.", color=discord.Color.red())
             await limited_edit(self.message, view=self)
-            await self._update_spectator("⏱️ Round timed out.", color=discord.Color.red())
 
 
 class Crash(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._auto_tasks: dict[int, asyncio.Task] = {}
 
-    async def _spectator_channel(self, ctx: commands.Context):
-        if not ctx.guild:
-            return None
-        channel_id = await self.bot.db.get_crash_channel(ctx.guild.id)
-        if not channel_id or channel_id == ctx.channel.id:
-            return None
-        return ctx.guild.get_channel(channel_id)
+    async def cog_load(self):
+        try:
+            channels = await self.bot.db.all_crash_channels()
+        except Exception:
+            log.exception("[crash] failed to load configured crash channels")
+            channels = []
+        for guild_id, channel_id in channels:
+            self.start_auto_round(guild_id, channel_id)
+
+    def cog_unload(self):
+        for task in self._auto_tasks.values():
+            task.cancel()
+        self._auto_tasks.clear()
+
+    def start_auto_round(self, guild_id: int, channel_id: int):
+        self.stop_auto_round(guild_id)
+        self._auto_tasks[guild_id] = asyncio.create_task(self._auto_loop(guild_id, channel_id))
+
+    def stop_auto_round(self, guild_id: int):
+        task = self._auto_tasks.pop(guild_id, None)
+        if task:
+            task.cancel()
+
+    async def _auto_loop(self, guild_id: int, channel_id: int):
+        await self.bot.wait_until_ready()
+
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except discord.HTTPException:
+                log.warning("[crash] auto channel %s (guild %s) not found, stopping", channel_id, guild_id)
+                return
+
+        try:
+            message = await limited_send(channel, view=_AutoCrashView(1.0, "🚀 Launching..."))
+        except discord.HTTPException:
+            log.warning("[crash] could not post initial auto message in channel %s", channel_id)
+            return
+
+        while True:
+            try:
+                await self._play_auto_round(message)
+            except discord.NotFound:
+                log.warning("[crash] auto message in channel %s was deleted, stopping", channel_id)
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("[crash] auto round failed in channel %s", channel_id)
+                await asyncio.sleep(AUTO_ERROR_BACKOFF)
+
+            await asyncio.sleep(AUTO_ROUND_PAUSE)
+
+    async def _play_auto_round(self, message: discord.Message):
+        crash_point = roll_crash_point()
+        start = time.monotonic()
+
+        while True:
+            await asyncio.sleep(TICK_DELAY)
+            elapsed = time.monotonic() - start
+            multiplier = multiplier_at(elapsed)
+
+            if multiplier >= crash_point:
+                view = _AutoCrashView(crash_point, f"💥 Crashed at {crash_point:.2f}x!", color=discord.Color.red())
+                await limited_edit(message, view=view)
+                return
+
+            view = _AutoCrashView(multiplier, "🚀 Climbing...")
+            await limited_edit(message, view=view)
 
     @commands.hybrid_command(
         name="crash", description="Watch the multiplier climb and cash out before it crashes."
@@ -140,14 +190,6 @@ class Crash(commands.Cog):
         view = CrashView(self, ctx, amount)
         message = await ctx.send(view=view)
         view.message = message
-
-        spectator_channel = await self._spectator_channel(ctx)
-        if spectator_channel:
-            try:
-                spectator_view = StaticView("🚀 Crash — Spectator", _spectator_body(ctx.author.display_name, amount, 1.0))
-                view.spectator_message = await spectator_channel.send(view=spectator_view)
-            except discord.HTTPException:
-                view.spectator_message = None
 
         start = time.monotonic()
         while not view.finished:
@@ -168,13 +210,18 @@ class Crash(commands.Cog):
                 )
                 await limited_edit(message, view=view)
                 await self.bot.db.record_game_result(ctx.author.id, amount, 0)
-                await view._update_spectator(f"💥 Crashed at {crash_point:.2f}x!", color=discord.Color.red())
                 break
 
             view.current_multiplier = multiplier
             view.render(footer="🚀 Climbing — cash out anytime!")
             await limited_edit(message, view=view)
-            await view._update_spectator()
+
+
+class _AutoCrashView(ui.LayoutView):
+    def __init__(self, multiplier: float, footer: str, *, color: discord.Color | None = None):
+        super().__init__(timeout=None)
+        container, _ = game_container("🚀 Crash — Live", _auto_body(multiplier, footer), color=color)
+        self.add_item(container)
 
 
 async def setup(bot: commands.Bot):

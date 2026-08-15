@@ -46,8 +46,10 @@ all backed by MySQL (or Postgres/Supabase).
   hit Cash Out live while the multiplier climbs
 - Several (Blackjack, Slots, Horse Race, Baccarat, Crash) play out with a timed animated
   reveal instead of showing the result instantly
-- Admins can mirror every live Crash round into a spectator channel
-  (`/set-crashchannel`) for others to watch
+- Admins can set a Crash autoplay channel (`/set-crashchannel`) — once set, the bot
+  runs Crash rounds by itself forever, editing one live message in place after every
+  tick and starting the next round automatically after each crash; no further setup
+  or manual play needed
 - Blackjack and Hilo render real playing cards via custom Discord emojis
   (`assets/cards/`, mapped in `utils/cards.py`) instead of plain text
 
@@ -300,8 +302,8 @@ Requires the **Administrator** permission on the server.
 - `togglechannel <add|remove|clear>` — restrict games to specific channels
 - `set-gamblechannel [channel] [clear]` — restrict the whole bot to one channel
   (admins are always exempt)
-- `set-crashchannel [channel] [clear]` — mirror every live `/crash` round into a
-  spectator channel
+- `set-crashchannel [channel] [clear]` — have the bot run Crash rounds automatically
+  and forever in a channel, self-editing after every round
 - `set-updateschannel [channel] [clear]` — announce newly shipped commands/game modes
   here after a restart
 
@@ -400,7 +402,7 @@ commands/dice.py              Dice
 commands/scratchcard.py       Scratchcard
 commands/horserace.py         Horse Race
 commands/baccarat.py          Baccarat
-commands/crash.py             Crash (with spectator-channel mirroring)
+commands/crash.py             Crash (with autonomous, self-editing autoplay channel)
 commands/rpg_character.py     rpgstart, classes, character, heal
 commands/rpg_dungeon.py       dungeons, dungeon, dungeonboss
 commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpginventory

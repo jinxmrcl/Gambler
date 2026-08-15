@@ -573,6 +573,9 @@ class PostgresDatabase:
     async def clear_crash_channel(self, guild_id: int) -> None:
         await self._execute("DELETE FROM crash_channels WHERE guild_id = $1", guild_id)
 
+    async def all_crash_channels(self) -> list[tuple[int, int]]:
+        return await self._fetchall("SELECT guild_id, channel_id FROM crash_channels")
+
     async def get_updates_channel(self, guild_id: int) -> int | None:
         row = await self._fetchone(
             "SELECT channel_id FROM updates_channels WHERE guild_id = $1", guild_id
