@@ -3,9 +3,9 @@
 A glass cannon who hits devastatingly hard but can't take much back.
 
 ## Base stats (level 1)
-- HP: 85 (+6.86/level)
-- ATK: 20 (+3.92/level)
-- DEF: 3 (+0.98/level)
+- HP: 85 (+6.76/level)
+- ATK: 20 (+3.87/level)
+- DEF: 3 (+0.97/level)
 - Crit: 12%
 
 ## Skill

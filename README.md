@@ -64,7 +64,11 @@ all backed by MySQL (or Postgres/Supabase).
 **RPG** (`rpg/`, `commands/rpg_*.py`) — a full slash-only RPG sharing the same wallet as
 the casino:
 - 9 classes (Warrior, Mage, Rogue, Paladin, Necromancer, Ranger, Berserker, Monk, Druid),
-  each with a unique active skill
+  each with a unique active skill — Paladin's Divine Shield adds a genuine damage-absorption
+  buffer (soaks a chunk of damage before real HP) on top of its heal
+- `/rpgswitchclass` lets a player unlock and freely swap between exactly 2 classes, each
+  with fully independent level/XP/gear/Primordial items — nothing is ever lost switching
+  back and forth
 - 16 dungeons spanning level 1-1500, each with a programmatically-scaled boss fight and
   its own per-dungeon difficulty curve (simulation-tuned so every class lands in a
   similar win-rate band at every tier, solo or in a team); the 5 highest-tier bosses each
@@ -84,7 +88,8 @@ the casino:
   crit damage, damage reflect, gold find, and more) exclusive to the 5 highest-tier
   bosses — split as a single roll across the party in a team fight rather than per member
 - a gold-sink enchant/upgrade system per item — `/rpgautoupgrade` greedily maxes out
-  whatever's equipped until you're out of gold
+  whatever's equipped until you're out of gold, and `/rpgautobuy` buys/equips the gear
+  tier recommended for your level in one click
 - 3 consumable potions to heal mid-run, persistent HP with passive regen, and `/heal` to
   pay gold for an instant restore (also revives you at 0 HP)
 - PvP `/duel` with a cooldown, and an `/arena` leaderboard of top duelists
@@ -320,6 +325,8 @@ Requires the **Administrator** permission on the server.
 - `rpgsetlevel <user> <level> [xp=0]` — set a player's RPG level directly
 - `rpggive <user> <item> [quantity=1]` — give a player a piece of equipment or a potion
   for free
+- `rpggiveprimordial <user> <slot>` — spawn a freshly-rolled ✨ Primordial item straight
+  to a player
 - `restart` — restart the bot process
 - `settings` — shows this server's disabled games and channel restrictions
 - `togglegame <game> <enabled>` — enable or disable a specific game on this server
@@ -374,6 +381,8 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
 - `classes` — shows the available RPG classes and their stats
 - `character [user]` — shows a character sheet (level, gear, HP, boss kills)
 - `heal` — pay gold to restore HP instantly (also revives you from 0 HP)
+- `rpgswitchclass <class>` — switch to your other class, or unlock a second one (exactly
+  2 total, free to swap between them); each keeps fully independent progress
 - `dungeons` — shows the available dungeons and their level requirements
 - `dungeon <name> [team=False]` — fight your way through a dungeon for gold and XP; with
   `team: True`, opens a public join lobby instead of fighting solo
@@ -390,6 +399,7 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
 - `rpgupgrade <slot>` — spend gold to enchant your equipped gear in a slot
 - `rpgautoupgrade` — repeatedly enchants your cheapest available equipped slot until
   everything's maxed or you're out of gold
+- `rpgautobuy` — buys and equips the gear tier recommended for your level, per slot
 - `rpgequipprimordial <item_id>` — equip a drop-only ✨ Primordial item by its id
 - `rpgunequipprimordial <slot>` — revert a slot back to your regular gear
 - `rpginventory` — shows your owned equipment, potions, and Primordial items
@@ -419,7 +429,7 @@ commands/marriage.py          marry, divorce, marriage
 commands/lottery.py           lottery, lottery_buy, lottery_setchannel (weekly background task)
 commands/profile.py           profile / stats
 commands/cooldowns.py         cooldowns
-commands/admin.py             addmoney, setbalance, giveall, resetuser, restart, rpgsetlevel, rpggive
+commands/admin.py             addmoney, setbalance, giveall, resetuser, restart, rpgsetlevel, rpggive, rpggiveprimordial
 commands/settings.py          settings, togglegame, togglechannel, set-gamblechannel, set-crashchannel, set-updateschannel
 commands/help.py              help
 commands/blackjack.py         Blackjack
@@ -435,9 +445,9 @@ commands/scratchcard.py       Scratchcard
 commands/horserace.py         Horse Race
 commands/baccarat.py          Baccarat
 commands/crash.py             Crash (with autonomous, self-editing autoplay channel)
-commands/rpg_character.py     rpgstart, classes, character, heal
+commands/rpg_character.py     rpgstart, rpgswitchclass, classes, character, heal
 commands/rpg_dungeon.py       dungeons, dungeon, dungeonboss (both with a team-fight lobby mode), idle
-commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpgautoupgrade, rpgequipprimordial, rpgunequipprimordial, rpginventory
+commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpgautoupgrade, rpgautobuy, rpgequipprimordial, rpgunequipprimordial, rpginventory
 commands/rpg_arena.py         duel, arena
 rpg/classes.py                9 class definitions (stats + active skill)
 rpg/combat.py                 Turn-based solo + team combat simulation, damage mitigation, class skills, boss abilities

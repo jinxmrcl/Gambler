@@ -3,7 +3,7 @@
 A disciplined martial artist who punishes attackers for every strike landed.
 
 ## Base stats (level 1)
-- HP: 100 (+9.94/level)
+- HP: 100 (+9.93/level)
 - ATK: 16 (+2.49/level)
 - DEF: 8 (+1.49/level)
 - Crit: 10%

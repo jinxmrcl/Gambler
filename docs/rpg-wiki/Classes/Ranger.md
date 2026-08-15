@@ -3,9 +3,9 @@
 A sharpshooter who never misses a vital shot.
 
 ## Base stats (level 1)
-- HP: 100 (+13.32/level)
-- ATK: 18 (+2.22/level)
-- DEF: 7 (+1.11/level)
+- HP: 100 (+13.12/level)
+- ATK: 18 (+2.18/level)
+- DEF: 7 (+1.09/level)
 - Crit: 20%
 
 ## Skill

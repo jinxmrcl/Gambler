@@ -57,6 +57,46 @@ class RPGCharacter(commands.Cog):
         )
         await interaction.response.send_message(view=view)
 
+    @app_commands.command(name="rpgswitchclass", description="Switch to your other class, or unlock a second one. Both classes' progress is kept.")
+    @app_commands.describe(character_class="Which class to switch to")
+    async def rpgswitchclass(self, interaction: discord.Interaction, character_class: ClassKey):
+        character = await self.bot.db.get_character(interaction.user.id)
+        if not character:
+            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            return
+
+        if character_class == character["class_key"]:
+            await interaction.response.send_message(f"⚠️ You're already playing {CLASSES[character_class].name}.")
+            return
+
+        backup = await self.bot.db.get_character_backup(interaction.user.id)
+        if backup and character_class != backup["class_key"]:
+            active_name = CLASSES[character["class_key"]].name
+            backup_name = CLASSES[backup["class_key"]].name
+            await interaction.response.send_message(
+                f"⚠️ You can only hold 2 classes at once: {active_name} and {backup_name}. "
+                f"Use `/rpgswitchclass` with one of those two."
+            )
+            return
+
+        is_new = not (backup and backup["class_key"] == character_class)
+        starting_hp = base_stats_at_level(character_class, 1)["hp"]
+        await self.bot.db.swap_character_slot(interaction.user.id, character_class, starting_hp)
+
+        c = CLASSES[character_class]
+        if is_new:
+            body = (
+                f"Unlocked a second class: {c.emoji} **{c.name}**!\n{c.description}\n\n"
+                f"Skill: *{c.skill_name}* — {c.skill_desc}\n\n"
+                f"Your {CLASSES[character['class_key']].name} is saved — switch back anytime with "
+                f"`/rpgswitchclass {character['class_key']}`."
+            )
+        else:
+            body = f"Switched back to your {c.emoji} **{c.name}**. Use `/character` to see where you left off."
+
+        view = StaticView("🔄 Class Switched", body, color=discord.Color.gold())
+        await interaction.response.send_message(view=view)
+
     @app_commands.command(name="classes", description="Shows the available RPG classes.")
     async def classes(self, interaction: discord.Interaction):
         view = StaticView("📜 Classes", _class_list_text())
@@ -103,6 +143,7 @@ class RPGCharacter(commands.Cog):
         total_duels = character["wins"] + character["losses"]
         winrate = f"{character['wins'] / total_duels * 100:.0f}%" if total_duels else "—"
         boss_kills = await self.bot.db.total_boss_kills(target.id)
+        backup = await self.bot.db.get_character_backup(target.id)
 
         if prestige > 0:
             level_line = f"{prestige_badge(prestige)} **Prestige {prestige}, Level {level_in_prestige}** (total level {character['level']})"
@@ -124,6 +165,9 @@ class RPGCharacter(commands.Cog):
             f"**Duels:** {character['wins']}W / {character['losses']}L ({winrate})",
             f"**Boss Kills:** {boss_kills}",
         ]
+        if backup:
+            backup_class = CLASSES[backup["class_key"]]
+            lines.append(f"**Also playing:** {backup_class.emoji} {backup_class.name} (Level {backup['level']}) — `/rpgswitchclass {backup['class_key']}`")
 
         view = StaticView(f"📖 {target.display_name}'s Character", "\n".join(lines))
         await interaction.response.send_message(view=view)
