@@ -42,7 +42,7 @@ class Settings(commands.Cog):
             "🛠️ Server Settings",
             f"**Disabled games:** {disabled_text}\n**Allowed game channels:** {channels_text}\n"
             f"**Bot restricted to:** {gamble_channel_text}\n"
-            f"**Crash spectator channel:** {crash_channel_text}\n"
+            f"**Crash autoplay channel:** {crash_channel_text}\n"
             f"**Updates channel:** {updates_channel_text}",
         )
         await ctx.send(view=view)
@@ -117,22 +117,26 @@ class Settings(commands.Cog):
 
     @commands.hybrid_command(
         name="set-crashchannel",
-        description="[Admin] Set a channel where live Crash rounds are mirrored for spectators.",
+        description="[Admin] Set a channel where Crash runs and posts automatically, forever.",
     )
     @app_commands.describe(
-        channel="Channel to mirror Crash rounds into (defaults to this channel)",
-        clear="Remove the spectator channel so rounds stop being mirrored",
+        channel="Channel for the bot to auto-play Crash in (defaults to this channel)",
+        clear="Stop the automatic Crash rounds",
     )
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def set_crashchannel(
         self, ctx: commands.Context, channel: discord.TextChannel | None = None, clear: bool = False
     ):
+        crash_cog = self.bot.get_cog("Crash")
+
         if clear:
             await self.bot.db.clear_crash_channel(ctx.guild.id)
+            if crash_cog:
+                crash_cog.stop_auto_round(ctx.guild.id)
             view = StaticView(
                 "🚀 Crash Channel Cleared",
-                "Crash rounds will no longer be mirrored anywhere.",
+                "The automatic Crash rounds have stopped.",
                 color=discord.Color.blue(),
             )
             await ctx.send(view=view)
@@ -140,10 +144,12 @@ class Settings(commands.Cog):
 
         target = channel or ctx.channel
         await self.bot.db.set_crash_channel(ctx.guild.id, target.id)
+        if crash_cog:
+            crash_cog.start_auto_round(ctx.guild.id, target.id)
         view = StaticView(
             "🚀 Crash Channel Set",
-            f"Every `/crash` round on this server will now also be mirrored into {target.mention} "
-            f"for spectators to watch live.",
+            f"Crash will now run and post itself automatically in {target.mention}, editing the "
+            f"round live and starting a new one after every crash — no setup needed beyond this.",
             color=discord.Color.blue(),
         )
         await ctx.send(view=view)
