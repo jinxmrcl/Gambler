@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import json
 import logging
 
 import asyncpg
@@ -204,6 +205,9 @@ class PostgresDatabase:
                 )
                 """
             )
+            await conn.execute("ALTER TABLE characters ADD COLUMN IF NOT EXISTS equipped_primordial_weapon_id INTEGER NULL")
+            await conn.execute("ALTER TABLE characters ADD COLUMN IF NOT EXISTS equipped_primordial_armor_id INTEGER NULL")
+            await conn.execute("ALTER TABLE characters ADD COLUMN IF NOT EXISTS equipped_primordial_accessory_id INTEGER NULL")
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS rpg_equipment (
@@ -221,6 +225,17 @@ class PostgresDatabase:
                     dungeon_key VARCHAR(32) NOT NULL,
                     kills INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (user_id, dungeon_key)
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS primordial_items (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    slot VARCHAR(16) NOT NULL,
+                    affixes TEXT NOT NULL,
+                    dropped_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
@@ -794,9 +809,16 @@ class PostgresDatabase:
 
     async def get_character(self, user_id: int) -> dict | None:
         row = await self._fetchone(
-            "SELECT class_key, level, xp, equipped_weapon, equipped_armor, equipped_accessory, "
-            "wins, losses, current_hp, hp_updated_at, weapon_enchant, armor_enchant, "
-            "accessory_enchant FROM characters WHERE user_id = $1",
+            "SELECT c.class_key, c.level, c.xp, c.equipped_weapon, c.equipped_armor, c.equipped_accessory, "
+            "c.wins, c.losses, c.current_hp, c.hp_updated_at, "
+            "c.weapon_enchant, c.armor_enchant, c.accessory_enchant, "
+            "c.equipped_primordial_weapon_id, c.equipped_primordial_armor_id, c.equipped_primordial_accessory_id, "
+            "pw.affixes, pa.affixes, pacc.affixes "
+            "FROM characters c "
+            "LEFT JOIN primordial_items pw ON pw.id = c.equipped_primordial_weapon_id "
+            "LEFT JOIN primordial_items pa ON pa.id = c.equipped_primordial_armor_id "
+            "LEFT JOIN primordial_items pacc ON pacc.id = c.equipped_primordial_accessory_id "
+            "WHERE c.user_id = $1",
             user_id,
         )
         if not row:
@@ -815,8 +837,17 @@ class PostgresDatabase:
             "weapon_enchant",
             "armor_enchant",
             "accessory_enchant",
+            "equipped_primordial_weapon_id",
+            "equipped_primordial_armor_id",
+            "equipped_primordial_accessory_id",
         )
-        return dict(zip(keys, row))
+        values = list(row)
+        character = dict(zip(keys, values[:16]))
+        weapon_affixes, armor_affixes, accessory_affixes = values[16], values[17], values[18]
+        character["primordial_weapon"] = {"affixes": json.loads(weapon_affixes)} if weapon_affixes else None
+        character["primordial_armor"] = {"affixes": json.loads(armor_affixes)} if armor_affixes else None
+        character["primordial_accessory"] = {"affixes": json.loads(accessory_affixes)} if accessory_affixes else None
+        return character
 
     async def set_character_level(self, user_id: int, level: int, xp: int) -> None:
         await self._execute(
@@ -869,6 +900,37 @@ class PostgresDatabase:
                 )
                 row = await conn.fetchrow("SELECT balance FROM users WHERE user_id = $1", user_id)
                 return row[0]
+
+    _PRIMORDIAL_EQUIP_COLUMNS = {
+        "weapon": "equipped_primordial_weapon_id",
+        "armor": "equipped_primordial_armor_id",
+        "accessory": "equipped_primordial_accessory_id",
+    }
+
+    async def add_primordial_item(self, user_id: int, slot: str, affixes_json: str) -> int:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "INSERT INTO primordial_items (user_id, slot, affixes) VALUES ($1, $2, $3) RETURNING id",
+                user_id,
+                slot,
+                affixes_json,
+            )
+            return row[0]
+
+    async def get_primordial_items(self, user_id: int) -> list[dict]:
+        rows = await self._fetchall(
+            "SELECT id, slot, affixes FROM primordial_items WHERE user_id = $1 ORDER BY id",
+            user_id,
+        )
+        return [{"id": r[0], "slot": r[1], "affixes": json.loads(r[2])} for r in rows]
+
+    async def equip_primordial(self, user_id: int, slot: str, item_id: int) -> None:
+        column = self._PRIMORDIAL_EQUIP_COLUMNS[slot]
+        await self._execute(f"UPDATE characters SET {column} = $1 WHERE user_id = $2", item_id, user_id)
+
+    async def unequip_primordial(self, user_id: int, slot: str) -> None:
+        column = self._PRIMORDIAL_EQUIP_COLUMNS[slot]
+        await self._execute(f"UPDATE characters SET {column} = NULL WHERE user_id = $1", user_id)
 
     async def get_boss_kills(self, user_id: int, dungeon_key: str) -> int:
         row = await self._fetchone(

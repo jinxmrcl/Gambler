@@ -9,6 +9,7 @@ from database.db import InsufficientFunds
 from rpg.character import current_hp, full_stats
 from rpg.consumables import CONSUMABLES
 from rpg.equipment import EQUIPMENT, ENCHANT_MAX_LEVEL, enchant_cost
+from rpg.primordial import PRIMORDIAL_BASES, describe_affixes
 from utils.economy import StaticView, fmt
 from utils.ratelimit import limited_edit
 
@@ -186,6 +187,13 @@ class RPGShop(commands.Cog):
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
 
+        if character.get(f"primordial_{slot}"):
+            await interaction.response.send_message(
+                f"⚠️ You have a ✨ Primordial item equipped in your {slot} slot — it can't be enchanted. "
+                f"Use `/rpgunequipprimordial {slot}` first if you want to upgrade your regular gear instead."
+            )
+            return
+
         item_key = character.get(f"equipped_{slot}")
         if not item_key:
             await interaction.response.send_message(f"⚠️ You don't have anything equipped in your {slot} slot.")
@@ -220,8 +228,10 @@ class RPGShop(commands.Cog):
             return
 
         slots: list[SlotKey] = ["weapon", "armor", "accessory"]
-        equipped = {s: character.get(f"equipped_{s}") for s in slots}
-        levels = {s: character[f"{s}_enchant"] for s in slots if equipped[s]}
+        equipped = {
+            s: character.get(f"equipped_{s}") for s in slots if not character.get(f"primordial_{s}")
+        }
+        levels = {s: character[f"{s}_enchant"] for s in slots if equipped.get(s)}
 
         if not levels:
             await interaction.response.send_message("⚠️ You don't have anything equipped. Use `/rpgequip` first.")
@@ -277,12 +287,74 @@ class RPGShop(commands.Cog):
     @app_commands.command(name="rpginventory", description="Shows your owned equipment and potions.")
     async def rpginventory(self, interaction: discord.Interaction):
         rows = await self.bot.db.get_rpg_inventory(interaction.user.id)
-        if not rows:
+        primordial_items = await self.bot.db.get_primordial_items(interaction.user.id)
+        if not rows and not primordial_items:
             await interaction.response.send_message("🎒 You don't own any items yet. Check out `/rpgshop`!")
             return
 
-        lines = [f"**{_item_name(key)}** x{qty}" for key, qty in rows]
-        view = StaticView("🎒 Inventory", "\n".join(lines))
+        lines = [f"**{_item_name(key)}** x{qty}" for key, qty in rows] if rows else ["*No regular gear or potions.*"]
+        body = "\n".join(lines)
+
+        if primordial_items:
+            character = await self.bot.db.get_character(interaction.user.id)
+            equipped_ids = {
+                character.get("equipped_primordial_weapon_id"),
+                character.get("equipped_primordial_armor_id"),
+                character.get("equipped_primordial_accessory_id"),
+            }
+            prim_lines = []
+            for item in primordial_items:
+                mark = " ✅ *equipped*" if item["id"] in equipped_ids else ""
+                base_name = PRIMORDIAL_BASES[item["slot"]].name
+                prim_lines.append(
+                    f"`#{item['id']}` {base_name} ({item['slot']}) — {describe_affixes(item['affixes'])}{mark}"
+                )
+            body += "\n\n**✨ Primordial Items**\n" + "\n".join(prim_lines)
+
+        view = StaticView("🎒 Inventory", body)
+        await interaction.response.send_message(view=view)
+
+    @app_commands.command(name="rpgequipprimordial", description="Equip a ✨ Primordial item you own by its ID.")
+    @app_commands.describe(item_id="The Primordial item's ID, shown in /rpginventory")
+    async def rpgequipprimordial(self, interaction: discord.Interaction, item_id: int):
+        character = await self.bot.db.get_character(interaction.user.id)
+        if not character:
+            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            return
+
+        items = await self.bot.db.get_primordial_items(interaction.user.id)
+        item = next((i for i in items if i["id"] == item_id), None)
+        if not item:
+            await interaction.response.send_message(f"⚠️ You don't own a Primordial item with id `#{item_id}`.")
+            return
+
+        await self.bot.db.equip_primordial(interaction.user.id, item["slot"], item_id)
+        base_name = PRIMORDIAL_BASES[item["slot"]].name
+        view = StaticView(
+            "✨ Equipped",
+            f"Equipped {base_name} ({describe_affixes(item['affixes'])}) in your {item['slot']} slot.",
+            color=discord.Color.green(),
+        )
+        await interaction.response.send_message(view=view)
+
+    @app_commands.command(name="rpgunequipprimordial", description="Unequip a ✨ Primordial item, reverting to your regular gear in that slot.")
+    @app_commands.describe(slot="Which slot to revert to regular gear")
+    async def rpgunequipprimordial(self, interaction: discord.Interaction, slot: SlotKey):
+        character = await self.bot.db.get_character(interaction.user.id)
+        if not character:
+            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            return
+
+        if not character.get(f"primordial_{slot}"):
+            await interaction.response.send_message(f"⚠️ You don't have a Primordial item equipped in your {slot} slot.")
+            return
+
+        await self.bot.db.unequip_primordial(interaction.user.id, slot)
+        view = StaticView(
+            "✨ Unequipped",
+            f"Reverted to your regular {slot} gear.",
+            color=discord.Color.green(),
+        )
         await interaction.response.send_message(view=view)
 
 

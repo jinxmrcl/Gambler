@@ -16,7 +16,7 @@
 An open source economy bot for your Discord server, built with `discord.py`. At its core
 is a full virtual economy (bank, shop, trading, marriage, weekly lottery, robbing, a
 random passive Payday), layered with 14 casino games of chance and a from-scratch RPG
-(7 classes, 16 dungeons, level 1-1500 with prestige) that shares the same wallet —
+(9 classes, 16 dungeons, level 1-1500 with prestige) that shares the same wallet —
 all backed by MySQL (or Postgres/Supabase).
 
 ## Table of contents
@@ -63,19 +63,27 @@ all backed by MySQL (or Postgres/Supabase).
 
 **RPG** (`rpg/`, `commands/rpg_*.py`) — a full slash-only RPG sharing the same wallet as
 the casino:
-- 7 classes (Warrior, Mage, Rogue, Paladin, Necromancer, Ranger, Berserker), each with a
-  unique active skill
+- 9 classes (Warrior, Mage, Rogue, Paladin, Necromancer, Ranger, Berserker, Monk, Druid),
+  each with a unique active skill
 - 16 dungeons spanning level 1-1500, each with a programmatically-scaled boss fight and
   its own per-dungeon difficulty curve (simulation-tuned so every class lands in a
-  similar win-rate band at every tier, solo or in a team)
+  similar win-rate band at every tier, solo or in a team); the 5 highest-tier bosses each
+  carry a unique special ability (Enrage or Double Strike) on top of their stats
 - open team-fight lobbies (`team: True` on `/dungeon` / `/dungeonboss`) — anyone can join,
-  the monster/boss scales up with party size, and a win pays every member the full
-  solo-equivalent reward
+  the monster/boss scales up steeply with party size (deliberately harder than a flat
+  split, so teaming up stays a real challenge), a win pays every member the full
+  solo-equivalent reward, and anyone in the lobby can spend one potion to heal the whole
+  party before the fight starts
 - `/idle` auto-farms a dungeon (monsters + occasional boss attempts) in the background for
   up to 2 hours, quietly, with a single summary message at the end instead of per-fight spam
-- prestige every 50 levels (up to prestige 29) once you hit the level cap
-- 3 equipment slots (weapon/armor/accessory) across 6 tiers (common → ancient), plus a
-  gold-sink enchant/upgrade system per item — `/rpgautoupgrade` greedily maxes out
+- prestige every 50 levels (up to prestige 29) once you hit the level cap, now with a small
+  permanent stat bonus per tier (+0.5%, up to +14.5% at max prestige) on top of a smoother
+  XP curve
+- 3 equipment slots (weapon/armor/accessory) across 6 purchasable tiers (common → ancient)
+  plus a 7th drop-only ✨ Primordial tier with randomly-rolled bonus affixes (lifesteal,
+  crit damage, damage reflect, gold find, and more) exclusive to the 5 highest-tier
+  bosses — split as a single roll across the party in a team fight rather than per member
+- a gold-sink enchant/upgrade system per item — `/rpgautoupgrade` greedily maxes out
   whatever's equipped until you're out of gold
 - 3 consumable potions to heal mid-run, persistent HP with passive regen, and `/heal` to
   pay gold for an instant restore (also revives you at 0 HP)
@@ -237,7 +245,7 @@ daily at 4am. Useful commands: `pm2 status`, `pm2 logs GamblerV2`, `pm2 restart 
 
 ## Documentation
 
-An 89-note wiki at [`docs/rpg-wiki/`](docs/rpg-wiki) documents every system in the bot in
+A 92-note wiki at [`docs/rpg-wiki/`](docs/rpg-wiki) documents every system in the bot in
 detail, generated from the bot's own live game data to stay accurate. Start at
 [`Home.md`](docs/rpg-wiki/Home.md) — it's an [Obsidian](https://obsidian.md) vault, so
 opening the `docs/rpg-wiki` folder in Obsidian gets you the full interlinked graph view,
@@ -382,7 +390,9 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
 - `rpgupgrade <slot>` — spend gold to enchant your equipped gear in a slot
 - `rpgautoupgrade` — repeatedly enchants your cheapest available equipped slot until
   everything's maxed or you're out of gold
-- `rpginventory` — shows your owned equipment and potions
+- `rpgequipprimordial <item_id>` — equip a drop-only ✨ Primordial item by its id
+- `rpgunequipprimordial <slot>` — revert a slot back to your regular gear
+- `rpginventory` — shows your owned equipment, potions, and Primordial items
 - `duel <user>` — challenge another player to a PvP duel (60s cooldown)
 - `arena` — shows the top duelists
 
@@ -427,15 +437,16 @@ commands/baccarat.py          Baccarat
 commands/crash.py             Crash (with autonomous, self-editing autoplay channel)
 commands/rpg_character.py     rpgstart, classes, character, heal
 commands/rpg_dungeon.py       dungeons, dungeon, dungeonboss (both with a team-fight lobby mode), idle
-commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpgautoupgrade, rpginventory
+commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpgautoupgrade, rpgequipprimordial, rpgunequipprimordial, rpginventory
 commands/rpg_arena.py         duel, arena
-rpg/classes.py                7 class definitions (stats + active skill)
-rpg/combat.py                 Turn-based solo + team combat simulation, damage mitigation, class skills
-rpg/monsters.py               16 dungeons, boss generation, level-scaling, party-size scaling
-rpg/equipment.py              6 equipment tiers, 18 items, enchant/upgrade system
+rpg/classes.py                9 class definitions (stats + active skill)
+rpg/combat.py                 Turn-based solo + team combat simulation, damage mitigation, class skills, boss abilities
+rpg/monsters.py               16 dungeons, boss generation + abilities, level-scaling, party-size scaling
+rpg/equipment.py              6 purchasable equipment tiers, 18 items, enchant/upgrade system
+rpg/primordial.py             Drop-only 7th gear tier with randomly-rolled bonus affixes
 rpg/consumables.py            3 healing potions
-rpg/leveling.py               XP curve, prestige math (level cap 1500)
-rpg/character.py              Character dataclass helpers
+rpg/leveling.py               XP curve, prestige math + stat perks (level cap 1500)
+rpg/character.py              Character dataclass helpers, full stat resolution (class + gear + Primordial + prestige)
 rpg/badges.py                 Prestige badge rendering
 rpg/events.py                 Random in-dungeon events
 events/on_ready.py            Startup logging & presence

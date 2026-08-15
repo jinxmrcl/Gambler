@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import json
 import random
 from typing import Literal
 
@@ -7,12 +8,15 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
+from database.db import InsufficientFunds
 from rpg.character import current_hp, full_stats, to_fighter
 from rpg.combat import Fighter, simulate, simulate_team
+from rpg.consumables import CONSUMABLES
 from rpg.equipment import EQUIPMENT
 from rpg.events import AMBUSH, CURSED, MERCHANT, TREASURE, roll_event
 from rpg.leveling import apply_xp
-from rpg.monsters import DUNGEONS, Dungeon, scaled_monster
+from rpg.monsters import BOSS_SKILLS, DUNGEONS, Dungeon, scaled_monster
+from rpg.primordial import HIGH_END_DUNGEONS, PRIMORDIAL_BASES, PRIMORDIAL_DROP_CHANCE, describe_affixes, generate_primordial_drop
 from utils.economy import StaticView, fmt, game_container
 from utils.ratelimit import limited_edit
 
@@ -26,6 +30,7 @@ DUNGEON_COOLDOWN = 20
 BOSS_COOLDOWN = 300
 TEAM_LOBBY_SECONDS = 30
 TEAM_MAX_SIZE = 8
+BOSS_BONUS_LOOT_CHANCE = 0.15
 IDLE_POLL_SECONDS = 5
 IDLE_MAX_MINUTES = 120
 IDLE_DEFAULT_MINUTES = 30
@@ -42,6 +47,7 @@ async def _resolve_dungeon_fight(
     bot, user_id: int, display_name: str, character: dict, hp_now: int, d: Dungeon, now: datetime.datetime
 ) -> dict:
     event = roll_event()
+    gold_find_pct = full_stats(character).get("gold_find_pct", 0.0)
     outcome = {
         "event": event, "won": None, "elite": False, "monster_name": None, "log": [],
         "hp": hp_now, "max_hp": hp_now,
@@ -49,13 +55,13 @@ async def _resolve_dungeon_fight(
     }
 
     if event == TREASURE:
-        gold = random.randint(50, 150) + character["level"] * 5
+        gold = int((random.randint(50, 150) + character["level"] * 5) * (1 + gold_find_pct))
         await bot.db.update_balance(user_id, gold)
         outcome["gold"] = gold
         return outcome
 
     if event == MERCHANT:
-        gold = random.randint(30, 80)
+        gold = int(random.randint(30, 80) * (1 + gold_find_pct))
         await bot.db.update_balance(user_id, gold)
         outcome["gold"] = gold
         return outcome
@@ -88,7 +94,7 @@ async def _resolve_dungeon_fight(
     )
 
     if won:
-        gold = random.randint(*stats["gold"])
+        gold = int(random.randint(*stats["gold"]) * (1 + gold_find_pct))
         await bot.db.update_balance(user_id, gold)
         new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], stats["xp"])
         await bot.db.set_character_level(user_id, new_level, new_xp)
@@ -110,7 +116,8 @@ async def _resolve_boss_fight(
     player_fighter = to_fighter(character, display_name, hp=hp_now)
     boss_name = f"{d.boss.emoji} {d.boss.name}"
     boss_fighter = Fighter(
-        name=boss_name, max_hp=stats["hp"], atk=stats["atk"], defense=stats["def"], crit=stats["crit"]
+        name=boss_name, max_hp=stats["hp"], atk=stats["atk"], defense=stats["def"], crit=stats["crit"],
+        skill_key=BOSS_SKILLS.get(d.key),
     )
 
     result = simulate(player_fighter, boss_fighter)
@@ -121,11 +128,12 @@ async def _resolve_boss_fight(
         "won": won, "boss_name": boss_name, "log": result["log"],
         "hp": player_fighter.hp, "max_hp": player_fighter.max_hp,
         "gold": 0, "xp": 0, "levels_gained": 0, "new_level": character["level"],
-        "loot_item": None, "kills": None,
+        "loot_item": None, "bonus_loot_item": None, "kills": None, "primordial_drop": None,
     }
 
     if won:
-        gold = random.randint(*stats["gold"])
+        gold_find_pct = full_stats(character).get("gold_find_pct", 0.0)
+        gold = int(random.randint(*stats["gold"]) * (1 + gold_find_pct))
         await bot.db.update_balance(user_id, gold)
         new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], stats["xp"])
         await bot.db.set_character_level(user_id, new_level, new_xp)
@@ -138,6 +146,17 @@ async def _resolve_boss_fight(
             item_key = random.choice(d.boss.loot_pool)
             await bot.db.add_rpg_item(user_id, item_key, 1)
             outcome["loot_item"] = item_key
+
+        if d.boss.loot_pool and random.random() < BOSS_BONUS_LOOT_CHANCE:
+            bonus_key = random.choice(d.boss.loot_pool)
+            await bot.db.add_rpg_item(user_id, bonus_key, 1)
+            outcome["bonus_loot_item"] = bonus_key
+
+        if d.key in HIGH_END_DUNGEONS and random.random() < PRIMORDIAL_DROP_CHANCE:
+            slot = random.choice(("weapon", "armor", "accessory"))
+            affixes = generate_primordial_drop(slot)
+            await bot.db.add_primordial_item(user_id, slot, json.dumps(affixes))
+            outcome["primordial_drop"] = {"slot": slot, "affixes": affixes}
 
     return outcome
 
@@ -158,6 +177,14 @@ class StartButton(ui.Button):
         await self.view.start_now(interaction)
 
 
+class UsePotionButton(ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.secondary, label="Use Potion", emoji="🧪")
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.use_potion(interaction)
+
+
 class TeamLobbyView(ui.LayoutView):
     def __init__(self, cog: "RPGDungeon", starter: discord.abc.User, dungeon: Dungeon, is_boss: bool):
         super().__init__(timeout=TEAM_LOBBY_SECONDS)
@@ -168,25 +195,32 @@ class TeamLobbyView(ui.LayoutView):
         self.members: list[discord.abc.User] = [starter]
         self.finished = False
         self.message: discord.Message | None = None
+        self.potion_log: list[str] = []
 
         self.heading = f"{'👑 ' if is_boss else ''}{dungeon.emoji} {dungeon.name}{' — Boss' if is_boss else ''}"
         self.container, self.text = game_container(self.heading, self._lobby_body())
         self.join_button = JoinButton()
         self.start_button = StartButton()
+        self.potion_button = UsePotionButton()
         row = ui.ActionRow()
         row.add_item(self.join_button)
         row.add_item(self.start_button)
+        row.add_item(self.potion_button)
         self.container.add_item(row)
         self.add_item(self.container)
 
     def _lobby_body(self) -> str:
         target = self.dungeon.boss.name if self.is_boss else "a monster"
         names = "\n".join(f"• {m.mention}" for m in self.members)
-        return (
+        body = (
             f"🤝 **Team fight!** {self.starter.mention} is gathering a party to face **{target}**.\n"
             f"Anyone with a character can **Join**. Starts automatically in {TEAM_LOBBY_SECONDS}s, "
-            f"or the party leader can hit **Start Now**.\n\n**Party ({len(self.members)}):**\n{names}"
+            f"or the party leader can hit **Start Now**. Anyone can **Use Potion** to heal the "
+            f"whole party before the fight.\n\n**Party ({len(self.members)}):**\n{names}"
         )
+        if self.potion_log:
+            body += "\n\n" + "\n".join(self.potion_log)
+        return body
 
     def _set_body(self, body: str):
         self.text.content = f"## {self.heading}\n{body}"
@@ -194,6 +228,7 @@ class TeamLobbyView(ui.LayoutView):
     def _disable_buttons(self):
         self.join_button.disabled = True
         self.start_button.disabled = True
+        self.potion_button.disabled = True
 
     async def _send(self, interaction: discord.Interaction | None):
         if interaction is not None:
@@ -227,6 +262,54 @@ class TeamLobbyView(ui.LayoutView):
             return
 
         self.members.append(interaction.user)
+        self._set_body(self._lobby_body())
+        await interaction.response.edit_message(view=self)
+
+    async def use_potion(self, interaction: discord.Interaction):
+        if self.finished:
+            await interaction.response.send_message("This lobby has already started.", ephemeral=True)
+            return
+        if not any(m.id == interaction.user.id for m in self.members):
+            await interaction.response.send_message("Join the party first before using a potion.", ephemeral=True)
+            return
+
+        db = self.cog.bot.db
+        potion_key = None
+        for key in ("minor_potion", "greater_potion", "superior_potion"):
+            if await db.get_rpg_item_quantity(interaction.user.id, key) > 0:
+                potion_key = key
+                break
+
+        if not potion_key:
+            await interaction.response.send_message("⚠️ You don't own any potions.", ephemeral=True)
+            return
+
+        try:
+            await db.remove_rpg_item(interaction.user.id, potion_key, 1)
+        except InsufficientFunds:
+            await interaction.response.send_message("⚠️ You don't own any potions.", ephemeral=True)
+            return
+
+        potion = CONSUMABLES[potion_key]
+        now = datetime.datetime.utcnow()
+        healed_lines = []
+        for member in self.members:
+            character = await db.get_character(member.id)
+            if not character:
+                continue
+            stats = full_stats(character)
+            hp_now = current_hp(character, stats["hp"], now)
+            healed = min(stats["hp"] - hp_now, int(stats["hp"] * potion.heal_pct))
+            if healed <= 0:
+                continue
+            new_hp = hp_now + healed
+            await db.set_character_hp(member.id, new_hp, now)
+            healed_lines.append(f"{member.mention} +{healed} HP")
+
+        summary = f"🧪 {interaction.user.mention} used a {potion.name} — " + (
+            ", ".join(healed_lines) if healed_lines else "the party was already at full HP."
+        )
+        self.potion_log.append(summary)
         self._set_body(self._lobby_body())
         await interaction.response.edit_message(view=self)
 
@@ -313,7 +396,8 @@ class TeamLobbyView(ui.LayoutView):
         monster_name = f"{monster.emoji} {monster.name}"
         stats = scaled_monster(monster, target_level, d.min_level, d.key, is_boss=True, party_size=party_size)
         monster_fighter = Fighter(
-            name=monster_name, max_hp=stats["hp"], atk=stats["atk"], defense=stats["def"], crit=stats["crit"]
+            name=monster_name, max_hp=stats["hp"], atk=stats["atk"], defense=stats["def"], crit=stats["crit"],
+            skill_key=BOSS_SKILLS.get(d.key),
         )
         result = simulate_team(fighters, monster_fighter)
         won = result["won"]
@@ -330,9 +414,20 @@ class TeamLobbyView(ui.LayoutView):
             body = f"{header}\n\n{log_tail}\n\n😢 The party was defeated. No rewards this time."
             return body, discord.Color.red()
 
+        primordial_text = ""
+        if d.key in HIGH_END_DUNGEONS and random.random() < PRIMORDIAL_DROP_CHANCE:
+            survivors = [m for m, f in zip(fighter_members, fighters) if f.hp > 0] or list(fighter_members)
+            winner = random.choice(survivors)
+            slot = random.choice(("weapon", "armor", "accessory"))
+            affixes = generate_primordial_drop(slot)
+            await db.add_primordial_item(winner.id, slot, json.dumps(affixes))
+            base_name = PRIMORDIAL_BASES[slot].name
+            primordial_text = f"\n\n💫 **PRIMORDIAL DROP!** {winner.mention} obtained {base_name} ({describe_affixes(affixes)})"
+
         reward_lines = []
         for member, character in zip(fighter_members, fighter_characters):
-            gold = random.randint(*stats["gold"])
+            gold_find_pct = full_stats(character).get("gold_find_pct", 0.0)
+            gold = int(random.randint(*stats["gold"]) * (1 + gold_find_pct))
             await db.update_balance(member.id, gold)
             new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], stats["xp"])
             await db.set_character_level(member.id, new_level, new_xp)
@@ -346,9 +441,13 @@ class TeamLobbyView(ui.LayoutView):
                 item_key = random.choice(monster.loot_pool)
                 await db.add_rpg_item(member.id, item_key, 1)
                 line += f" • 🎁 {EQUIPMENT[item_key].name}"
+            if monster.loot_pool and random.random() < BOSS_BONUS_LOOT_CHANCE:
+                bonus_key = random.choice(monster.loot_pool)
+                await db.add_rpg_item(member.id, bonus_key, 1)
+                line += f" • 🎁 Bonus: {EQUIPMENT[bonus_key].name}"
             reward_lines.append(line)
 
-        footer = "\n\n👑 **BOSS DEFEATED!**\n" + "\n".join(reward_lines)
+        footer = "\n\n👑 **BOSS DEFEATED!**\n" + "\n".join(reward_lines) + primordial_text
         body = f"{header}\n\n{log_tail}{footer}"
         return body, discord.Color.gold()
 
@@ -359,7 +458,8 @@ class TeamLobbyView(ui.LayoutView):
         if event == TREASURE:
             lines = []
             for member, character in zip(fighter_members, fighter_characters):
-                gold = random.randint(50, 150) + character["level"] * 5
+                gold_find_pct = full_stats(character).get("gold_find_pct", 0.0)
+                gold = int((random.randint(50, 150) + character["level"] * 5) * (1 + gold_find_pct))
                 await db.update_balance(member.id, gold)
                 lines.append(f"{member.mention}: +{fmt(gold)}")
             header = "💰 **Treasure Chest!** The party found loot without a fight."
@@ -369,8 +469,9 @@ class TeamLobbyView(ui.LayoutView):
 
         if event == MERCHANT:
             lines = []
-            for member in fighter_members:
-                gold = random.randint(30, 80)
+            for member, character in zip(fighter_members, fighter_characters):
+                gold_find_pct = full_stats(character).get("gold_find_pct", 0.0)
+                gold = int(random.randint(30, 80) * (1 + gold_find_pct))
                 await db.update_balance(member.id, gold)
                 lines.append(f"{member.mention}: +{fmt(gold)}")
             header = "🧙 **A wandering merchant** pays the party for old supplies."
@@ -417,7 +518,8 @@ class TeamLobbyView(ui.LayoutView):
 
         reward_lines = []
         for member, character in zip(fighter_members, fighter_characters):
-            gold = random.randint(*stats["gold"])
+            gold_find_pct = full_stats(character).get("gold_find_pct", 0.0)
+            gold = int(random.randint(*stats["gold"]) * (1 + gold_find_pct))
             await db.update_balance(member.id, gold)
             new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], stats["xp"])
             await db.set_character_level(member.id, new_level, new_xp)
@@ -603,6 +705,12 @@ class RPGDungeon(commands.Cog):
             loot_text = ""
             if outcome["loot_item"]:
                 loot_text = f"\n🎁 **Loot!** {EQUIPMENT[outcome['loot_item']].name} dropped."
+            if outcome["bonus_loot_item"]:
+                loot_text += f"\n🎁 **Bonus Loot!** {EQUIPMENT[outcome['bonus_loot_item']].name} also dropped!"
+            if outcome["primordial_drop"]:
+                pd = outcome["primordial_drop"]
+                base_name = PRIMORDIAL_BASES[pd["slot"]].name
+                loot_text += f"\n💫 **PRIMORDIAL DROP!** {base_name} ({describe_affixes(pd['affixes'])})"
 
             body = f"You defeated **{boss_name}**!\n\n{log_tail}{footer}{loot_text}{hp_line}"
             color = discord.Color.gold()
@@ -657,7 +765,7 @@ class RPGDungeon(commands.Cog):
     ):
         stats = {
             "dungeon_attempts": 0, "dungeon_wins": 0, "boss_attempts": 0, "boss_wins": 0,
-            "gold": 0, "xp": 0, "levels_gained": 0, "loot": [],
+            "gold": 0, "xp": 0, "levels_gained": 0, "loot": [], "primordial_drops": [],
         }
         deadline = datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes)
 
@@ -712,6 +820,10 @@ class RPGDungeon(commands.Cog):
                                 stats["boss_wins"] += 1
                             if outcome["loot_item"]:
                                 stats["loot"].append(outcome["loot_item"])
+                            if outcome["bonus_loot_item"]:
+                                stats["loot"].append(outcome["bonus_loot_item"])
+                            if outcome["primordial_drop"]:
+                                stats["primordial_drops"].append(outcome["primordial_drop"])
 
                 await asyncio.sleep(IDLE_POLL_SECONDS)
         except asyncio.CancelledError:
@@ -726,6 +838,12 @@ class RPGDungeon(commands.Cog):
             for key in stats["loot"]:
                 counts[key] = counts.get(key, 0) + 1
             loot_text = "\n🎁 **Loot:** " + ", ".join(f"{EQUIPMENT[k].name} x{c}" for k, c in counts.items())
+        if stats["primordial_drops"]:
+            drop_lines = [
+                f"{PRIMORDIAL_BASES[pd['slot']].name} ({describe_affixes(pd['affixes'])})"
+                for pd in stats["primordial_drops"]
+            ]
+            loot_text += "\n💫 **Primordial Drops:** " + "; ".join(drop_lines)
 
         lines = [f"**{stats['dungeon_attempts']}** fight(s), **{stats['dungeon_wins']}** won"]
         if stats["boss_attempts"]:
