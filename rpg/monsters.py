@@ -176,9 +176,6 @@ BOSS_NAMES: dict[str, tuple[str, str]] = {
     "world_ender": ("The World Ender", "☄️"),
 }
 
-# Bosses are derived from each dungeon's own (already-balanced) regular
-# monsters rather than hand-authored, so boss difficulty automatically stays
-# consistent with whatever the trash-mob tuning is instead of drifting apart.
 BOSS_HP_MULT = 3.5
 BOSS_ATK_MULT = 1.6
 BOSS_DEF_MULT = 1.6
@@ -218,7 +215,46 @@ del _key, _dungeon
 SCALE_PER_LEVEL = 0.05
 MAX_SCALE_LEVELS = 50
 
-MONSTER_POWER_MULTIPLIER = 2.0
+MONSTER_POWER_MULTIPLIER: dict[str, float] = {
+    "forest": 3.69,
+    "cave": 2.33,
+    "crypt": 1.96,
+    "volcano": 1.86,
+    "abyss": 1.68,
+    "celestial": 1.61,
+    "ruins": 1.03,
+    "frostpeak": 1.03,
+    "wastes": 0.98,
+    "nightmare_realm": 0.95,
+    "sunken_city": 0.99,
+    "voidscar": 0.96,
+    "titan_forge": 0.95,
+    "chaos_rift": 0.94,
+    "eternal_throne": 0.94,
+    "world_ender": 0.93,
+}
+
+BOSS_POWER_MULTIPLIER: dict[str, float] = {
+    "forest": 1.75,
+    "cave": 1.13,
+    "crypt": 0.92,
+    "volcano": 0.86,
+    "abyss": 0.78,
+    "celestial": 0.75,
+    "ruins": 0.48,
+    "frostpeak": 0.48,
+    "wastes": 0.46,
+    "nightmare_realm": 0.44,
+    "sunken_city": 0.46,
+    "voidscar": 0.45,
+    "titan_forge": 0.44,
+    "chaos_rift": 0.44,
+    "eternal_throne": 0.44,
+    "world_ender": 0.43,
+}
+
+TEAM_HP_MULT_PER_MEMBER = 1.0
+TEAM_ATK_MULT_PER_MEMBER = 0.2
 
 
 def scale_factor(player_level: int, dungeon_min_level: int) -> float:
@@ -226,13 +262,28 @@ def scale_factor(player_level: int, dungeon_min_level: int) -> float:
     return 1 + diff * SCALE_PER_LEVEL
 
 
-def scaled_monster(monster: Monster, player_level: int, dungeon_min_level: int) -> dict:
+def team_scale_factor(party_size: int) -> tuple[float, float]:
+    size = max(1, party_size)
+    hp_mult = size * TEAM_HP_MULT_PER_MEMBER
+    atk_mult = 1 + (size - 1) * TEAM_ATK_MULT_PER_MEMBER
+    return hp_mult, atk_mult
+
+
+def scaled_monster(
+    monster: Monster,
+    player_level: int,
+    dungeon_min_level: int,
+    dungeon_key: str,
+    is_boss: bool = False,
+    party_size: int = 1,
+) -> dict:
     f = scale_factor(player_level, dungeon_min_level)
-    p = MONSTER_POWER_MULTIPLIER
+    p = (BOSS_POWER_MULTIPLIER if is_boss else MONSTER_POWER_MULTIPLIER)[dungeon_key]
+    team_hp_mult, team_atk_mult = team_scale_factor(party_size)
     lo, hi = monster.gold_reward
     return {
-        "hp": max(1, int(monster.hp * f * p)),
-        "atk": max(1, int(monster.atk * f * p)),
+        "hp": max(1, int(monster.hp * f * p * team_hp_mult)),
+        "atk": max(1, int(monster.atk * f * p * team_atk_mult)),
         "def": max(0, int(monster.defense * f * p)),
         "crit": monster.crit,
         "xp": max(1, int(monster.xp_reward * f)),

@@ -10,6 +10,7 @@ from rpg.character import current_hp, full_stats
 from rpg.consumables import CONSUMABLES
 from rpg.equipment import EQUIPMENT, ENCHANT_MAX_LEVEL, enchant_cost
 from utils.economy import StaticView, fmt
+from utils.ratelimit import limited_edit
 
 EquipmentKey = Literal[
     "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
@@ -197,20 +198,81 @@ class RPGShop(commands.Cog):
 
         cost = enchant_cost(item_key, current_level)
         try:
-            await self.bot.db.update_balance(interaction.user.id, -cost)
+            await self.bot.db.upgrade_enchant(interaction.user.id, slot, cost, current_level + 1)
         except InsufficientFunds:
             await interaction.response.send_message(
                 f"⚠️ Upgrading {EQUIPMENT[item_key].name} to +{current_level + 1} costs {fmt(cost)}."
             )
             return
 
-        await self.bot.db.set_enchant_level(interaction.user.id, slot, current_level + 1)
         view = StaticView(
             "🔨 Upgraded",
             f"{EQUIPMENT[item_key].name} is now **+{current_level + 1}** for {fmt(cost)}.",
             color=discord.Color.green(),
         )
         await interaction.response.send_message(view=view)
+
+    @app_commands.command(name="rpgautoupgrade", description="Repeatedly upgrade your equipped gear until you're out of gold.")
+    async def rpgautoupgrade(self, interaction: discord.Interaction):
+        character = await self.bot.db.get_character(interaction.user.id)
+        if not character:
+            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            return
+
+        slots: list[SlotKey] = ["weapon", "armor", "accessory"]
+        equipped = {s: character.get(f"equipped_{s}") for s in slots}
+        levels = {s: character[f"{s}_enchant"] for s in slots if equipped[s]}
+
+        if not levels:
+            await interaction.response.send_message("⚠️ You don't have anything equipped. Use `/rpgequip` first.")
+            return
+
+        await interaction.response.send_message(view=StaticView("🔨 Auto-Upgrading", "Starting…"))
+        message = await interaction.original_response()
+
+        spent = 0
+        applied = {s: 0 for s in levels}
+        stopped_reason = "all equipped gear reached max level"
+
+        while True:
+            candidates = {
+                s: enchant_cost(equipped[s], lvl) for s, lvl in levels.items() if lvl < ENCHANT_MAX_LEVEL
+            }
+            if not candidates:
+                break
+
+            slot = min(candidates, key=candidates.get)
+            cost = candidates[slot]
+            try:
+                await self.bot.db.upgrade_enchant(interaction.user.id, slot, cost, levels[slot] + 1)
+            except InsufficientFunds:
+                stopped_reason = f"ran out of gold (next upgrade needs {fmt(cost)})"
+                break
+
+            levels[slot] += 1
+            applied[slot] += 1
+            spent += cost
+
+            progress = "\n".join(
+                f"{EQUIPMENT[equipped[s]].name}: +{levels[s]} ({applied[s]} upgrade{'s' if applied[s] != 1 else ''})"
+                for s in levels
+            )
+            await limited_edit(
+                message,
+                view=StaticView("🔨 Auto-Upgrading", f"{progress}\n\nSpent so far: {fmt(spent)}"),
+            )
+
+        summary_lines = [
+            f"{EQUIPMENT[equipped[s]].name}: +{levels[s]} ({applied[s]} upgrade{'s' if applied[s] != 1 else ''})"
+            for s in levels
+        ]
+        total_applied = sum(applied.values())
+        body = (
+            f"Applied **{total_applied}** upgrade{'s' if total_applied != 1 else ''} for {fmt(spent)}.\n"
+            + "\n".join(summary_lines)
+            + f"\n\nStopped: {stopped_reason}."
+        )
+        await limited_edit(message, view=StaticView("🔨 Auto-Upgrade Complete", body, color=discord.Color.green()))
 
     @app_commands.command(name="rpginventory", description="Shows your owned equipment and potions.")
     async def rpginventory(self, interaction: discord.Interaction):

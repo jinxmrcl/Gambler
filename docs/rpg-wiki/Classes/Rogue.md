@@ -3,9 +3,9 @@
 A quick striker who lands brutal critical hits.
 
 ## Base stats (level 1)
-- HP: 95 (+10/level)
-- ATK: 18 (+2/level)
-- DEF: 7 (+1/level)
+- HP: 95 (+12.09/level)
+- ATK: 18 (+2.2/level)
+- DEF: 7 (+1.1/level)
 - Crit: 27%
 
 ## Skill

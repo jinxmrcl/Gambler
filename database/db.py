@@ -915,6 +915,32 @@ class Database:
             f"UPDATE characters SET {column} = %s WHERE user_id = %s", (level, user_id)
         )
 
+    async def upgrade_enchant(self, user_id: int, slot: str, cost: int, new_level: int) -> int:
+        column = self._ENCHANT_COLUMNS[slot]
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await conn.begin()
+                try:
+                    await cur.execute(
+                        "UPDATE users SET balance = balance - %s "
+                        "WHERE user_id = %s AND balance >= %s",
+                        (cost, user_id, cost),
+                    )
+                    if cur.rowcount == 0:
+                        await conn.rollback()
+                        raise InsufficientFunds(f"User {user_id} cannot afford an upgrade costing {cost}")
+                    await cur.execute(
+                        f"UPDATE characters SET {column} = %s WHERE user_id = %s",
+                        (new_level, user_id),
+                    )
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
+                await cur.execute("SELECT balance FROM users WHERE user_id = %s", (user_id,))
+                row = await cur.fetchone()
+                return row[0]
+
     async def get_boss_kills(self, user_id: int, dungeon_key: str) -> int:
         row = await self._fetchone(
             "SELECT kills FROM boss_kills WHERE user_id = %s AND dungeon_key = %s",
