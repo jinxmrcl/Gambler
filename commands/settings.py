@@ -117,7 +117,7 @@ class Settings(commands.Cog):
 
     @commands.hybrid_command(
         name="set-crashchannel",
-        description="[Admin] Set a channel where Crash runs and posts automatically, forever.",
+        description="[Admin] Set a channel where Crash runs a new bettable round every minute.",
     )
     @app_commands.describe(
         channel="Channel for the bot to auto-play Crash in (defaults to this channel)",
@@ -148,8 +148,8 @@ class Settings(commands.Cog):
             crash_cog.start_auto_round(ctx.guild.id, target.id)
         view = StaticView(
             "🚀 Crash Channel Set",
-            f"Crash will now run and post itself automatically in {target.mention}, editing the "
-            f"round live and starting a new one after every crash — no setup needed beyond this.",
+            f"A new Crash round now starts automatically every minute in {target.mention}. Press "
+            f"**Place Bet** during the countdown to join, then **Cash Out** before it crashes!",
             color=discord.Color.blue(),
         )
         await ctx.send(view=view)
