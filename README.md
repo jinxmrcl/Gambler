@@ -19,8 +19,6 @@ random passive Payday), layered with 14 casino games of chance and a from-scratc
 (7 classes, 16 dungeons, level 1-1500 with prestige) that shares the same wallet —
 all backed by MySQL (or Postgres/Supabase).
 
-📊 **~8,370 lines of Python** across 53 files.
-
 ## Table of contents
 
 - [Features](#features)
