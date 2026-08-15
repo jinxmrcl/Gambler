@@ -17,6 +17,8 @@ The full RPG system, from level 1 to level 1500.
 - [Necromancer](Classes/Necromancer.md)
 - [Ranger](Classes/Ranger.md)
 - [Berserker](Classes/Berserker.md)
+- [Monk](Classes/Monk.md)
+- [Druid](Classes/Druid.md)
 
 ## Dungeons (in level order)
 - [Whispering Forest](Dungeons/Whispering%20Forest.md) — level 1+
@@ -61,3 +63,4 @@ The full RPG system, from level 1 to level 1500.
 - [Legendary Tier](Equipment%20Tiers/Legendary%20Tier.md) 🟠
 - [Mythic Tier](Equipment%20Tiers/Mythic%20Tier.md) 🔴
 - [Ancient Tier](Equipment%20Tiers/Ancient%20Tier.md) 🌈
+- [Primordial Tier](Equipment%20Tiers/Primordial%20Tier.md) ✨ (drop-only)

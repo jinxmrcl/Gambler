@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import json
 import logging
 import warnings
 
@@ -244,6 +245,9 @@ class Database:
                     ("weapon_enchant", "INT NOT NULL DEFAULT 0"),
                     ("armor_enchant", "INT NOT NULL DEFAULT 0"),
                     ("accessory_enchant", "INT NOT NULL DEFAULT 0"),
+                    ("equipped_primordial_weapon_id", "INT NULL"),
+                    ("equipped_primordial_armor_id", "INT NULL"),
+                    ("equipped_primordial_accessory_id", "INT NULL"),
                 ):
                     await cur.execute(
                         "SELECT COUNT(*) FROM information_schema.columns "
@@ -270,6 +274,17 @@ class Database:
                         dungeon_key VARCHAR(32) NOT NULL,
                         kills INT NOT NULL DEFAULT 0,
                         PRIMARY KEY (user_id, dungeon_key)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS primordial_items (
+                        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        user_id BIGINT UNSIGNED NOT NULL,
+                        slot VARCHAR(16) NOT NULL,
+                        affixes TEXT NOT NULL,
+                        dropped_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
@@ -885,9 +900,16 @@ class Database:
 
     async def get_character(self, user_id: int) -> dict | None:
         row = await self._fetchone(
-            "SELECT class_key, level, xp, equipped_weapon, equipped_armor, equipped_accessory, "
-            "wins, losses, current_hp, hp_updated_at, weapon_enchant, armor_enchant, accessory_enchant "
-            "FROM characters WHERE user_id = %s",
+            "SELECT c.class_key, c.level, c.xp, c.equipped_weapon, c.equipped_armor, c.equipped_accessory, "
+            "c.wins, c.losses, c.current_hp, c.hp_updated_at, "
+            "c.weapon_enchant, c.armor_enchant, c.accessory_enchant, "
+            "c.equipped_primordial_weapon_id, c.equipped_primordial_armor_id, c.equipped_primordial_accessory_id, "
+            "pw.affixes, pa.affixes, pacc.affixes "
+            "FROM characters c "
+            "LEFT JOIN primordial_items pw ON pw.id = c.equipped_primordial_weapon_id "
+            "LEFT JOIN primordial_items pa ON pa.id = c.equipped_primordial_armor_id "
+            "LEFT JOIN primordial_items pacc ON pacc.id = c.equipped_primordial_accessory_id "
+            "WHERE c.user_id = %s",
             (user_id,),
         )
         if not row:
@@ -896,8 +918,14 @@ class Database:
             "class_key", "level", "xp", "equipped_weapon", "equipped_armor", "equipped_accessory",
             "wins", "losses", "current_hp", "hp_updated_at",
             "weapon_enchant", "armor_enchant", "accessory_enchant",
+            "equipped_primordial_weapon_id", "equipped_primordial_armor_id", "equipped_primordial_accessory_id",
         )
-        return dict(zip(keys, row))
+        character = dict(zip(keys, row[:16]))
+        weapon_affixes, armor_affixes, accessory_affixes = row[16], row[17], row[18]
+        character["primordial_weapon"] = {"affixes": json.loads(weapon_affixes)} if weapon_affixes else None
+        character["primordial_armor"] = {"affixes": json.loads(armor_affixes)} if armor_affixes else None
+        character["primordial_accessory"] = {"affixes": json.loads(accessory_affixes)} if accessory_affixes else None
+        return character
 
     async def set_character_level(self, user_id: int, level: int, xp: int) -> None:
         await self._execute(
@@ -959,6 +987,36 @@ class Database:
                 await cur.execute("SELECT balance FROM users WHERE user_id = %s", (user_id,))
                 row = await cur.fetchone()
                 return row[0]
+
+    _PRIMORDIAL_EQUIP_COLUMNS = {
+        "weapon": "equipped_primordial_weapon_id",
+        "armor": "equipped_primordial_armor_id",
+        "accessory": "equipped_primordial_accessory_id",
+    }
+
+    async def add_primordial_item(self, user_id: int, slot: str, affixes_json: str) -> int:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO primordial_items (user_id, slot, affixes) VALUES (%s, %s, %s)",
+                    (user_id, slot, affixes_json),
+                )
+                return cur.lastrowid
+
+    async def get_primordial_items(self, user_id: int) -> list[dict]:
+        rows = await self._fetchall(
+            "SELECT id, slot, affixes FROM primordial_items WHERE user_id = %s ORDER BY id",
+            (user_id,),
+        )
+        return [{"id": r[0], "slot": r[1], "affixes": json.loads(r[2])} for r in rows]
+
+    async def equip_primordial(self, user_id: int, slot: str, item_id: int) -> None:
+        column = self._PRIMORDIAL_EQUIP_COLUMNS[slot]
+        await self._execute(f"UPDATE characters SET {column} = %s WHERE user_id = %s", (item_id, user_id))
+
+    async def unequip_primordial(self, user_id: int, slot: str) -> None:
+        column = self._PRIMORDIAL_EQUIP_COLUMNS[slot]
+        await self._execute(f"UPDATE characters SET {column} = NULL WHERE user_id = %s", (user_id,))
 
     async def get_boss_kills(self, user_id: int, dungeon_key: str) -> int:
         row = await self._fetchone(

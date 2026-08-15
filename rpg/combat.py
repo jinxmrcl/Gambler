@@ -14,6 +14,9 @@ class Fighter:
     skill_key: str | None = None
     hp: int | None = None
     skill_used: bool = False
+    lifesteal_pct: float = 0.0
+    crit_dmg_bonus: float = 0.0
+    reflect_pct: float = 0.0
 
     def __post_init__(self):
         if self.hp is None:
@@ -44,8 +47,19 @@ def _hit(attacker: Fighter, defender: Fighter) -> tuple[int, bool, str]:
         dmg_mult *= 1.15
         note += " 🪓*Bloodlust!*"
 
+    if attacker.skill_key == "enrage" and attacker.hp / attacker.max_hp < 0.25:
+        dmg_mult *= 1.5
+        if not attacker.skill_used:
+            attacker.skill_used = True
+            note += " 😡*Enraged!*"
+
+    if attacker.skill_key == "double_strike" and random.random() < 0.3:
+        dmg_mult *= 2.0
+        note += " ⚡*Double Strike!*"
+
     variance = random.uniform(0.85, 1.15)
-    raw = attacker.atk * variance * dmg_mult * (2.0 if is_crit else 1.0)
+    crit_mult = 2.0 + attacker.crit_dmg_bonus
+    raw = attacker.atk * variance * dmg_mult * (crit_mult if is_crit else 1.0)
 
     defense_mult = 1.0
     if not defender.skill_used and defender.skill_key == "shield_wall":
@@ -64,6 +78,26 @@ def _hit(attacker: Fighter, defender: Fighter) -> tuple[int, bool, str]:
         attacker.skill_used = True
         note += f" 💀*Life Drain!* (+{healed} HP)"
 
+    if attacker.lifesteal_pct:
+        healed = int(dmg * attacker.lifesteal_pct)
+        if healed:
+            attacker.hp = min(attacker.max_hp, attacker.hp + healed)
+            note += f" 🩸*Lifesteal!* (+{healed} HP)"
+
+    if defender.reflect_pct:
+        reflected = int(dmg * defender.reflect_pct)
+        if reflected:
+            attacker.hp = max(0, attacker.hp - reflected)
+            note += f" 🔮*Reflect!* ({reflected} dmg back)"
+
+    if defender.skill_key == "counterstrike" and defender.hp > 0 and random.random() < 0.25:
+        counter_variance = random.uniform(0.85, 1.15)
+        counter_raw = defender.atk * counter_variance * 0.5
+        counter_mitigation = attacker.defense / (attacker.defense + defender.atk)
+        counter_dmg = max(1, round(counter_raw * (1 - counter_mitigation)))
+        attacker.hp = max(0, attacker.hp - counter_dmg)
+        note += f" 🥋*Counterstrike!* ({counter_dmg} dmg back)"
+
     return dmg, is_crit, note
 
 
@@ -78,6 +112,13 @@ def _maybe_heal(fighter: Fighter, log: list[str]) -> None:
         fighter.hp = min(fighter.max_hp, fighter.hp + healed)
         fighter.skill_used = True
         log.append(f"✨ *Lay on Hands!* {fighter.name} heals **{healed}** HP ({fighter.hp}/{fighter.max_hp} HP)")
+
+    if fighter.skill_key == "regrowth" and fighter.hp > 0:
+        missing = fighter.max_hp - fighter.hp
+        healed = int(missing * 0.04)
+        if healed:
+            fighter.hp = min(fighter.max_hp, fighter.hp + healed)
+            log.append(f"🌿 *Regrowth!* {fighter.name} recovers **{healed}** HP ({fighter.hp}/{fighter.max_hp} HP)")
 
 
 def simulate(fighter_a: Fighter, fighter_b: Fighter) -> dict:

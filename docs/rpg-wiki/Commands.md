@@ -16,6 +16,8 @@
 - `/rpgshop` — browse [gear](Equipment%20%26%20Upgrades.md) and [potions](Consumables.md)
 - `/rpgbuy`, `/rpgequip`, `/rpguse`, `/rpgsell`, `/rpgupgrade`, `/rpginventory`
 - `/rpgautoupgrade` — repeatedly upgrades your equipped gear (cheapest slot first) until every slot is maxed or you can't afford the next level
+- `/rpgequipprimordial <item_id>` — equip a [✨ Primordial](Equipment%20Tiers/Primordial%20Tier.md) item you own by its ID (shown in `/rpginventory`)
+- `/rpgunequipprimordial <slot>` — revert a slot back to your regular gear
 
 ## PvP
 - `/duel` — challenge another player (always full HP, see [Combat System](Combat%20System.md))

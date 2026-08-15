@@ -22,15 +22,25 @@ Every class has one unique skill that fires automatically in combat:
 - **Life Drain** ([Necromancer](Classes/Necromancer.md)) — The first attack of every fight heals you for two-thirds of the damage dealt.
 - **Piercing Shot** ([Ranger](Classes/Ranger.md)) — The first attack of every fight ignores 85% of the target's DEF.
 - **Bloodlust** ([Berserker](Classes/Berserker.md)) — Deals 15% bonus damage on every hit made while below 50% HP.
+- **Counterstrike** ([Monk](Classes/Monk.md)) — Every time you're hit, a 25% chance to immediately strike back for 50% damage. Not gated to the first hit — can fire all fight long.
+- **Regrowth** ([Druid](Classes/Druid.md)) — After every exchange, recovers 4% of missing HP. No threshold or once-per-fight limit, unlike Lay on Hands.
 
 Each class's per-level HP/ATK/DEF growth is individually tuned (not a round number) so that every class lands in roughly the same win-rate band against equivalent-tier content — see each class's page for its exact growth rate.
+
+## Primordial affixes
+[Primordial-tier](Equipment%20Tiers/Primordial%20Tier.md) gear can roll three combat mechanics not reachable through normal gear or class skills: **Lifesteal** (heals the attacker on every hit, not just once), **Crit Damage** (pushes a critical hit's multiplier above the flat 2.0x), and **Damage Reflect** (bounces a slice of damage taken back at the attacker). All three stack with class skills and fire on every relevant hit for the whole fight.
+
+## Boss special abilities
+The bosses of the 5 high-end dungeons (Titan's Forge, Chaos Rift, Eternal Throne, World Ender's Lair, Voidscar Expanse) each carry one unique ability on top of their stats, alternating between:
+- **Enrage** — once the boss drops below 25% HP, its damage is permanently boosted 50% for the rest of the fight.
+- **Double Strike** — 30% chance on any attack to hit with double force.
 
 ## Elite (Ambush) encounters
 A random dungeon event that pits you against a 1.15x-stronger monster for 1.4x rewards. See [Dungeons](RPG%20Overview.md#dungeons-in-level-order).
 
 ## Team fights
-Add `team: True` to [`/dungeon`](Commands.md) or [`/dungeonboss`](Commands.md) to open a public join lobby instead of fighting solo. Anyone with a character can hit **Join**; the party leader can **Start Now**, or it starts automatically after 30 seconds.
+Add `team: True` to [`/dungeon`](Commands.md) or [`/dungeonboss`](Commands.md) to open a public join lobby instead of fighting solo. Anyone with a character can hit **Join**; the party leader can **Start Now**, or it starts automatically after 30 seconds. Anyone in the lobby can also hit **Use Potion** to spend one of their own potions and heal the *entire current party's* HP by that potion's normal heal percentage — one person's potion, whole-team benefit.
 
-When the fight starts, each member's own cooldown is checked and consumed individually — anyone still on cooldown or too hurt to fight is dropped from the party rather than blocking the group. The monster/boss scales up with the final party size (HP scales 1x per member, ATK scales +20% per member beyond the first), so a bigger party faces a genuinely tougher fight, not a free win — though in practice even a duo turns a coin-flip solo boss fight into a near-certain win. Every round, all living party members attack in turn, then the monster picks one random living member to hit back.
+When the fight starts, each member's own cooldown is checked and consumed individually — anyone still on cooldown or too hurt to fight is dropped from the party rather than blocking the group. The monster/boss scales up with the final party size (HP scales +190% per member beyond the first, ATK scales +14% per member beyond the first) — deliberately steep enough that team fights stay a genuine challenge rather than a near-guaranteed win: a boss that's a coin-flip solo is roughly 55-80% winnable with a duo, climbing to ~85-95% by a full party of 5. Every round, all living party members attack in turn, then the monster picks one random living member to hit back.
 
-A win pays every surviving party member the **full solo-equivalent reward** (gold, XP, and an independent loot roll each) — rewards aren't split across the party.
+A win pays every surviving party member the **full solo-equivalent reward** (gold, XP, and an independent loot roll each) — rewards aren't split across the party. The one exception is a [Primordial](Equipment%20Tiers/Primordial%20Tier.md) drop, which rolls once for the whole party and goes to a single random survivor.

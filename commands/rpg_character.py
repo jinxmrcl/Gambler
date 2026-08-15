@@ -11,9 +11,10 @@ from rpg.character import current_hp, full_stats
 from rpg.classes import CLASSES, base_stats_at_level
 from rpg.equipment import EQUIPMENT
 from rpg.leveling import prestige_and_level, title_for_level, xp_for_level
+from rpg.primordial import PRIMORDIAL_BASES, describe_affixes
 from utils.economy import StaticView, fmt
 
-ClassKey = Literal["warrior", "mage", "rogue", "paladin", "necromancer", "ranger", "berserker"]
+ClassKey = Literal["warrior", "mage", "rogue", "paladin", "necromancer", "ranger", "berserker", "monk", "druid"]
 HEAL_COST_PER_HP = 3
 
 
@@ -83,9 +84,21 @@ class RPGCharacter(commands.Cog):
         weapon = EQUIPMENT.get(character["equipped_weapon"])
         armor = EQUIPMENT.get(character["equipped_armor"])
         accessory = EQUIPMENT.get(character.get("equipped_accessory"))
-        weapon_text = f"{weapon.name} (+{character['weapon_enchant']})" if weapon else "*None*"
-        armor_text = f"{armor.name} (+{character['armor_enchant']})" if armor else "*None*"
-        accessory_text = f"{accessory.name} (+{character['accessory_enchant']})" if accessory else "*None*"
+
+        if character.get("primordial_weapon"):
+            weapon_text = f"{PRIMORDIAL_BASES['weapon'].name} ({describe_affixes(character['primordial_weapon']['affixes'])})"
+        else:
+            weapon_text = f"{weapon.name} (+{character['weapon_enchant']})" if weapon else "*None*"
+
+        if character.get("primordial_armor"):
+            armor_text = f"{PRIMORDIAL_BASES['armor'].name} ({describe_affixes(character['primordial_armor']['affixes'])})"
+        else:
+            armor_text = f"{armor.name} (+{character['armor_enchant']})" if armor else "*None*"
+
+        if character.get("primordial_accessory"):
+            accessory_text = f"{PRIMORDIAL_BASES['accessory'].name} ({describe_affixes(character['primordial_accessory']['affixes'])})"
+        else:
+            accessory_text = f"{accessory.name} (+{character['accessory_enchant']})" if accessory else "*None*"
 
         total_duels = character["wins"] + character["losses"]
         winrate = f"{character['wins'] / total_duels * 100:.0f}%" if total_duels else "—"

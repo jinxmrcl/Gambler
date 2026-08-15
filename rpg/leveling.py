@@ -4,7 +4,7 @@ MAX_LEVEL = (MAX_PRESTIGE + 1) * LEVELS_PER_PRESTIGE
 
 
 def xp_for_level(level: int) -> int:
-    return int(50 * level**1.5)
+    return int(45 * level**1.42)
 
 
 def apply_xp(level: int, xp: int, gained: int) -> tuple[int, int, int]:
@@ -25,6 +25,14 @@ def prestige_and_level(total_level: int) -> tuple[int, int]:
     prestige = (total_level - 1) // LEVELS_PER_PRESTIGE
     level_in_prestige = ((total_level - 1) % LEVELS_PER_PRESTIGE) + 1
     return prestige, level_in_prestige
+
+
+PRESTIGE_STAT_BONUS_PER_TIER = 0.005
+
+
+def prestige_stat_multiplier(total_level: int) -> float:
+    prestige, _ = prestige_and_level(total_level)
+    return 1 + prestige * PRESTIGE_STAT_BONUS_PER_TIER
 
 
 TITLES = [
