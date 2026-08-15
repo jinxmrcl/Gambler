@@ -137,7 +137,13 @@ class RPGShop(commands.Cog):
         info = EQUIPMENT[item]
         await self.bot.db.set_equipped(interaction.user.id, info.slot, item)
         await self.bot.db.set_enchant_level(interaction.user.id, info.slot, 0)
-        view = StaticView("✨ Equipped", f"Equipped {info.name}.", color=discord.Color.green())
+
+        note = ""
+        if character.get(f"primordial_{info.slot}"):
+            await self.bot.db.unequip_primordial(interaction.user.id, info.slot)
+            note = " (replaced your equipped ✨ Primordial item in that slot)"
+
+        view = StaticView("✨ Equipped", f"Equipped {info.name}.{note}", color=discord.Color.green())
         await interaction.response.send_message(view=view)
 
     @app_commands.command(name="rpguse", description="Use a potion from your inventory.")
@@ -236,13 +242,23 @@ class RPGShop(commands.Cog):
             return
 
         slots: list[SlotKey] = ["weapon", "armor", "accessory"]
+        has_any_gear = any(
+            character.get(f"equipped_{s}") or character.get(f"primordial_{s}") for s in slots
+        )
+        if not has_any_gear:
+            await interaction.response.send_message("⚠️ You don't have anything equipped. Use `/rpgequip` first.")
+            return
+
         equipped = {
             s: character.get(f"equipped_{s}") for s in slots if not character.get(f"primordial_{s}")
         }
         levels = {s: character[f"{s}_enchant"] for s in slots if equipped.get(s)}
 
         if not levels:
-            await interaction.response.send_message("⚠️ You don't have anything equipped. Use `/rpgequip` first.")
+            await interaction.response.send_message(
+                "⚠️ All your equipped gear is ✨ Primordial — none of it can be enchanted through "
+                "the normal system. Nothing to auto-upgrade."
+            )
             return
 
         await interaction.response.send_message(view=StaticView("🔨 Auto-Upgrading", "Starting…"))
