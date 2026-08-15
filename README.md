@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="assets/economy_bot_icon.png" width="120" alt="Economy Bot icon">
-
 ![Economy Bot](assets/economy_bot_banner_1.png)
 
 ![discord.py](https://img.shields.io/badge/discord.py-2.6%2B-5865F2?logo=discord&logoColor=white)
@@ -22,24 +20,36 @@ all backed by MySQL (or Postgres/Supabase).
 
 📊 **~8,370 lines of Python** across 53 files.
 
+## Table of contents
+
+- [Features](#features)
+- [Setup](#setup)
+- [Deploying to a VPS](#deploying-to-a-vps)
+- [Documentation](#documentation)
+- [Commands](#commands)
+- [Project structure](#project-structure)
+
 ## Features
 
-**Casino Games** — Blackjack (with Split), Mines (customizable grid size), Hilo, Plinko,
-Limbo, Keno, Slots, Roulette, Dice, Baccarat, Horse Race, Scratchcard, Crash, and Solo
-Coinflip (`/soloflip`) — all against the house — plus a PvP `/coinflip` duel between two
-players. All games are mathematically fair with a fixed, transparent house edge
-(`HOUSE_EDGE` in `utils/economy.py`, default 3%); Horse Race and Baccarat derive their
-odds directly from simulating the actual game rules (validated against real-world
-baccarat statistics) rather than hand-picked numbers, and Crash shares its crash-point
-math with Limbo. Interactive ones (Blackjack, Mines, Hilo, Keno, Scratchcard, Horse Race,
-Crash) use Discord's native buttons and select menus — Scratchcard is click-to-reveal
-tile by tile, Horse Race lets you pick your horse from a dropdown after betting, and
-Crash lets you cash out live while the multiplier climbs — and several (Blackjack,
-Slots, Horse Race, Baccarat, Crash) play out with a timed animated reveal instead of
-showing the result instantly. Admins can set a spectator channel where every live Crash
-round is mirrored for others to watch (`/set-crashchannel`). Blackjack and Hilo render
-playing cards with custom Discord emojis (`assets/cards/`, mapped in `utils/cards.py`)
-instead of plain text.
+**Casino Games** — 14 games against the house, plus a PvP duel:
+
+- Blackjack (with Split), Mines (customizable grid), Hilo, Plinko, Limbo, Keno, Slots,
+  Roulette, Dice, Baccarat, Horse Race, Scratchcard, Crash, Solo Coinflip (`/soloflip`)
+- PvP `/coinflip` — challenge another player directly instead of the house
+- Every game shares one fixed, transparent house edge (`HOUSE_EDGE` in
+  `utils/economy.py`, default 3%) — Horse Race and Baccarat derive their odds by
+  simulating the actual game rules rather than hand-picked numbers, and Crash reuses
+  Limbo's exact crash-point formula
+- Interactive games (Blackjack, Mines, Hilo, Keno, Scratchcard, Horse Race, Crash) use
+  Discord's native buttons and select menus — Scratchcard is click-to-reveal tile by
+  tile, Horse Race picks your horse from a dropdown after betting, and Crash lets you
+  hit Cash Out live while the multiplier climbs
+- Several (Blackjack, Slots, Horse Race, Baccarat, Crash) play out with a timed animated
+  reveal instead of showing the result instantly
+- Admins can mirror every live Crash round into a spectator channel
+  (`/set-crashchannel`) for others to watch
+- Blackjack and Hilo render real playing cards via custom Discord emojis
+  (`assets/cards/`, mapped in `utils/cards.py`) instead of plain text
 
 **RPG** (`rpg/`, `commands/rpg_*.py`) — a full slash-only RPG sharing the same wallet as
 the casino:
@@ -55,8 +65,8 @@ the casino:
 
 **Economy** — a per-user virtual balance stored in MySQL, with:
 - `daily` bonus, `work`/`crime`/`slut` for risk-based income, and `rob` to steal from others
-- a passive **Payday**: every 6-24h, a random amount (100-10,000 by default) shows up as
-  a surprise DM — no command needed
+- a passive **Payday**: every 6-24h, a random amount (100-10,000 by default) is announced
+  in a configurable channel (`PAYDAY_CHANNEL_ID`) — no command needed
 - a `bank` to protect balance from being robbed
 - a `shop` with items (rob shield, cooldown reset), plus `gift` and `trade` between players
 - `marry`/`divorce` and a weekly `lottery` with an automatic prize draw
@@ -73,15 +83,24 @@ the casino:
 **UI** — built entirely with Discord's Components V2 (`Container`, `TextDisplay`,
 `ActionRow`) instead of classic embeds, which requires `discord.py` 2.6 or newer.
 
-**Infrastructure** — a per-channel rate limiter (`utils/ratelimit.py`) to avoid Discord
-API throttling on frequent message edits, hot code reloading in development
-(`HOT_RELOAD=true`, picks up changes to `commands/`, `events/`, `rpg/`, `utils/`, and
-`database/` within ~1.5s with no restart), an optional bot-owner-configured channel for
-restart/crash health announcements, and — separately — a per-server `/set-updateschannel`
-that posts a Components V2 Container listing whatever new commands/game modes shipped,
-automatically diffed against the previous run every time the process actually restarts
-(not on hot reload, and not the same channel/notification as the health announcements or
-the git-pull watcher).
+**Infrastructure**:
+
+- A global + per-channel rate limiter (`utils/ratelimit.py`), both congestion-aware —
+  they throttle harder the more callers are waiting simultaneously, then relax back
+  down — to avoid Discord API throttling on frequent message edits and sends
+- Hot code reloading in development (`HOT_RELOAD=true`, picks up changes to
+  `commands/`, `events/`, `rpg/`, `utils/`, and `database/` within ~1.5s, no restart)
+- An in-process git watcher that checks `origin` every 60s and fast-forward-pulls any
+  new commits, posting to the restart channel when one lands
+- A Supabase/Postgres fallback database that only kicks in if MySQL can't be reached
+  at bot startup
+- Optional restart/crash health announcements to a bot-owner-configured channel
+- Separately, a per-server `/set-updateschannel` posts a Components V2 Container
+  listing whatever new commands/game modes were detected after an actual process
+  restart (not on hot reload) — diffed against the previous run's command list, and
+  distinct from both the git-pull watcher and the restart-health announcements above
+
+---
 
 ## Setup
 
@@ -118,7 +137,8 @@ the git-pull watcher).
    | `SUPABASE_DB_URL` / `SUPABASE_DB_URL_FILE` | Optional Postgres/Supabase connection string (or a file holding one) — if set, the bot automatically falls back to it when MySQL is unreachable at startup |
    | `STARTING_BALANCE` | Starting balance for new players (default: 1000) |
    | `DAILY_AMOUNT` | Amount granted by the daily bonus (default: 500) |
-   | `PAYDAY_MIN_AMOUNT` / `PAYDAY_MAX_AMOUNT` | Range for the random passive Payday DM every 6-24h (default: 100-10000) |
+   | `PAYDAY_MIN_AMOUNT` / `PAYDAY_MAX_AMOUNT` | Range for the random passive Payday payout every 6-24h (default: 100-10000) |
+   | `PAYDAY_CHANNEL_ID` | Channel Payday payouts are announced in |
    | `HOT_RELOAD` | Auto-reload changed cogs/modules in development (default: `true`) |
    | `RESTART_LOG_CHANNEL_ID` | Optional channel ID for startup/crash/restart announcements |
 
@@ -134,6 +154,8 @@ the git-pull watcher).
 
    On startup, all cogs in `commands/` and `events/` are loaded automatically and slash
    commands are synced with Discord.
+
+---
 
 ## Deploying to a VPS
 
@@ -193,6 +215,8 @@ Both MySQL (`restart: unless-stopped`) and the bot (pm2 `autorestart`) recover
 automatically from a crash; pm2's `cron_restart` additionally restarts the bot process
 daily at 4am. Useful commands: `pm2 status`, `pm2 logs GamblerV2`, `pm2 restart GamblerV2`.
 
+---
+
 ## Documentation
 
 An 83-note wiki at [`docs/rpg-wiki/`](docs/rpg-wiki) documents every system in the bot in
@@ -209,6 +233,8 @@ but every note is plain Markdown and browsable directly on GitHub too.
 | [Social](docs/rpg-wiki/Social/Social%20Overview.md) | Marriage, trading, the weekly lottery |
 | [Admin & Settings](docs/rpg-wiki/Admin%20%26%20Settings/Admin%20Overview.md) | Server configuration, moderation commands |
 | [Infrastructure](docs/rpg-wiki/Infrastructure/Infrastructure%20Overview.md) | Database layer, rate limiting, hot reload, error handling |
+
+---
 
 ## Commands
 
@@ -268,6 +294,7 @@ Requires the **Administrator** permission on the server.
 - `rpgsetlevel <user> <level> [xp=0]` — set a player's RPG level directly
 - `rpggive <user> <item> [quantity=1]` — give a player a piece of equipment or a potion
   for free
+- `restart` — restart the bot process
 - `settings` — shows this server's disabled games and channel restrictions
 - `togglegame <game> <enabled>` — enable or disable a specific game on this server
 - `togglechannel <add|remove|clear>` — restrict games to specific channels
@@ -288,8 +315,8 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 - `blackjack <bet>` — classic Blackjack with Hit/Stand/Double/Split buttons; cards are
   dealt, drawn, and the dealer's hand is revealed with an animated reveal instead of
   appearing instantly
-- `mines <bet> [mines=3] [cols=5] [rows=4]` — customizable grid (2-5 cols, 2-4 rows),
-  avoid mines, cash out anytime
+- `mines <bet> [mines=3] [cols=5] [rows=4]` — customizable grid (2-5 cols, 2-5 rows —
+  the full 5x5 unlocks up to 23 mines), avoid mines, cash out anytime
 - `hilo <bet>` — guess higher/lower, multiplier grows with each correct card
 - `plinko <bet> [risk=medium] [rows=12]` — drop a ball through the Plinko board
 - `limbo <bet> <target>` — set a target multiplier (up to 1,000x), the random result
@@ -335,17 +362,19 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
 - `duel <user>` — challenge another player to a PvP duel (60s cooldown)
 - `arena` — shows the top duelists
 
+---
+
 ## Project structure
 
 ```
-main.py                     Bot entry point, loads cogs, connects to MySQL, hot reload, restart announcements
+main.py                     Bot entry point, loads cogs, connects to MySQL, hot reload, restart announcements, git watcher
 database/db.py               aiomysql connection pool + wallet/bank/inventory/stats/social/RPG functions
 utils/economy.py             Bet parsing, formatting, house edge constant, UI building blocks
 utils/cards.py                Card deck + custom card emoji mapping for Blackjack & Hilo
 assets/cards/                 Downloaded card emoji images (reference copies, not loaded at runtime)
 utils/items.py                Shop catalog (item keys, prices, effects)
 utils/checks.py               Per-server game enable/channel checks
-utils/ratelimit.py            Per-channel token-bucket rate limiter for message edits
+utils/ratelimit.py            Global + per-channel, congestion-aware token-bucket limiters for edits/sends
 commands/economy.py           balance, daily, leaderboard, pay
 commands/hustle.py            work, crime, slut, rob
 commands/bank.py              bank, deposit, withdraw
@@ -356,7 +385,7 @@ commands/marriage.py          marry, divorce, marriage
 commands/lottery.py           lottery, lottery_buy, lottery_setchannel (weekly background task)
 commands/profile.py           profile / stats
 commands/cooldowns.py         cooldowns
-commands/admin.py             addmoney, setbalance, giveall, resetuser, rpgsetlevel, rpggive
+commands/admin.py             addmoney, setbalance, giveall, resetuser, restart, rpgsetlevel, rpggive
 commands/settings.py          settings, togglegame, togglechannel, set-gamblechannel, set-crashchannel, set-updateschannel
 commands/help.py              help
 commands/blackjack.py         Blackjack
@@ -387,10 +416,15 @@ rpg/badges.py                 Prestige badge rendering
 rpg/events.py                 Random in-dungeon events
 events/on_ready.py            Startup logging & presence
 events/error_handler.py       Centralized error handling for text & slash commands
-events/payday.py              Passive background task: random surprise balance DM every 6-24h
+events/payday.py              Background loop: random passive payday payout per user, announced in a channel
 database/db_postgres.py       Postgres/Supabase implementation of the same DB interface (automatic fallback)
+deploy/ecosystem.config.js    pm2 process config (autorestart, daily 4am cron_restart)
+deploy/install_pm2.sh         Starts the bot under pm2, posts a startup status message
+deploy/init_secrets.sh        Generates the gitignored MySQL secret files docker-compose.yml reads
 docs/rpg-wiki/                Obsidian vault documenting every system, generated from live game data
 ```
+
+---
 
 ## License
 

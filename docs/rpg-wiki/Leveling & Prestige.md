@@ -1,6 +1,6 @@
 # Leveling & Prestige
 
-Levels run from 1 to 1500. Every 50 levels is one Prestige tier (Prestige 1 through 29), each with its own badge shown on your [[Commands#Character|character sheet]].
+Levels run from 1 to 1500. Every 50 levels is one Prestige tier (Prestige 1 through 29), each with its own badge shown on your [character sheet](Commands.md#character).
 
 Level 51 displays as **Prestige 1, Level 1**; level 1500 (max) displays as **Prestige 29, Level 50**.
 
@@ -19,4 +19,4 @@ Your title is based on total level, independent of prestige display:
 - **Transcendent** — level 751+
 - **Eternal** — level 1001+
 
-XP needed for a level: `50 * level^1.5`. See [[Combat System]] for how XP is earned (dungeon and boss kills, duel wins).
+XP needed for a level: `50 * level^1.5`. See [Combat System](Combat%20System.md) for how XP is earned (dungeon and boss kills, duel wins).

@@ -11,4 +11,4 @@ A balanced holy warrior with steady sustain.
 ## Skill
 **Lay on Hands** — Once per fight, heals 20% of max HP the first time you drop below 30%.
 
-See [[Combat System]] for how skills interact with the damage formula, and [[Equipment & Upgrades]] for gearing this class.
+See [Combat System](../Combat%20System.md) for how skills interact with the damage formula, and [Equipment & Upgrades](../Equipment%20%26%20Upgrades.md) for gearing this class.

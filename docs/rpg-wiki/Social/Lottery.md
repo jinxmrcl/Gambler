@@ -5,4 +5,4 @@
 - `/lottery_setchannel` — (admin) sets the channel for draw announcements
 
 A background task draws a winner every 7 days, weighted by ticket count.
-See [[Social Overview]].
+See [Social Overview](Social%20Overview.md).

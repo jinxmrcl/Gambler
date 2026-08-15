@@ -10,4 +10,7 @@
 - Cooldowns (`try_consume_cooldown`) and the daily bonus (`claim_daily`) use a single atomic
   statement each to close check-then-act races from a command being fired twice at once.
 
-See [[Infrastructure Overview]].
+`database/db_postgres.py` mirrors every method here 1:1 for Supabase/Postgres — see
+[Supabase Fallback](Supabase%20Fallback.md).
+
+See [Infrastructure Overview](Infrastructure%20Overview.md).

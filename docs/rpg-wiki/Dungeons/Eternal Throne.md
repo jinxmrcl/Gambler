@@ -7,20 +7,20 @@ Recommended level: **900+**
 ### Throneguard Wraith ⚔️
 - HP 11670 • ATK 1530 • DEF 718 • Crit 13%
 - Rewards: 14360 XP, 17980-27020 gold
-- Loot (22% chance): [[Equipment Tiers/Ancient Tier|🌈 ☄️ Worldbreaker]], [[Equipment Tiers/Ancient Tier|🌈 👑 Crown of Fate]]
+- Loot (22% chance): [🌈 ☄️ Worldbreaker](../Equipment%20Tiers/Ancient%20Tier.md), [🌈 👑 Crown of Fate](../Equipment%20Tiers/Ancient%20Tier.md)
 
 ### Usurper of Ages 👑
 - HP 11400 • ATK 1605 • DEF 674 • Crit 20%
 - Rewards: 14620 XP, 18020-27060 gold
-- Loot (22% chance): [[Equipment Tiers/Ancient Tier|🌈 ☄️ Worldguard Aegis]], [[Equipment Tiers/Ancient Tier|🌈 👑 Crown of Fate]]
+- Loot (22% chance): [🌈 ☄️ Worldguard Aegis](../Equipment%20Tiers/Ancient%20Tier.md), [🌈 👑 Crown of Fate](../Equipment%20Tiers/Ancient%20Tier.md)
 
 ### The Enthroned 🪑
 - HP 12480 • ATK 1560 • DEF 784 • Crit 16%
 - Rewards: 14820 XP, 18060-27160 gold
-- Loot (22% chance): [[Equipment Tiers/Ancient Tier|🌈 ☄️ Worldbreaker]], [[Equipment Tiers/Ancient Tier|🌈 ☄️ Worldguard Aegis]]
+- Loot (22% chance): [🌈 ☄️ Worldbreaker](../Equipment%20Tiers/Ancient%20Tier.md), [🌈 ☄️ Worldguard Aegis](../Equipment%20Tiers/Ancient%20Tier.md)
 
 ## Boss
-[[Bosses/The Eternal Monarch|The Eternal Monarch 🏰]] — challenge with `/dungeonboss`
+[The Eternal Monarch 🏰](../Bosses/The%20Eternal%20Monarch.md) — challenge with `/dungeonboss`
 
 ## Related gear tiers
-- [[Equipment Tiers/Ancient Tier]]
+- [Ancient Tier](../Equipment%20Tiers/Ancient%20Tier.md)

@@ -16,6 +16,8 @@ PAYDAY_MIN_INTERVAL = datetime.timedelta(hours=6)
 PAYDAY_MAX_INTERVAL = datetime.timedelta(hours=24)
 PAYDAY_MIN_AMOUNT = int(os.getenv("PAYDAY_MIN_AMOUNT", "100"))
 PAYDAY_MAX_AMOUNT = int(os.getenv("PAYDAY_MAX_AMOUNT", "10000"))
+_raw_payday_channel = os.getenv("PAYDAY_CHANNEL_ID", "1537694458815053865")
+PAYDAY_CHANNEL_ID = int(_raw_payday_channel) if _raw_payday_channel.isdigit() else None
 
 
 def _random_payday_interval() -> datetime.timedelta:
@@ -61,20 +63,22 @@ class Payday(commands.Cog):
             await self._notify(user_id, amount)
 
     async def _notify(self, user_id: int, amount: int) -> None:
-        user = self.bot.get_user(user_id)
-        if user is None:
+        if not PAYDAY_CHANNEL_ID:
+            return
+        channel = self.bot.get_channel(PAYDAY_CHANNEL_ID)
+        if channel is None:
             try:
-                user = await self.bot.fetch_user(user_id)
+                channel = await self.bot.fetch_channel(PAYDAY_CHANNEL_ID)
             except discord.HTTPException:
                 return
 
         view = StaticView(
             "💰 Payday!",
-            f"You received {fmt(amount)} out of nowhere.",
+            f"<@{user_id}> received {fmt(amount)} out of nowhere.",
             color=discord.Color.gold(),
         )
         try:
-            await limited_send(user, view=view)
+            await limited_send(channel, view=view)
         except discord.HTTPException:
             pass
 

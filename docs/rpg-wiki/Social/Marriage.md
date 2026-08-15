@@ -11,4 +11,4 @@ grab" once someone actually deposits it, unlike directly draining a partner's pe
 - `/spousebank`, `/spousedeposit`, `/spousewithdraw`
 - On divorce, any remaining pool balance is split 50/50 between both partners.
 
-See [[Social Overview]].
+See [Social Overview](Social%20Overview.md).
