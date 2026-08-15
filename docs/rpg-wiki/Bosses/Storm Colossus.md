@@ -1,6 +1,6 @@
 # Storm Colossus 🌪️
 
-Boss of [Scorched Wastes](../Dungeons/Scorched%20Wastes.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Scorched Wastes](../Dungeons/Scorched%20Wastes.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 6953 • ATK 418 • DEF 189 • Crit 19%

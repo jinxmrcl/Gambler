@@ -1,6 +1,6 @@
 # Elder Treant 🌳
 
-Boss of [Whispering Forest](../Dungeons/Whispering%20Forest.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Whispering Forest](../Dungeons/Whispering%20Forest.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 157 • ATK 16 • DEF 3 • Crit 13%

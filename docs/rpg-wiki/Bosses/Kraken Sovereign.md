@@ -1,6 +1,6 @@
 # Kraken Sovereign 🦑
 
-Boss of [Sunken City](../Dungeons/Sunken%20City.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Sunken City](../Dungeons/Sunken%20City.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 13883 • ATK 834 • DEF 386 • Crit 17%

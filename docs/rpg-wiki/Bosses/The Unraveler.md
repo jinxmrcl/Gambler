@@ -1,6 +1,6 @@
 # The Unraveler 🌀
 
-Boss of [Voidscar Expanse](../Dungeons/Voidscar%20Expanse.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Voidscar Expanse](../Dungeons/Voidscar%20Expanse.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 18480 • ATK 1114 • DEF 516 • Crit 19%

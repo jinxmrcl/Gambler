@@ -1,6 +1,6 @@
 # Frost Monarch ❄️
 
-Boss of [Frostpeak Summit](../Dungeons/Frostpeak%20Summit.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Frostpeak Summit](../Dungeons/Frostpeak%20Summit.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 4631 • ATK 281 • DEF 125 • Crit 18%

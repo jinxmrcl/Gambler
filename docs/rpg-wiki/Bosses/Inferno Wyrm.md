@@ -1,6 +1,6 @@
 # Inferno Wyrm 🌋
 
-Boss of [Molten Depths](../Dungeons/Molten%20Depths.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Molten Depths](../Dungeons/Molten%20Depths.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 1050 • ATK 58 • DEF 28 • Crit 17%

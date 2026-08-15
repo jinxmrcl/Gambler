@@ -1,6 +1,6 @@
 # Lich Lord 💀
 
-Boss of [Forgotten Crypt](../Dungeons/Forgotten%20Crypt.md). Challenge with `/dungeonboss` (5 minute cooldown per dungeon).
+Boss of [Forgotten Crypt](../Dungeons/Forgotten%20Crypt.md). Challenge with `/dungeonboss`. No cooldown — fight it as often as you can.
 
 ## Stats (base, before level scaling)
 - HP 676 • ATK 44 • DEF 18 • Crit 16%

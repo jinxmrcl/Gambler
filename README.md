@@ -384,13 +384,12 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
 - `rpgswitchclass <class>` — switch to your other class, or unlock a second one (exactly
   2 total, free to swap between them); each keeps fully independent progress
 - `dungeons` — shows the available dungeons and their level requirements
-- `dungeon <name> [team=False]` — fight your way through a dungeon for gold and XP; with
-  `team: True`, opens a public join lobby instead of fighting solo
-- `dungeonboss <name> [team=False]` — challenge a dungeon's boss for bigger rewards (5 min
-  cooldown per dungeon); `team: True` opens a join lobby, scaling the boss to party size
-- `idle <name> [minutes=30]` — auto-farms that dungeon (monsters + occasional boss
-  attempts) in the background for up to 120 minutes, then posts one summary — no
-  per-fight spam
+- `dungeon <name> [team=False]` — fight your way through a dungeon for gold and XP, no
+  cooldown; with `team: True`, opens a public join lobby instead of fighting solo
+- `dungeonboss <name> [team=False]` — challenge a dungeon's boss for bigger rewards, no
+  cooldown; `team: True` opens a join lobby, scaling the boss to party size
+- `idle <name> [minutes=30]` — auto-farms that dungeon (monsters + boss) in the
+  background for up to 120 minutes, then posts one summary — no per-fight spam
 - `rpgshop` — shows the equipment and potion shop
 - `rpgbuy <item> [quantity=1]` — buy a piece of equipment or a potion
 - `rpgequip <item>` — equip an owned weapon, armor, or accessory
