@@ -8,11 +8,11 @@ from utils.economy import StaticView
 
 GAMES = (
     "blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip",
-    "scratchcard", "horserace", "baccarat",
+    "scratchcard", "horserace", "baccarat", "crash",
 )
 GameName = Literal[
     "blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip",
-    "scratchcard", "horserace", "baccarat",
+    "scratchcard", "horserace", "baccarat", "crash",
 ]
 
 
@@ -26,6 +26,8 @@ class Settings(commands.Cog):
     async def settings(self, ctx: commands.Context):
         disabled, allowed_channels = await self.bot.db.get_guild_settings(ctx.guild.id)
         gamble_channel_id = await self.bot.db.get_gamble_channel(ctx.guild.id)
+        crash_channel_id = await self.bot.db.get_crash_channel(ctx.guild.id)
+        updates_channel_id = await self.bot.db.get_updates_channel(ctx.guild.id)
 
         disabled_text = ", ".join(f"`{g}`" for g in sorted(disabled)) or "none"
         if allowed_channels:
@@ -33,11 +35,15 @@ class Settings(commands.Cog):
         else:
             channels_text = "all channels"
         gamble_channel_text = f"<#{gamble_channel_id}>" if gamble_channel_id else "*not restricted*"
+        crash_channel_text = f"<#{crash_channel_id}>" if crash_channel_id else "*not set*"
+        updates_channel_text = f"<#{updates_channel_id}>" if updates_channel_id else "*not set*"
 
         view = StaticView(
             "🛠️ Server Settings",
             f"**Disabled games:** {disabled_text}\n**Allowed game channels:** {channels_text}\n"
-            f"**Bot restricted to:** {gamble_channel_text}",
+            f"**Bot restricted to:** {gamble_channel_text}\n"
+            f"**Crash spectator channel:** {crash_channel_text}\n"
+            f"**Updates channel:** {updates_channel_text}",
         )
         await ctx.send(view=view)
 
@@ -105,6 +111,72 @@ class Settings(commands.Cog):
             "🛠️ Gamble Channel Set",
             f"The bot can now only be used in {target.mention}.\n"
             f"-# Administrators are exempt from this restriction.",
+            color=discord.Color.blue(),
+        )
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(
+        name="set-crashchannel",
+        description="[Admin] Set a channel where live Crash rounds are mirrored for spectators.",
+    )
+    @app_commands.describe(
+        channel="Channel to mirror Crash rounds into (defaults to this channel)",
+        clear="Remove the spectator channel so rounds stop being mirrored",
+    )
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def set_crashchannel(
+        self, ctx: commands.Context, channel: discord.TextChannel | None = None, clear: bool = False
+    ):
+        if clear:
+            await self.bot.db.clear_crash_channel(ctx.guild.id)
+            view = StaticView(
+                "🚀 Crash Channel Cleared",
+                "Crash rounds will no longer be mirrored anywhere.",
+                color=discord.Color.blue(),
+            )
+            await ctx.send(view=view)
+            return
+
+        target = channel or ctx.channel
+        await self.bot.db.set_crash_channel(ctx.guild.id, target.id)
+        view = StaticView(
+            "🚀 Crash Channel Set",
+            f"Every `/crash` round on this server will now also be mirrored into {target.mention} "
+            f"for spectators to watch live.",
+            color=discord.Color.blue(),
+        )
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(
+        name="set-updateschannel",
+        description="[Admin] Set a channel where new bot features get announced after a restart.",
+    )
+    @app_commands.describe(
+        channel="Channel for feature announcements (defaults to this channel)",
+        clear="Remove the updates channel so announcements stop",
+    )
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
+    async def set_updateschannel(
+        self, ctx: commands.Context, channel: discord.TextChannel | None = None, clear: bool = False
+    ):
+        if clear:
+            await self.bot.db.clear_updates_channel(ctx.guild.id)
+            view = StaticView(
+                "🆕 Updates Channel Cleared",
+                "New feature announcements will no longer be posted anywhere.",
+                color=discord.Color.blue(),
+            )
+            await ctx.send(view=view)
+            return
+
+        target = channel or ctx.channel
+        await self.bot.db.set_updates_channel(ctx.guild.id, target.id)
+        view = StaticView(
+            "🆕 Updates Channel Set",
+            f"When new commands/game modes are detected after a restart, they'll be announced in "
+            f"{target.mention}.\n-# This is separate from git-pull and restart-health notifications.",
             color=discord.Color.blue(),
         )
         await ctx.send(view=view)

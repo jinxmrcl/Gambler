@@ -120,6 +120,22 @@ class PostgresDatabase:
             )
             await conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS crash_channels (
+                    guild_id BIGINT PRIMARY KEY,
+                    channel_id BIGINT NOT NULL
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS updates_channels (
+                    guild_id BIGINT PRIMARY KEY,
+                    channel_id BIGINT NOT NULL
+                )
+                """
+            )
+            await conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS marriages (
                     user_id BIGINT PRIMARY KEY,
                     partner_id BIGINT NOT NULL,
@@ -539,6 +555,43 @@ class PostgresDatabase:
 
     async def clear_gamble_channel(self, guild_id: int) -> None:
         await self._execute("DELETE FROM gamble_channels WHERE guild_id = $1", guild_id)
+
+    async def get_crash_channel(self, guild_id: int) -> int | None:
+        row = await self._fetchone(
+            "SELECT channel_id FROM crash_channels WHERE guild_id = $1", guild_id
+        )
+        return row[0] if row else None
+
+    async def set_crash_channel(self, guild_id: int, channel_id: int) -> None:
+        await self._execute(
+            "INSERT INTO crash_channels (guild_id, channel_id) VALUES ($1, $2) "
+            "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id",
+            guild_id,
+            channel_id,
+        )
+
+    async def clear_crash_channel(self, guild_id: int) -> None:
+        await self._execute("DELETE FROM crash_channels WHERE guild_id = $1", guild_id)
+
+    async def get_updates_channel(self, guild_id: int) -> int | None:
+        row = await self._fetchone(
+            "SELECT channel_id FROM updates_channels WHERE guild_id = $1", guild_id
+        )
+        return row[0] if row else None
+
+    async def set_updates_channel(self, guild_id: int, channel_id: int) -> None:
+        await self._execute(
+            "INSERT INTO updates_channels (guild_id, channel_id) VALUES ($1, $2) "
+            "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id",
+            guild_id,
+            channel_id,
+        )
+
+    async def clear_updates_channel(self, guild_id: int) -> None:
+        await self._execute("DELETE FROM updates_channels WHERE guild_id = $1", guild_id)
+
+    async def all_updates_channels(self) -> list[tuple[int, int]]:
+        return await self._fetchall("SELECT guild_id, channel_id FROM updates_channels")
 
 
     async def get_marriage(self, user_id: int) -> int | None:

@@ -59,6 +59,7 @@ from dotenv import load_dotenv
 
 from database import Database, PostgresDatabase
 from utils.checks import gamble_channel_check
+from utils.economy import StaticView
 
 load_dotenv()
 
@@ -88,6 +89,7 @@ BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 RESTART_STATE_PATH = DATA_DIR / "restart_state.json"
+KNOWN_COMMANDS_PATH = DATA_DIR / "known_commands.json"
 
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
@@ -176,6 +178,21 @@ def _write_restart_state(status: str, **extra) -> None:
         pass
 
 
+def _read_known_commands() -> list[str] | None:
+    """Returns None if this is the first run ever (no baseline to diff against yet)."""
+    try:
+        return json.loads(KNOWN_COMMANDS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _write_known_commands(names: list[str]) -> None:
+    try:
+        KNOWN_COMMANDS_PATH.write_text(json.dumps(sorted(names)), encoding="utf-8")
+    except Exception:
+        pass
+
+
 class GamblerBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -239,6 +256,47 @@ class GamblerBot(commands.Bot):
                 title="⚠️ Restarted after an unclean shutdown", description=desc, color=0xFEE75C
             )
         _write_restart_state("running")
+        await self._announce_new_features()
+
+    async def _announce_new_features(self) -> None:
+        app_commands_list = self.tree.get_commands()
+        current_names = sorted(c.name for c in app_commands_list)
+        descriptions = {c.name: c.description for c in app_commands_list}
+
+        previous_names = _read_known_commands()
+        _write_known_commands(current_names)
+
+        if previous_names is None:
+            return
+
+        new_names = sorted(set(current_names) - set(previous_names))
+        if not new_names:
+            return
+
+        try:
+            channels = await self.db.all_updates_channels()
+        except Exception:
+            log.exception("[updates] failed to load configured updates channels")
+            return
+
+        if not channels:
+            return
+
+        lines = [f"`/{name}` — {descriptions.get(name) or '—'}" for name in new_names]
+        body = f"This bot was just updated with {len(new_names)} new command(s):\n\n" + "\n".join(lines)
+
+        for guild_id, channel_id in channels:
+            channel = self.get_channel(channel_id)
+            if not channel:
+                try:
+                    channel = await self.fetch_channel(channel_id)
+                except Exception:
+                    continue
+            try:
+                view = StaticView("🆕 New Features Added", body, color=discord.Color.gold())
+                await channel.send(view=view)
+            except Exception:
+                log.exception("[updates] failed to announce new features in guild %s", guild_id)
 
     async def graceful_shutdown(self) -> None:
         if self.is_ready():

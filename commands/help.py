@@ -16,7 +16,7 @@ CATEGORIES = [
     ("stats", "📊 Statistics", ["Profile"]),
     ("games", "🎰 Casino Games", [
         "Blackjack", "Mines", "Hilo", "Plinko", "Limbo", "Keno", "Slots", "Roulette", "Dice", "Coinflip",
-        "Scratchcard", "HorseRace", "Baccarat",
+        "Scratchcard", "HorseRace", "Baccarat", "Crash",
     ]),
     ("rpg_character", "⚔️ RPG: Character", ["RPGCharacter"]),
     ("rpg_dungeon", "🗺️ RPG: Dungeons", ["RPGDungeon"]),

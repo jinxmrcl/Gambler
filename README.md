@@ -16,25 +16,28 @@
 
 An open source economy bot for your Discord server, built with `discord.py`. At its core
 is a full virtual economy (bank, shop, trading, marriage, weekly lottery, robbing, a
-random passive Payday), layered with 13 casino games of chance and a from-scratch RPG
+random passive Payday), layered with 14 casino games of chance and a from-scratch RPG
 (7 classes, 16 dungeons, level 1-1500 with prestige) that shares the same wallet —
 all backed by MySQL (or Postgres/Supabase).
 
-📊 **~7,960 lines of Python** across 52 files.
+📊 **~8,370 lines of Python** across 53 files.
 
 ## Features
 
 **Casino Games** — Blackjack (with Split), Mines (customizable grid size), Hilo, Plinko,
-Limbo, Keno, Slots, Roulette, Dice, Baccarat, Horse Race, Scratchcard, and Solo Coinflip
-(`/soloflip`) — all against the house — plus a PvP `/coinflip` duel between two players.
-All games are mathematically fair with a fixed, transparent house edge (`HOUSE_EDGE` in
-`utils/economy.py`, default 3%); Horse Race and Baccarat derive their odds directly from
-simulating the actual game rules (validated against real-world baccarat statistics)
-rather than hand-picked numbers. Interactive ones (Blackjack, Mines, Hilo, Keno,
-Scratchcard, Horse Race) use Discord's native buttons and select menus — Scratchcard is
-click-to-reveal tile by tile, and Horse Race lets you pick your horse from a dropdown
-after betting — and several (Blackjack, Slots, Horse Race, Baccarat) play out with a
-timed animated reveal instead of showing the result instantly. Blackjack and Hilo render
+Limbo, Keno, Slots, Roulette, Dice, Baccarat, Horse Race, Scratchcard, Crash, and Solo
+Coinflip (`/soloflip`) — all against the house — plus a PvP `/coinflip` duel between two
+players. All games are mathematically fair with a fixed, transparent house edge
+(`HOUSE_EDGE` in `utils/economy.py`, default 3%); Horse Race and Baccarat derive their
+odds directly from simulating the actual game rules (validated against real-world
+baccarat statistics) rather than hand-picked numbers, and Crash shares its crash-point
+math with Limbo. Interactive ones (Blackjack, Mines, Hilo, Keno, Scratchcard, Horse Race,
+Crash) use Discord's native buttons and select menus — Scratchcard is click-to-reveal
+tile by tile, Horse Race lets you pick your horse from a dropdown after betting, and
+Crash lets you cash out live while the multiplier climbs — and several (Blackjack,
+Slots, Horse Race, Baccarat, Crash) play out with a timed animated reveal instead of
+showing the result instantly. Admins can set a spectator channel where every live Crash
+round is mirrored for others to watch (`/set-crashchannel`). Blackjack and Hilo render
 playing cards with custom Discord emojis (`assets/cards/`, mapped in `utils/cards.py`)
 instead of plain text.
 
@@ -73,8 +76,12 @@ the casino:
 **Infrastructure** — a per-channel rate limiter (`utils/ratelimit.py`) to avoid Discord
 API throttling on frequent message edits, hot code reloading in development
 (`HOT_RELOAD=true`, picks up changes to `commands/`, `events/`, `rpg/`, `utils/`, and
-`database/` within ~1.5s with no restart), and optional restart/crash announcements to a
-configured Discord channel.
+`database/` within ~1.5s with no restart), an optional bot-owner-configured channel for
+restart/crash health announcements, and — separately — a per-server `/set-updateschannel`
+that posts a Components V2 Container listing whatever new commands/game modes shipped,
+automatically diffed against the previous run every time the process actually restarts
+(not on hot reload, and not the same channel/notification as the health announcements or
+the git-pull watcher).
 
 ## Setup
 
@@ -197,7 +204,7 @@ but every note is plain Markdown and browsable directly on GitHub too.
 | Section | Covers |
 |---|---|
 | [RPG Overview](docs/rpg-wiki/RPG%20Overview.md) | Classes, dungeons, bosses, equipment tiers, leveling & prestige (level 1-1500) |
-| [Casino Games](docs/rpg-wiki/Casino%20Games/Casino%20Overview.md) | All 13 games of chance and their odds |
+| [Casino Games](docs/rpg-wiki/Casino%20Games/Casino%20Overview.md) | All 14 games of chance and their odds |
 | [Economy](docs/rpg-wiki/Economy/Economy%20Overview.md) | Balance, daily, bank, hustling (work/crime/slut/rob) |
 | [Social](docs/rpg-wiki/Social/Social%20Overview.md) | Marriage, trading, the weekly lottery |
 | [Admin & Settings](docs/rpg-wiki/Admin%20%26%20Settings/Admin%20Overview.md) | Server configuration, moderation commands |
@@ -264,6 +271,12 @@ Requires the **Administrator** permission on the server.
 - `settings` — shows this server's disabled games and channel restrictions
 - `togglegame <game> <enabled>` — enable or disable a specific game on this server
 - `togglechannel <add|remove|clear>` — restrict games to specific channels
+- `set-gamblechannel [channel] [clear]` — restrict the whole bot to one channel
+  (admins are always exempt)
+- `set-crashchannel [channel] [clear]` — mirror every live `/crash` round into a
+  spectator channel
+- `set-updateschannel [channel] [clear]` — announce newly shipped commands/game modes
+  here after a restart
 
 ### Misc
 - `help` — interactive command browser with a category dropdown (economy, games, RPG,
@@ -294,6 +307,8 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
   to ~40x longshot) and watch the animated race
 - `baccarat <bet> <choice>` — bet on Player, Banker, or Tie; plays out the real casino
   drawing rules (natural 8/9, third-card rules for both hands) with an animated reveal
+- `crash <bet>` — watch the multiplier climb in real time and hit **Cash Out** before it
+  crashes; wait too long and you lose the bet entirely
 
 All games share a 3% house edge (`HOUSE_EDGE` in `utils/economy.py`, or the standard
 European single-zero odds for `roulette`), which scales payout multipliers to stay
@@ -342,7 +357,7 @@ commands/lottery.py           lottery, lottery_buy, lottery_setchannel (weekly b
 commands/profile.py           profile / stats
 commands/cooldowns.py         cooldowns
 commands/admin.py             addmoney, setbalance, giveall, resetuser, rpgsetlevel, rpggive
-commands/settings.py          settings, togglegame, togglechannel
+commands/settings.py          settings, togglegame, togglechannel, set-gamblechannel, set-crashchannel, set-updateschannel
 commands/help.py              help
 commands/blackjack.py         Blackjack
 commands/mines.py             Mines
@@ -356,6 +371,7 @@ commands/dice.py              Dice
 commands/scratchcard.py       Scratchcard
 commands/horserace.py         Horse Race
 commands/baccarat.py          Baccarat
+commands/crash.py             Crash (with spectator-channel mirroring)
 commands/rpg_character.py     rpgstart, classes, character, heal
 commands/rpg_dungeon.py       dungeons, dungeon, dungeonboss
 commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpginventory
