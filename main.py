@@ -203,7 +203,7 @@ class GamblerBot(commands.Bot):
         self.add_check(gamble_channel_check)
 
         self.prefix = PREFIX
-        self.starting_balance = int(os.getenv("STARTING_BALANCE", "1000"))
+        self.starting_balance = int(os.getenv("STARTING_BALANCE", "100000"))
         self.daily_amount = int(os.getenv("DAILY_AMOUNT", "500"))
 
         self.db = Database(
