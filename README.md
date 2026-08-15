@@ -7,6 +7,7 @@
 ![Components V2](https://img.shields.io/badge/UI-Components%20V2-57F287)
 ![Multi--guild](https://img.shields.io/badge/servers-unlimited-2B2D31)
 [![Discord](https://img.shields.io/badge/Discord-Join%20server-5865F2?logo=discord&logoColor=white)](https://discord.gg/P992BnNMbw)
+[![Lines of Code](https://img.shields.io/endpoint?url=https%3A%2F%2Fghloc.vercel.app%2Fapi%2Fjinxmrcl%2FGambler%2Fbadge)](https://github.com/jinxmrcl/Gambler)
 
 </div>
 
