@@ -146,6 +146,22 @@ class Database:
                 )
                 await cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS crash_channels (
+                        guild_id BIGINT UNSIGNED PRIMARY KEY,
+                        channel_id BIGINT UNSIGNED NOT NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS updates_channels (
+                        guild_id BIGINT UNSIGNED PRIMARY KEY,
+                        channel_id BIGINT UNSIGNED NOT NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS marriages (
                         user_id BIGINT UNSIGNED PRIMARY KEY,
                         partner_id BIGINT UNSIGNED NOT NULL,
@@ -602,6 +618,41 @@ class Database:
 
     async def clear_gamble_channel(self, guild_id: int) -> None:
         await self._execute("DELETE FROM gamble_channels WHERE guild_id = %s", (guild_id,))
+
+    async def get_crash_channel(self, guild_id: int) -> int | None:
+        row = await self._fetchone(
+            "SELECT channel_id FROM crash_channels WHERE guild_id = %s", (guild_id,)
+        )
+        return row[0] if row else None
+
+    async def set_crash_channel(self, guild_id: int, channel_id: int) -> None:
+        await self._execute(
+            "INSERT INTO crash_channels (guild_id, channel_id) VALUES (%s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE channel_id = new.channel_id",
+            (guild_id, channel_id),
+        )
+
+    async def clear_crash_channel(self, guild_id: int) -> None:
+        await self._execute("DELETE FROM crash_channels WHERE guild_id = %s", (guild_id,))
+
+    async def get_updates_channel(self, guild_id: int) -> int | None:
+        row = await self._fetchone(
+            "SELECT channel_id FROM updates_channels WHERE guild_id = %s", (guild_id,)
+        )
+        return row[0] if row else None
+
+    async def set_updates_channel(self, guild_id: int, channel_id: int) -> None:
+        await self._execute(
+            "INSERT INTO updates_channels (guild_id, channel_id) VALUES (%s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE channel_id = new.channel_id",
+            (guild_id, channel_id),
+        )
+
+    async def clear_updates_channel(self, guild_id: int) -> None:
+        await self._execute("DELETE FROM updates_channels WHERE guild_id = %s", (guild_id,))
+
+    async def all_updates_channels(self) -> list[tuple[int, int]]:
+        return await self._fetchall("SELECT guild_id, channel_id FROM updates_channels")
 
 
     async def get_marriage(self, user_id: int) -> int | None:
