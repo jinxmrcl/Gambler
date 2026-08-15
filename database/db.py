@@ -148,10 +148,18 @@ class Database:
                     """
                     CREATE TABLE IF NOT EXISTS crash_channels (
                         guild_id BIGINT UNSIGNED PRIMARY KEY,
-                        channel_id BIGINT UNSIGNED NOT NULL
+                        channel_id BIGINT UNSIGNED NOT NULL,
+                        message_id BIGINT UNSIGNED NULL
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
+                await cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_schema = DATABASE() AND table_name = 'crash_channels' AND column_name = 'message_id'"
+                )
+                (has_message_id,) = await cur.fetchone()
+                if not has_message_id:
+                    await cur.execute("ALTER TABLE crash_channels ADD COLUMN message_id BIGINT UNSIGNED NULL")
                 await cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS updates_channels (
@@ -627,8 +635,8 @@ class Database:
 
     async def set_crash_channel(self, guild_id: int, channel_id: int) -> None:
         await self._execute(
-            "INSERT INTO crash_channels (guild_id, channel_id) VALUES (%s, %s) AS new "
-            "ON DUPLICATE KEY UPDATE channel_id = new.channel_id",
+            "INSERT INTO crash_channels (guild_id, channel_id, message_id) VALUES (%s, %s, NULL) AS new "
+            "ON DUPLICATE KEY UPDATE channel_id = new.channel_id, message_id = NULL",
             (guild_id, channel_id),
         )
 
@@ -637,6 +645,17 @@ class Database:
 
     async def all_crash_channels(self) -> list[tuple[int, int]]:
         return await self._fetchall("SELECT guild_id, channel_id FROM crash_channels")
+
+    async def get_crash_message(self, guild_id: int) -> int | None:
+        row = await self._fetchone(
+            "SELECT message_id FROM crash_channels WHERE guild_id = %s", (guild_id,)
+        )
+        return row[0] if row and row[0] else None
+
+    async def set_crash_message(self, guild_id: int, message_id: int) -> None:
+        await self._execute(
+            "UPDATE crash_channels SET message_id = %s WHERE guild_id = %s", (message_id, guild_id)
+        )
 
     async def get_updates_channel(self, guild_id: int) -> int | None:
         row = await self._fetchone(

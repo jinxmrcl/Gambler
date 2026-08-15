@@ -122,10 +122,12 @@ class PostgresDatabase:
                 """
                 CREATE TABLE IF NOT EXISTS crash_channels (
                     guild_id BIGINT PRIMARY KEY,
-                    channel_id BIGINT NOT NULL
+                    channel_id BIGINT NOT NULL,
+                    message_id BIGINT NULL
                 )
                 """
             )
+            await conn.execute("ALTER TABLE crash_channels ADD COLUMN IF NOT EXISTS message_id BIGINT NULL")
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS updates_channels (
@@ -564,8 +566,8 @@ class PostgresDatabase:
 
     async def set_crash_channel(self, guild_id: int, channel_id: int) -> None:
         await self._execute(
-            "INSERT INTO crash_channels (guild_id, channel_id) VALUES ($1, $2) "
-            "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id",
+            "INSERT INTO crash_channels (guild_id, channel_id, message_id) VALUES ($1, $2, NULL) "
+            "ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id, message_id = NULL",
             guild_id,
             channel_id,
         )
@@ -575,6 +577,17 @@ class PostgresDatabase:
 
     async def all_crash_channels(self) -> list[tuple[int, int]]:
         return await self._fetchall("SELECT guild_id, channel_id FROM crash_channels")
+
+    async def get_crash_message(self, guild_id: int) -> int | None:
+        row = await self._fetchone(
+            "SELECT message_id FROM crash_channels WHERE guild_id = $1", guild_id
+        )
+        return row[0] if row and row[0] else None
+
+    async def set_crash_message(self, guild_id: int, message_id: int) -> None:
+        await self._execute(
+            "UPDATE crash_channels SET message_id = $1 WHERE guild_id = $2", message_id, guild_id
+        )
 
     async def get_updates_channel(self, guild_id: int) -> int | None:
         row = await self._fetchone(

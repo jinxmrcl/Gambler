@@ -53,6 +53,11 @@ all backed by MySQL (or Postgres/Supabase).
   play needed. Anyone can hit **Place Bet** during the countdown to enter an amount
   and join, the message lists everyone playing live, and each player hits their own
   **Cash Out** before it crashes
+- Crash renders the climb as a small vertical rocket track (🚀 climbing a column of
+  bars, like Horse Race's track but straight up) instead of just a number, ticks on
+  a fixed real-time schedule so the pace stays steady, survives transient Discord
+  API hiccups without dropping a round, and remembers its message across bot
+  restarts instead of posting a new one
 - The regular `/crash <bet>` command still works everywhere for a private, instant
   round outside of the autoplay channel
 - Blackjack and Hilo render real playing cards via custom Discord emojis
