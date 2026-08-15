@@ -7,20 +7,20 @@ Recommended level: **150+**
 ### Sand Colossus 🌪️
 - HP 1960 • ATK 255 • DEF 118 • Crit 9%
 - Rewards: 2360 XP, 2980-4520 gold
-- Loot (16% chance): [[Equipment Tiers/Mythic Tier|🔴 🌌 Void Reaver]], [[Equipment Tiers/Mythic Tier|🔴 🌌 Void Sigil]]
+- Loot (16% chance): [🔴 🌌 Void Reaver](../Equipment%20Tiers/Mythic%20Tier.md), [🔴 🌌 Void Sigil](../Equipment%20Tiers/Mythic%20Tier.md)
 
 ### Mirage Stalker 🐆
 - HP 1900 • ATK 270 • DEF 108 • Crit 22%
 - Rewards: 2440 XP, 3020-4560 gold
-- Loot (16% chance): [[Equipment Tiers/Mythic Tier|🔴 🌌 Void Plate]], [[Equipment Tiers/Mythic Tier|🔴 🌌 Void Sigil]]
+- Loot (16% chance): [🔴 🌌 Void Plate](../Equipment%20Tiers/Mythic%20Tier.md), [🔴 🌌 Void Sigil](../Equipment%20Tiers/Mythic%20Tier.md)
 
 ### Dust Wyrm 🌫️
 - HP 2100 • ATK 260 • DEF 130 • Crit 10%
 - Rewards: 2500 XP, 3060-4620 gold
-- Loot (16% chance): [[Equipment Tiers/Mythic Tier|🔴 🌌 Void Reaver]], [[Equipment Tiers/Mythic Tier|🔴 🌌 Void Plate]]
+- Loot (16% chance): [🔴 🌌 Void Reaver](../Equipment%20Tiers/Mythic%20Tier.md), [🔴 🌌 Void Plate](../Equipment%20Tiers/Mythic%20Tier.md)
 
 ## Boss
-[[Bosses/Storm Colossus|Storm Colossus 🌪️]] — challenge with `/dungeonboss`
+[Storm Colossus 🌪️](../Bosses/Storm%20Colossus.md) — challenge with `/dungeonboss`
 
 ## Related gear tiers
-- [[Equipment Tiers/Mythic Tier]]
+- [Mythic Tier](../Equipment%20Tiers/Mythic%20Tier.md)

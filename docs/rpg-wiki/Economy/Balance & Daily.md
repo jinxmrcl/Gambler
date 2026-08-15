@@ -7,4 +7,4 @@
   successful robberies
 - `/pay` — transfer balance to another player, atomic single-transaction transfer
 
-See [[Economy Overview]].
+See [Economy Overview](Economy%20Overview.md).

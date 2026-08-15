@@ -5,4 +5,4 @@ for file changes every 1.5s. On a change, it `importlib.reload()`s plain modules
 `rpg/`, `utils/`, `database/` pick up fresh code), then `bot.reload_extension()`s every loaded
 cog, then re-syncs the slash command tree. Toggle with `HOT_RELOAD` in `.env`.
 
-See [[Infrastructure Overview]].
+See [Infrastructure Overview](Infrastructure%20Overview.md).

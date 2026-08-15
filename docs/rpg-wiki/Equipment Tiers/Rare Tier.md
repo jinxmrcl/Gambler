@@ -9,9 +9,9 @@ Base price: 800 gold per item.
 
 ## Dropped by
 
-- [[Dungeons/Shadowed Cave]] (Cave Troll)
-- [[Dungeons/Shadowed Cave]] (Skeleton Warrior)
-- [[Dungeons/Shadowed Cave]] (Bat Swarm)
-- [[Dungeons/Shadowed Cave]] (Troll King)
+- [Shadowed Cave](../Dungeons/Shadowed%20Cave.md) (Cave Troll)
+- [Shadowed Cave](../Dungeons/Shadowed%20Cave.md) (Skeleton Warrior)
+- [Shadowed Cave](../Dungeons/Shadowed%20Cave.md) (Bat Swarm)
+- [Shadowed Cave](../Dungeons/Shadowed%20Cave.md) (Troll King)
 
-See [[Equipment & Upgrades]] for upgrading and selling.
+See [Equipment & Upgrades](../Equipment%20%26%20Upgrades.md) for upgrading and selling.
