@@ -1,3 +1,4 @@
+import os
 from typing import Literal
 
 import discord
@@ -8,6 +9,7 @@ from rpg.consumables import CONSUMABLES
 from rpg.equipment import EQUIPMENT
 from rpg.leveling import MAX_LEVEL, xp_for_level
 from utils.economy import StaticView, fmt
+from utils.ratelimit import limited_send
 
 RPGItemKey = Literal[
     "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
@@ -15,6 +17,9 @@ RPGItemKey = Literal[
     "lucky_charm", "hawk_eye_ring", "assassins_pendant", "phoenix_feather", "void_sigil", "crown_of_fate",
     "minor_potion", "greater_potion", "superior_potion",
 ]
+
+_raw_updates_channel = os.getenv("UPDATES_CHANNEL_ID", "1538079078186229760")
+UPDATES_CHANNEL_ID = int(_raw_updates_channel) if _raw_updates_channel.isdigit() else None
 
 
 class Admin(commands.Cog):
@@ -87,6 +92,27 @@ class Admin(commands.Cog):
         )
         await ctx.send(view=view)
         await self.bot.graceful_shutdown()
+
+    @commands.hybrid_command(name="announce", description="[Admin] Post an announcement to the updates channel.")
+    @app_commands.describe(message="The announcement text")
+    @commands.has_permissions(administrator=True)
+    async def announce(self, ctx: commands.Context, *, message: str):
+        if not UPDATES_CHANNEL_ID:
+            await ctx.send("⚠️ UPDATES_CHANNEL_ID is not configured.")
+            return
+
+        channel = self.bot.get_channel(UPDATES_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(UPDATES_CHANNEL_ID)
+            except discord.HTTPException:
+                await ctx.send("⚠️ Couldn't find the updates channel.")
+                return
+
+        view = StaticView("📢 Announcement", message, color=discord.Color.blurple())
+        await limited_send(channel, view=view)
+
+        await ctx.send("✅ Announcement posted.")
 
     @app_commands.command(name="rpgsetlevel", description="[Admin] Set a player's RPG level (and optionally XP).")
     @app_commands.describe(user="Target user", level="New level (1-1500)", xp="XP toward the next level (default: 0)")
