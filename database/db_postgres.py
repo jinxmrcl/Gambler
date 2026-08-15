@@ -840,6 +840,23 @@ class PostgresDatabase:
         column = self._ENCHANT_COLUMNS[slot]
         await self._execute(f"UPDATE characters SET {column} = $1 WHERE user_id = $2", level, user_id)
 
+    async def upgrade_enchant(self, user_id: int, slot: str, cost: int, new_level: int) -> int:
+        column = self._ENCHANT_COLUMNS[slot]
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                status = await conn.execute(
+                    "UPDATE users SET balance = balance - $1 WHERE user_id = $2 AND balance >= $1",
+                    cost,
+                    user_id,
+                )
+                if _rowcount(status) == 0:
+                    raise InsufficientFunds(f"User {user_id} cannot afford an upgrade costing {cost}")
+                await conn.execute(
+                    f"UPDATE characters SET {column} = $1 WHERE user_id = $2", new_level, user_id
+                )
+                row = await conn.fetchrow("SELECT balance FROM users WHERE user_id = $1", user_id)
+                return row[0]
+
     async def get_boss_kills(self, user_id: int, dungeon_key: str) -> int:
         row = await self._fetchone(
             "SELECT kills FROM boss_kills WHERE user_id = $1 AND dungeon_key = $2",

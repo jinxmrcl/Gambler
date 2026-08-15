@@ -32,11 +32,11 @@ def _hit(attacker: Fighter, defender: Fighter) -> tuple[int, bool, str]:
             attacker.skill_used = True
             note = " ✨*Arcane Bolt!*"
         elif attacker.skill_key == "backstab":
-            dmg_mult *= 1.5
+            dmg_mult *= 1.7
             attacker.skill_used = True
             note = " 🗡️*Backstab!*"
         elif attacker.skill_key == "piercing_shot":
-            pen_mult = 0.35
+            pen_mult = 0.15
             attacker.skill_used = True
             note = " 🏹*Piercing Shot!*"
 
@@ -74,7 +74,7 @@ def _maybe_heal(fighter: Fighter, log: list[str]) -> None:
         and fighter.hp > 0
         and fighter.hp / fighter.max_hp < 0.3
     ):
-        healed = int(fighter.max_hp * 0.2)
+        healed = int(fighter.max_hp * 0.15)
         fighter.hp = min(fighter.max_hp, fighter.hp + healed)
         fighter.skill_used = True
         log.append(f"✨ *Lay on Hands!* {fighter.name} heals **{healed}** HP ({fighter.hp}/{fighter.max_hp} HP)")
@@ -103,3 +103,43 @@ def simulate(fighter_a: Fighter, fighter_b: Fighter) -> dict:
         winner = None
 
     return {"log": log, "winner": winner, "fighter_a": fighter_a, "fighter_b": fighter_b}
+
+
+def simulate_team(party: list[Fighter], monster: Fighter) -> dict:
+    log: list[str] = []
+    round_num = 0
+
+    def alive(fighters: list[Fighter]) -> list[Fighter]:
+        return [f for f in fighters if f.hp > 0]
+
+    while alive(party) and monster.hp > 0 and round_num < MAX_ROUNDS:
+        for member in alive(party):
+            if monster.hp <= 0:
+                break
+            dmg, crit, note = _hit(member, monster)
+            marker = "💥" if crit else "⚔️"
+            suffix = " **(CRIT!)**" if crit else ""
+            log.append(
+                f"{marker} {member.name} hits {monster.name} for **{dmg}**{suffix}{note} "
+                f"({monster.hp}/{monster.max_hp} HP)"
+            )
+        if monster.hp <= 0:
+            break
+
+        living = alive(party)
+        if not living:
+            break
+        target = random.choice(living)
+        dmg, crit, note = _hit(monster, target)
+        marker = "💥" if crit else "⚔️"
+        suffix = " **(CRIT!)**" if crit else ""
+        log.append(
+            f"{marker} {monster.name} hits {target.name} for **{dmg}**{suffix}{note} "
+            f"({target.hp}/{target.max_hp} HP)"
+        )
+        _maybe_heal(target, log)
+
+        round_num += 1
+
+    won = monster.hp <= 0
+    return {"log": log, "won": won, "party": party, "monster": monster}

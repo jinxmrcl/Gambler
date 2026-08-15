@@ -3,9 +3,9 @@
 A frontline fighter with heavy armor and raw strength.
 
 ## Base stats (level 1)
-- HP: 120 (+14/level)
-- ATK: 14 (+2/level)
-- DEF: 10 (+2/level)
+- HP: 120 (+13.88/level)
+- ATK: 14 (+1.98/level)
+- DEF: 10 (+1.98/level)
 - Crit: 5%
 
 ## Skill
