@@ -2,6 +2,7 @@ import random
 from dataclasses import dataclass
 
 MAX_ROUNDS = 30
+DIVINE_SHIELD_PCT = 0.20
 
 
 @dataclass
@@ -17,10 +18,13 @@ class Fighter:
     lifesteal_pct: float = 0.0
     crit_dmg_bonus: float = 0.0
     reflect_pct: float = 0.0
+    shield_hp: int = 0
 
     def __post_init__(self):
         if self.hp is None:
             self.hp = self.max_hp
+        if self.skill_key == "divine_shield":
+            self.shield_hp = int(self.max_hp * DIVINE_SHIELD_PCT)
 
 
 def _hit(attacker: Fighter, defender: Fighter) -> tuple[int, bool, str]:
@@ -70,7 +74,16 @@ def _hit(attacker: Fighter, defender: Fighter) -> tuple[int, bool, str]:
     effective_defense = defender.defense * defense_mult * pen_mult
     mitigation = effective_defense / (effective_defense + attacker.atk)
     dmg = max(1, round(raw * (1 - mitigation)))
-    defender.hp = max(0, defender.hp - dmg)
+
+    if defender.shield_hp > 0:
+        absorbed = min(defender.shield_hp, dmg)
+        defender.shield_hp -= absorbed
+        remaining = dmg - absorbed
+        defender.hp = max(0, defender.hp - remaining)
+        if absorbed:
+            note += f" 🔵*Shield absorbs {absorbed}!*" + (" *(shattered)*" if defender.shield_hp == 0 else "")
+    else:
+        defender.hp = max(0, defender.hp - dmg)
 
     if attacker.skill_key == "life_drain" and not attacker.skill_used:
         healed = dmg * 2 // 3
@@ -103,7 +116,7 @@ def _hit(attacker: Fighter, defender: Fighter) -> tuple[int, bool, str]:
 
 def _maybe_heal(fighter: Fighter, log: list[str]) -> None:
     if (
-        fighter.skill_key == "lay_on_hands"
+        fighter.skill_key == "divine_shield"
         and not fighter.skill_used
         and fighter.hp > 0
         and fighter.hp / fighter.max_hp < 0.3

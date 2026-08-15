@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Literal
 
@@ -8,8 +9,11 @@ from discord.ext import commands
 from rpg.consumables import CONSUMABLES
 from rpg.equipment import EQUIPMENT
 from rpg.leveling import MAX_LEVEL, xp_for_level
+from rpg.primordial import PRIMORDIAL_BASES, describe_affixes, generate_primordial_drop
 from utils.economy import StaticView, fmt
 from utils.ratelimit import limited_send
+
+PrimordialSlotKey = Literal["weapon", "armor", "accessory"]
 
 RPGItemKey = Literal[
     "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
@@ -161,6 +165,27 @@ class Admin(commands.Cog):
         view = StaticView(
             "🛠️ Equipment Given",
             f"Gave {quantity}x {info.name} to {user.mention}.\n{followup}",
+            color=discord.Color.blue(),
+        )
+        await interaction.response.send_message(view=view)
+
+    @app_commands.command(name="rpggiveprimordial", description="[Admin] Spawn a ✨ Primordial item with freshly rolled affixes for a player.")
+    @app_commands.describe(user="Target user", slot="Which slot to spawn a Primordial item for")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def rpggiveprimordial(self, interaction: discord.Interaction, user: discord.User, slot: PrimordialSlotKey):
+        character = await self.bot.db.get_character(user.id)
+        if not character:
+            await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
+            return
+
+        affixes = generate_primordial_drop(slot)
+        item_id = await self.bot.db.add_primordial_item(user.id, slot, json.dumps(affixes))
+        base_name = PRIMORDIAL_BASES[slot].name
+
+        view = StaticView(
+            "🛠️ Primordial Item Spawned",
+            f"Gave {user.mention} a {base_name} (`#{item_id}`) — {describe_affixes(affixes)}.\n"
+            f"They can equip it with `/rpgequipprimordial {item_id}`.",
             color=discord.Color.blue(),
         )
         await interaction.response.send_message(view=view)

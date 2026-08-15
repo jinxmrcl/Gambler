@@ -3,9 +3,9 @@
 A spellcaster with devastating magic but a fragile body.
 
 ## Base stats (level 1)
-- HP: 80 (+8.26/level)
-- ATK: 23 (+2.75/level)
-- DEF: 4 (+1.84/level)
+- HP: 80 (+8.2/level)
+- ATK: 23 (+2.73/level)
+- DEF: 4 (+1.83/level)
 - Crit: 10%
 
 ## Skill

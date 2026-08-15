@@ -8,7 +8,15 @@ from discord.ext import commands
 from database.db import InsufficientFunds
 from rpg.character import current_hp, full_stats
 from rpg.consumables import CONSUMABLES
-from rpg.equipment import EQUIPMENT, ENCHANT_MAX_LEVEL, enchant_cost
+from rpg.equipment import (
+    ACCESSORY_NAMES,
+    ARMOR_NAMES,
+    EQUIPMENT,
+    ENCHANT_MAX_LEVEL,
+    WEAPON_NAMES,
+    enchant_cost,
+    recommended_tier_for_level,
+)
 from rpg.primordial import PRIMORDIAL_BASES, describe_affixes
 from utils.economy import StaticView, fmt
 from utils.ratelimit import limited_edit
@@ -283,6 +291,57 @@ class RPGShop(commands.Cog):
             + f"\n\nStopped: {stopped_reason}."
         )
         await limited_edit(message, view=StaticView("🔨 Auto-Upgrade Complete", body, color=discord.Color.green()))
+
+    @app_commands.command(name="rpgautobuy", description="Buy and equip the gear tier recommended for your level, per slot.")
+    async def rpgautobuy(self, interaction: discord.Interaction):
+        character = await self.bot.db.get_character(interaction.user.id)
+        if not character:
+            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            return
+
+        target_tier = recommended_tier_for_level(character["level"])
+        target_rank = TIER_ORDER.index(target_tier)
+        name_maps = {"weapon": WEAPON_NAMES, "armor": ARMOR_NAMES, "accessory": ACCESSORY_NAMES}
+
+        bought = []
+        skipped = []
+        for slot in ("weapon", "armor", "accessory"):
+            if character.get(f"primordial_{slot}"):
+                skipped.append(f"{slot} — ✨ Primordial item equipped")
+                continue
+
+            target_key = name_maps[slot][target_tier][0]
+            current_key = character.get(f"equipped_{slot}")
+            current_tier = EQUIPMENT[current_key].tier if current_key else None
+            current_rank = TIER_ORDER.index(current_tier) if current_tier else -1
+
+            if current_rank >= target_rank:
+                skipped.append(f"{slot} — already {current_tier or 'nothing'} tier or better")
+                continue
+
+            price = EQUIPMENT[target_key].price
+            try:
+                await self.bot.db.update_balance(interaction.user.id, -price)
+            except InsufficientFunds:
+                skipped.append(f"{slot} — can't afford {EQUIPMENT[target_key].name} ({fmt(price)})")
+                continue
+
+            await self.bot.db.add_rpg_item(interaction.user.id, target_key, 1)
+            await self.bot.db.set_equipped(interaction.user.id, slot, target_key)
+            await self.bot.db.set_enchant_level(interaction.user.id, slot, 0)
+            bought.append(f"{EQUIPMENT[target_key].name} — {fmt(price)}")
+
+        lines = []
+        if bought:
+            lines.append("**Bought & equipped:**\n" + "\n".join(f"• {b}" for b in bought))
+        if skipped:
+            lines.append("**Skipped:**\n" + "\n".join(f"• {s}" for s in skipped))
+        body = "\n\n".join(lines) if lines else "Nothing to do."
+
+        view = StaticView(
+            "🛒 Auto-Buy", body, color=discord.Color.green() if bought else discord.Color.greyple()
+        )
+        await interaction.response.send_message(view=view)
 
     @app_commands.command(name="rpginventory", description="Shows your owned equipment and potions.")
     async def rpginventory(self, interaction: discord.Interaction):

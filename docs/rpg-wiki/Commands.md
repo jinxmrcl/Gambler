@@ -5,6 +5,7 @@
 - `/character` — view your sheet
 - `/classes` — list all classes
 - `/heal` — pay gold to restore HP / revive
+- `/rpgswitchclass <class>` — switch to your other class, or unlock a second one (exactly 2 total). Both classes' level, XP, gear, and Primordial items are kept fully separate — switching back and forth never loses progress on either.
 
 ## Dungeons
 - `/dungeons` — list all [dungeons](RPG%20Overview.md#dungeons-in-level-order)
@@ -16,6 +17,7 @@
 - `/rpgshop` — browse [gear](Equipment%20%26%20Upgrades.md) and [potions](Consumables.md)
 - `/rpgbuy`, `/rpgequip`, `/rpguse`, `/rpgsell`, `/rpgupgrade`, `/rpginventory`
 - `/rpgautoupgrade` — repeatedly upgrades your equipped gear (cheapest slot first) until every slot is maxed or you can't afford the next level
+- `/rpgautobuy` — buys and equips the gear tier recommended for your current level in each slot (skipping any slot that's already at or above that tier, or has a Primordial item equipped)
 - `/rpgequipprimordial <item_id>` — equip a [✨ Primordial](Equipment%20Tiers/Primordial%20Tier.md) item you own by its ID (shown in `/rpginventory`)
 - `/rpgunequipprimordial <slot>` — revert a slot back to your regular gear
 

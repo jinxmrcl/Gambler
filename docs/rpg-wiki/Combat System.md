@@ -18,12 +18,12 @@ Every class has one unique skill that fires automatically in combat:
 - **Shield Wall** ([Warrior](Classes/Warrior.md)) — Halves the damage of the first hit taken in every fight.
 - **Arcane Bolt** ([Mage](Classes/Mage.md)) — The first attack of every fight is a guaranteed critical hit.
 - **Backstab** ([Rogue](Classes/Rogue.md)) — The first attack of every fight deals 70% bonus damage.
-- **Lay on Hands** ([Paladin](Classes/Paladin.md)) — Once per fight, heals 15% of max HP the first time you drop below 30%.
+- **Divine Shield** ([Paladin](Classes/Paladin.md)) — Starts every fight with a shield absorbing 20% of max HP (soaks damage before real HP, doesn't regenerate mid-fight), and heals 15% of max HP the first time you drop below 30%.
 - **Life Drain** ([Necromancer](Classes/Necromancer.md)) — The first attack of every fight heals you for two-thirds of the damage dealt.
 - **Piercing Shot** ([Ranger](Classes/Ranger.md)) — The first attack of every fight ignores 85% of the target's DEF.
 - **Bloodlust** ([Berserker](Classes/Berserker.md)) — Deals 15% bonus damage on every hit made while below 50% HP.
 - **Counterstrike** ([Monk](Classes/Monk.md)) — Every time you're hit, a 25% chance to immediately strike back for 50% damage. Not gated to the first hit — can fire all fight long.
-- **Regrowth** ([Druid](Classes/Druid.md)) — After every exchange, recovers 4% of missing HP. No threshold or once-per-fight limit, unlike Lay on Hands.
+- **Regrowth** ([Druid](Classes/Druid.md)) — After every exchange, recovers 4% of missing HP. No threshold or once-per-fight limit, unlike Divine Shield's heal.
 
 Each class's per-level HP/ATK/DEF growth is individually tuned (not a round number) so that every class lands in roughly the same win-rate band against equivalent-tier content — see each class's page for its exact growth rate.
 

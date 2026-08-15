@@ -289,6 +289,29 @@ class Database:
                     """
                 )
                 await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS character_backup (
+                        user_id BIGINT UNSIGNED PRIMARY KEY,
+                        class_key VARCHAR(16) NOT NULL,
+                        level INT NOT NULL DEFAULT 1,
+                        xp INT NOT NULL DEFAULT 0,
+                        equipped_weapon VARCHAR(32) NULL,
+                        equipped_armor VARCHAR(32) NULL,
+                        equipped_accessory VARCHAR(32) NULL,
+                        wins INT NOT NULL DEFAULT 0,
+                        losses INT NOT NULL DEFAULT 0,
+                        current_hp INT NULL,
+                        hp_updated_at DATETIME NULL,
+                        weapon_enchant INT NOT NULL DEFAULT 0,
+                        armor_enchant INT NOT NULL DEFAULT 0,
+                        accessory_enchant INT NOT NULL DEFAULT 0,
+                        equipped_primordial_weapon_id INT NULL,
+                        equipped_primordial_armor_id INT NULL,
+                        equipped_primordial_accessory_id INT NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
                     "INSERT INTO lottery_state (id, pot, next_draw) VALUES (1, 0, %s) "
                     "ON DUPLICATE KEY UPDATE id = id",
                     (datetime.datetime.utcnow() + datetime.timedelta(days=7),),
@@ -926,6 +949,73 @@ class Database:
         character["primordial_armor"] = {"affixes": json.loads(armor_affixes)} if armor_affixes else None
         character["primordial_accessory"] = {"affixes": json.loads(accessory_affixes)} if accessory_affixes else None
         return character
+
+    _CHARACTER_SWAP_COLUMNS = (
+        "class_key", "level", "xp", "equipped_weapon", "equipped_armor", "equipped_accessory",
+        "wins", "losses", "current_hp", "hp_updated_at",
+        "weapon_enchant", "armor_enchant", "accessory_enchant",
+        "equipped_primordial_weapon_id", "equipped_primordial_armor_id", "equipped_primordial_accessory_id",
+    )
+
+    async def get_character_backup(self, user_id: int) -> dict | None:
+        cols = self._CHARACTER_SWAP_COLUMNS
+        row = await self._fetchone(
+            f"SELECT {', '.join(cols)} FROM character_backup WHERE user_id = %s", (user_id,)
+        )
+        if not row:
+            return None
+        return dict(zip(cols, row))
+
+    async def swap_character_slot(self, user_id: int, new_class_key: str, starting_hp: int) -> None:
+        cols = self._CHARACTER_SWAP_COLUMNS
+        now = datetime.datetime.utcnow()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await conn.begin()
+                try:
+                    await cur.execute(
+                        f"SELECT {', '.join(cols)} FROM characters WHERE user_id = %s FOR UPDATE", (user_id,)
+                    )
+                    current = await cur.fetchone()
+                    if not current:
+                        await conn.rollback()
+                        raise ValueError(f"User {user_id} has no active character")
+
+                    await cur.execute(
+                        f"SELECT {', '.join(cols)} FROM character_backup WHERE user_id = %s FOR UPDATE",
+                        (user_id,),
+                    )
+                    backup = await cur.fetchone()
+
+                    col_list = ", ".join(cols)
+                    placeholders = ", ".join(["%s"] * len(cols))
+                    update_list = ", ".join(f"{c} = VALUES({c})" for c in cols)
+                    await cur.execute(
+                        f"INSERT INTO character_backup (user_id, {col_list}) VALUES (%s, {placeholders}) "
+                        f"ON DUPLICATE KEY UPDATE {update_list}",
+                        (user_id, *current),
+                    )
+
+                    if backup and backup[0] == new_class_key:
+                        set_clause = ", ".join(f"{c} = %s" for c in cols)
+                        await cur.execute(
+                            f"UPDATE characters SET {set_clause} WHERE user_id = %s", (*backup, user_id)
+                        )
+                    else:
+                        await cur.execute(
+                            "UPDATE characters SET class_key = %s, level = 1, xp = 0, "
+                            "equipped_weapon = NULL, equipped_armor = NULL, equipped_accessory = NULL, "
+                            "wins = 0, losses = 0, current_hp = %s, hp_updated_at = %s, "
+                            "weapon_enchant = 0, armor_enchant = 0, accessory_enchant = 0, "
+                            "equipped_primordial_weapon_id = NULL, equipped_primordial_armor_id = NULL, "
+                            "equipped_primordial_accessory_id = NULL "
+                            "WHERE user_id = %s",
+                            (new_class_key, starting_hp, now, user_id),
+                        )
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
 
     async def set_character_level(self, user_id: int, level: int, xp: int) -> None:
         await self._execute(

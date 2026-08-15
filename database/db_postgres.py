@@ -240,6 +240,29 @@ class PostgresDatabase:
                 """
             )
             await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS character_backup (
+                    user_id BIGINT PRIMARY KEY,
+                    class_key VARCHAR(16) NOT NULL,
+                    level INTEGER NOT NULL DEFAULT 1,
+                    xp INTEGER NOT NULL DEFAULT 0,
+                    equipped_weapon VARCHAR(32) NULL,
+                    equipped_armor VARCHAR(32) NULL,
+                    equipped_accessory VARCHAR(32) NULL,
+                    wins INTEGER NOT NULL DEFAULT 0,
+                    losses INTEGER NOT NULL DEFAULT 0,
+                    current_hp INTEGER NULL,
+                    hp_updated_at TIMESTAMP NULL,
+                    weapon_enchant INTEGER NOT NULL DEFAULT 0,
+                    armor_enchant INTEGER NOT NULL DEFAULT 0,
+                    accessory_enchant INTEGER NOT NULL DEFAULT 0,
+                    equipped_primordial_weapon_id INTEGER NULL,
+                    equipped_primordial_armor_id INTEGER NULL,
+                    equipped_primordial_accessory_id INTEGER NULL
+                )
+                """
+            )
+            await conn.execute(
                 "INSERT INTO lottery_state (id, pot, next_draw) VALUES (1, 0, $1) "
                 "ON CONFLICT (id) DO NOTHING",
                 datetime.datetime.utcnow() + datetime.timedelta(days=7),
@@ -848,6 +871,61 @@ class PostgresDatabase:
         character["primordial_armor"] = {"affixes": json.loads(armor_affixes)} if armor_affixes else None
         character["primordial_accessory"] = {"affixes": json.loads(accessory_affixes)} if accessory_affixes else None
         return character
+
+    _CHARACTER_SWAP_COLUMNS = (
+        "class_key", "level", "xp", "equipped_weapon", "equipped_armor", "equipped_accessory",
+        "wins", "losses", "current_hp", "hp_updated_at",
+        "weapon_enchant", "armor_enchant", "accessory_enchant",
+        "equipped_primordial_weapon_id", "equipped_primordial_armor_id", "equipped_primordial_accessory_id",
+    )
+
+    async def get_character_backup(self, user_id: int) -> dict | None:
+        cols = self._CHARACTER_SWAP_COLUMNS
+        row = await self._fetchone(f"SELECT {', '.join(cols)} FROM character_backup WHERE user_id = $1", user_id)
+        if not row:
+            return None
+        return dict(zip(cols, row))
+
+    async def swap_character_slot(self, user_id: int, new_class_key: str, starting_hp: int) -> None:
+        cols = self._CHARACTER_SWAP_COLUMNS
+        now = datetime.datetime.utcnow()
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                current = await conn.fetchrow(
+                    f"SELECT {', '.join(cols)} FROM characters WHERE user_id = $1 FOR UPDATE", user_id
+                )
+                if not current:
+                    raise ValueError(f"User {user_id} has no active character")
+
+                backup = await conn.fetchrow(
+                    f"SELECT {', '.join(cols)} FROM character_backup WHERE user_id = $1 FOR UPDATE", user_id
+                )
+
+                col_list = ", ".join(cols)
+                placeholders = ", ".join(f"${i + 2}" for i in range(len(cols)))
+                update_list = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols)
+                await conn.execute(
+                    f"INSERT INTO character_backup (user_id, {col_list}) VALUES ($1, {placeholders}) "
+                    f"ON CONFLICT (user_id) DO UPDATE SET {update_list}",
+                    user_id, *current,
+                )
+
+                if backup and backup[0] == new_class_key:
+                    set_clause = ", ".join(f"{c} = ${i + 2}" for i, c in enumerate(cols))
+                    await conn.execute(
+                        f"UPDATE characters SET {set_clause} WHERE user_id = $1", user_id, *backup
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE characters SET class_key = $1, level = 1, xp = 0, "
+                        "equipped_weapon = NULL, equipped_armor = NULL, equipped_accessory = NULL, "
+                        "wins = 0, losses = 0, current_hp = $2, hp_updated_at = $3, "
+                        "weapon_enchant = 0, armor_enchant = 0, accessory_enchant = 0, "
+                        "equipped_primordial_weapon_id = NULL, equipped_primordial_armor_id = NULL, "
+                        "equipped_primordial_accessory_id = NULL "
+                        "WHERE user_id = $4",
+                        new_class_key, starting_hp, now, user_id,
+                    )
 
     async def set_character_level(self, user_id: int, level: int, xp: int) -> None:
         await self._execute(

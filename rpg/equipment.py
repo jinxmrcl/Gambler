@@ -18,6 +18,22 @@ ACCESSORY_CRIT = {
     "ancient": 0.20,
 }
 
+TIER_LEVEL_THRESHOLDS = [
+    (55, "ancient"),
+    (35, "mythic"),
+    (25, "legendary"),
+    (16, "epic"),
+    (8, "rare"),
+    (1, "common"),
+]
+
+
+def recommended_tier_for_level(level: int) -> str:
+    for threshold, tier in TIER_LEVEL_THRESHOLDS:
+        if level >= threshold:
+            return tier
+    return "common"
+
 WEAPON_NAMES = {
     "common": ("wooden_sword", "🗡️ Wooden Sword"),
     "rare": ("iron_sword", "⚔️ Iron Sword"),
