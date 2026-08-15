@@ -16,7 +16,7 @@ log = logging.getLogger("gambler")
 
 RTP = 1 - HOUSE_EDGE
 MAX_CRASH = 1_000.0
-TICK_DELAY = 0.5
+TICK_DELAY = 2.0
 GROWTH_RATE = 0.20
 AUTO_ERROR_BACKOFF = 10.0
 
@@ -25,6 +25,9 @@ BETTING_TICK = 2.0
 RESULT_PAUSE = 5.0
 ROUND_CYCLE = 60.0
 PARTICIPANT_DISPLAY_LIMIT = 15
+
+ROCKET_TRACK_HEIGHT = 8
+TRACK_MAX_MULTIPLIER = 10.0
 
 
 def roll_crash_point() -> float:
@@ -35,6 +38,13 @@ def roll_crash_point() -> float:
 
 def multiplier_at(elapsed_seconds: float) -> float:
     return math.exp(GROWTH_RATE * elapsed_seconds)
+
+
+def render_rocket_track(multiplier: float, *, crashed: bool = False) -> str:
+    frac = max(0.0, min(1.0, math.log(max(multiplier, 1.0)) / math.log(TRACK_MAX_MULTIPLIER)))
+    row = min(ROCKET_TRACK_HEIGHT - 1, int(frac * ROCKET_TRACK_HEIGHT))
+    marker = "💥" if crashed else "🚀"
+    return "\n".join(marker if i == row else "┃" for i in range(ROCKET_TRACK_HEIGHT - 1, -1, -1))
 
 
 class CashOutButton(ui.Button):
@@ -55,7 +65,9 @@ class CrashView(ui.LayoutView):
         self.finished = False
         self.message: discord.Message | None = None
 
-        self.container, self.text = game_container("🚀 Crash", f"**Bet:** {fmt(bet)}\n\n## 1.00x\n🚀 Launching...")
+        self.container, self.text = game_container(
+            "🚀 Crash", f"**Bet:** {fmt(bet)}\n\n{render_rocket_track(1.0)}\n## 1.00x\n🚀 Launching..."
+        )
         self.cash_out_button = CashOutButton()
         row = ui.ActionRow()
         row.add_item(self.cash_out_button)
@@ -68,8 +80,9 @@ class CrashView(ui.LayoutView):
             return False
         return True
 
-    def render(self, *, footer: str | None = None, color: discord.Color | None = None):
-        body = f"**Bet:** {fmt(self.bet)}\n\n## {self.current_multiplier:.2f}x"
+    def render(self, *, footer: str | None = None, color: discord.Color | None = None, crashed: bool = False):
+        track = render_rocket_track(self.current_multiplier, crashed=crashed)
+        body = f"**Bet:** {fmt(self.bet)}\n\n{track}\n## {self.current_multiplier:.2f}x"
         if footer:
             body += f"\n{footer}"
         self.text.content = f"## 🚀 Crash\n{body}"
@@ -97,8 +110,11 @@ class CrashView(ui.LayoutView):
         self.cash_out_button.disabled = True
         if self.message:
             await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, 0)
-            self.render(footer="⏱️ Round timed out — treated as a crash.", color=discord.Color.red())
-            await limited_edit(self.message, view=self)
+            self.render(footer="⏱️ Round timed out — treated as a crash.", color=discord.Color.red(), crashed=True)
+            try:
+                await limited_edit(self.message, view=self)
+            except discord.HTTPException:
+                pass
 
 
 class Participant:
@@ -235,28 +251,63 @@ class Crash(commands.Cog):
     def _render_view(self, guild_id: int, round_: AutoRound) -> AutoCrashView:
         if round_.phase == "betting":
             remaining = max(0, int(round_.betting_end - time.monotonic()) + 1)
-            body = f"## 🕒 Next round in {remaining}s\n{_participants_text(round_.participants)}"
+            track = render_rocket_track(1.0)
+            body = f"{track}\n## 🕒 Next round in {remaining}s\n{_participants_text(round_.participants)}"
             return AutoCrashView(self, guild_id, "🚀 Crash", body, bet_disabled=False, show_cashout=False)
         elif round_.phase == "live":
-            body = f"## {round_.current_multiplier:.2f}x\n🚀 Climbing — cash out anytime!\n\n{_participants_text(round_.participants)}"
+            track = render_rocket_track(round_.current_multiplier)
+            body = (
+                f"{track}\n## {round_.current_multiplier:.2f}x\n🚀 Climbing — cash out anytime!\n\n"
+                f"{_participants_text(round_.participants)}"
+            )
             return AutoCrashView(
                 self, guild_id, "🚀 Crash — LIVE", body,
                 bet_disabled=True, show_cashout=True, cashout_disabled=False,
             )
         else:
+            track = render_rocket_track(round_.crash_point, crashed=True)
             body = (
-                f"## 💥 Crashed at {round_.crash_point:.2f}x!\n{_results_text(round_.participants)}\n\n"
+                f"{track}\n## 💥 Crashed at {round_.crash_point:.2f}x!\n{_results_text(round_.participants)}\n\n"
                 f"-# Next round starting soon..."
             )
             return AutoCrashView(self, guild_id, "🚀 Crash", body, color=discord.Color.red(), bet_disabled=True)
 
+    async def _restore_message(self, guild_id: int, channel) -> None:
+        try:
+            message_id = await self.bot.db.get_crash_message(guild_id)
+        except Exception:
+            log.exception("[crash] failed to load stored message id for guild %s", guild_id)
+            return
+        if not message_id:
+            return
+        try:
+            message = await channel.fetch_message(message_id)
+        except discord.HTTPException:
+            return
+        self._messages[guild_id] = message
+
     async def _send_or_edit(self, guild_id: int, channel, view: AutoCrashView) -> None:
         message = self._messages.get(guild_id)
-        if message is None:
+        if message is not None:
+            try:
+                await limited_edit(message, view=view)
+                return
+            except discord.NotFound:
+                self._messages.pop(guild_id, None)
+            except discord.HTTPException:
+                log.warning("[crash] transient edit failure in guild %s, will retry next tick", guild_id)
+                return
+
+        try:
             message = await limited_send(channel, view=view)
-            self._messages[guild_id] = message
-        else:
-            await limited_edit(message, view=view)
+        except discord.HTTPException:
+            log.warning("[crash] could not post auto message in channel %s", channel.id)
+            return
+        self._messages[guild_id] = message
+        try:
+            await self.bot.db.set_crash_message(guild_id, message.id)
+        except Exception:
+            log.exception("[crash] failed to persist message id for guild %s", guild_id)
 
     async def _refresh_message(self, guild_id: int) -> None:
         round_ = self._rounds.get(guild_id)
@@ -331,17 +382,17 @@ class Crash(commands.Cog):
                 log.warning("[crash] auto channel %s (guild %s) not found, stopping", channel_id, guild_id)
                 return
 
+        await self._restore_message(guild_id, channel)
+
         while True:
             cycle_start = time.monotonic()
             try:
                 await self._run_auto_round(guild_id, channel)
-            except discord.NotFound:
-                log.warning("[crash] auto message in channel %s was deleted, stopping", channel_id)
-                return
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("[crash] auto round failed in channel %s", channel_id)
+                self._rounds.pop(guild_id, None)
                 await asyncio.sleep(AUTO_ERROR_BACKOFF)
                 continue
 
@@ -353,16 +404,24 @@ class Crash(commands.Cog):
         self._rounds[guild_id] = round_
 
         round_.betting_end = time.monotonic() + BETTING_WINDOW
+        betting_start = time.monotonic()
+        betting_tick = 0
         while time.monotonic() < round_.betting_end:
             await self._send_or_edit(guild_id, channel, self._render_view(guild_id, round_))
-            await asyncio.sleep(BETTING_TICK)
+            betting_tick += 1
+            next_tick = betting_start + betting_tick * BETTING_TICK
+            await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
 
         round_.phase = "live"
         round_.crash_point = roll_crash_point()
         start = time.monotonic()
+        tick = 0
 
         while True:
-            await asyncio.sleep(TICK_DELAY)
+            tick += 1
+            next_tick = start + tick * TICK_DELAY
+            await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
+
             elapsed = time.monotonic() - start
             multiplier = multiplier_at(elapsed)
 
@@ -398,8 +457,11 @@ class Crash(commands.Cog):
         view.message = message
 
         start = time.monotonic()
+        tick = 0
         while not view.finished:
-            await asyncio.sleep(TICK_DELAY)
+            tick += 1
+            next_tick = start + tick * TICK_DELAY
+            await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
             if view.finished:
                 break
 
@@ -413,6 +475,7 @@ class Crash(commands.Cog):
                 view.render(
                     footer=f"💥 Crashed at {crash_point:.2f}x! You lost {fmt(amount)}.",
                     color=discord.Color.red(),
+                    crashed=True,
                 )
                 await limited_edit(message, view=view)
                 await self.bot.db.record_game_result(ctx.author.id, amount, 0)
