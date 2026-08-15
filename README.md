@@ -46,10 +46,14 @@ all backed by MySQL (or Postgres/Supabase).
   hit Cash Out live while the multiplier climbs
 - Several (Blackjack, Slots, Horse Race, Baccarat, Crash) play out with a timed animated
   reveal instead of showing the result instantly
-- Admins can set a Crash autoplay channel (`/set-crashchannel`) — once set, the bot
-  runs Crash rounds by itself forever, editing one live message in place after every
-  tick and starting the next round automatically after each crash; no further setup
-  or manual play needed
+- Admins can set a Crash autoplay channel (`/set-crashchannel`) — once set, a new
+  shared round starts automatically every minute, self-editing one live message
+  through a countdown, the rocket climb, and the result, forever, with no manual
+  play needed. Anyone can hit **Place Bet** during the countdown to enter an amount
+  and join, the message lists everyone playing live, and each player hits their own
+  **Cash Out** before it crashes
+- The regular `/crash <bet>` command still works everywhere for a private, instant
+  round outside of the autoplay channel
 - Blackjack and Hilo render real playing cards via custom Discord emojis
   (`assets/cards/`, mapped in `utils/cards.py`) instead of plain text
 
@@ -302,8 +306,8 @@ Requires the **Administrator** permission on the server.
 - `togglechannel <add|remove|clear>` — restrict games to specific channels
 - `set-gamblechannel [channel] [clear]` — restrict the whole bot to one channel
   (admins are always exempt)
-- `set-crashchannel [channel] [clear]` — have the bot run Crash rounds automatically
-  and forever in a channel, self-editing after every round
+- `set-crashchannel [channel] [clear]` — run a shared, bettable Crash round every
+  minute in a channel, self-editing through countdown/climb/result forever
 - `set-updateschannel [channel] [clear]` — announce newly shipped commands/game modes
   here after a restart
 
