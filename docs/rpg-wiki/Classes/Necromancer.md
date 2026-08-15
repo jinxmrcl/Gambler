@@ -3,9 +3,9 @@
 A dark caster who drains life from their enemies to sustain themselves.
 
 ## Base stats (level 1)
-- HP: 90 (+9/level)
-- ATK: 21 (+3/level)
-- DEF: 6 (+1/level)
+- HP: 90 (+8.56/level)
+- ATK: 21 (+2.85/level)
+- DEF: 6 (+1.9/level)
 - Crit: 9%
 
 ## Skill
