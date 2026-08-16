@@ -186,6 +186,17 @@ class PostgresDatabase:
             )
             await conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS item_use_limits (
+                    user_id BIGINT NOT NULL,
+                    item_key VARCHAR(32) NOT NULL,
+                    use_count INTEGER NOT NULL DEFAULT 0,
+                    window_started_at TIMESTAMP NOT NULL,
+                    PRIMARY KEY (user_id, item_key)
+                )
+                """
+            )
+            await conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS characters (
                     user_id BIGINT PRIMARY KEY,
                     class_key VARCHAR(16) NOT NULL,
@@ -431,6 +442,57 @@ class PostgresDatabase:
             user_id,
             list(actions),
         )
+
+    async def get_item_use_count(
+        self, user_id: int, item_key: str, window: datetime.timedelta, now: datetime.datetime
+    ) -> int:
+        row = await self._fetchone(
+            "SELECT use_count, window_started_at FROM item_use_limits WHERE user_id = $1 AND item_key = $2",
+            user_id,
+            item_key,
+        )
+        if not row:
+            return 0
+        use_count, window_started_at = row
+        if now - window_started_at >= window:
+            return 0
+        return use_count
+
+    async def record_item_use(
+        self, user_id: int, item_key: str, window: datetime.timedelta, now: datetime.datetime
+    ) -> None:
+        row = await self._fetchone(
+            "SELECT use_count, window_started_at FROM item_use_limits WHERE user_id = $1 AND item_key = $2",
+            user_id,
+            item_key,
+        )
+        if row and (now - row[1]) < window:
+            new_count = row[0] + 1
+            window_start = row[1]
+        else:
+            new_count = 1
+            window_start = now
+        await self._execute(
+            "INSERT INTO item_use_limits (user_id, item_key, use_count, window_started_at) "
+            "VALUES ($1, $2, $3, $4) "
+            "ON CONFLICT (user_id, item_key) DO UPDATE SET use_count = $3, window_started_at = $4",
+            user_id,
+            item_key,
+            new_count,
+            window_start,
+        )
+
+    async def get_item_use_reset(
+        self, user_id: int, item_key: str, window: datetime.timedelta
+    ) -> datetime.datetime | None:
+        row = await self._fetchone(
+            "SELECT window_started_at FROM item_use_limits WHERE user_id = $1 AND item_key = $2",
+            user_id,
+            item_key,
+        )
+        if not row:
+            return None
+        return row[0] + window
 
     async def get_users_needing_payday_schedule(self) -> list[int]:
         rows = await self._fetchall(

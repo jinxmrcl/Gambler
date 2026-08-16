@@ -297,7 +297,8 @@ Money in the bank can't be stolen with `rob`.
 - `buy <item> [quantity=1]` — buy an item (`shield` or `cooldown_reset`)
 - `inventory` (alias `inv`) — shows your inventory
 - `use <item>` — use an item (`shield` protects you from `rob` for 2h, `cooldown_reset`
-  instantly resets work/crime/slut/rob)
+  instantly resets work/crime/slut/rob) — each item can only be *used* up to 2x per
+  rolling 24h, independent of how many you own
 - `gift <user> <item> [quantity=1]` — gift an item to another player
 - `trade <user> <give> <give_quantity> <want> <want_quantity>` — offer money or an item
   in exchange for money or an item from another player; they must accept
