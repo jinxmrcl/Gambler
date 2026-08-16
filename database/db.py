@@ -219,6 +219,17 @@ class Database:
                 await cur.execute("ALTER TABLE cooldowns MODIFY COLUMN action VARCHAR(32) NOT NULL")
                 await cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS item_use_limits (
+                        user_id BIGINT UNSIGNED NOT NULL,
+                        item_key VARCHAR(32) NOT NULL,
+                        use_count INT NOT NULL DEFAULT 0,
+                        window_started_at DATETIME NOT NULL,
+                        PRIMARY KEY (user_id, item_key)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS characters (
                         user_id BIGINT UNSIGNED PRIMARY KEY,
                         class_key VARCHAR(16) NOT NULL,
@@ -500,6 +511,51 @@ class Database:
             f"DELETE FROM cooldowns WHERE user_id = %s AND action IN ({placeholders})",
             (user_id, *actions),
         )
+
+    async def get_item_use_count(
+        self, user_id: int, item_key: str, window: datetime.timedelta, now: datetime.datetime
+    ) -> int:
+        row = await self._fetchone(
+            "SELECT use_count, window_started_at FROM item_use_limits WHERE user_id = %s AND item_key = %s",
+            (user_id, item_key),
+        )
+        if not row:
+            return 0
+        use_count, window_started_at = row
+        if now - window_started_at >= window:
+            return 0
+        return use_count
+
+    async def record_item_use(
+        self, user_id: int, item_key: str, window: datetime.timedelta, now: datetime.datetime
+    ) -> None:
+        row = await self._fetchone(
+            "SELECT use_count, window_started_at FROM item_use_limits WHERE user_id = %s AND item_key = %s",
+            (user_id, item_key),
+        )
+        if row and (now - row[1]) < window:
+            new_count = row[0] + 1
+            window_start = row[1]
+        else:
+            new_count = 1
+            window_start = now
+        await self._execute(
+            "INSERT INTO item_use_limits (user_id, item_key, use_count, window_started_at) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE use_count = %s, window_started_at = %s",
+            (user_id, item_key, new_count, window_start, new_count, window_start),
+        )
+
+    async def get_item_use_reset(
+        self, user_id: int, item_key: str, window: datetime.timedelta
+    ) -> datetime.datetime | None:
+        row = await self._fetchone(
+            "SELECT window_started_at FROM item_use_limits WHERE user_id = %s AND item_key = %s",
+            (user_id, item_key),
+        )
+        if not row:
+            return None
+        return row[0] + window
 
     async def get_users_needing_payday_schedule(self) -> list[int]:
         rows = await self._fetchall(

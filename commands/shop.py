@@ -10,6 +10,9 @@ from utils.economy import StaticView, fmt
 from utils.items import ITEMS, SHIELD_DURATION
 
 ItemKey = Literal["shield", "cooldown_reset"]
+LIMITED_ITEMS = ("shield", "cooldown_reset")
+ITEM_DAILY_USE_LIMIT = 2
+ITEM_USE_WINDOW = datetime.timedelta(hours=24)
 
 
 class Shop(commands.Cog):
@@ -61,18 +64,36 @@ class Shop(commands.Cog):
     @commands.hybrid_command(name="use", description="Use an item from your inventory.")
     @app_commands.describe(item="Which item")
     async def use(self, ctx: commands.Context, item: ItemKey):
+        now = datetime.datetime.utcnow()
+
+        if item in LIMITED_ITEMS:
+            count = await self.bot.db.get_item_use_count(ctx.author.id, item, ITEM_USE_WINDOW, now)
+            if count >= ITEM_DAILY_USE_LIMIT:
+                reset_at = await self.bot.db.get_item_use_reset(ctx.author.id, item, ITEM_USE_WINDOW)
+                remaining = reset_at - now
+                hours, rem = divmod(max(int(remaining.total_seconds()), 0), 3600)
+                minutes = rem // 60
+                await ctx.send(
+                    f"⚠️ You've already used {ITEMS[item]['name']} {ITEM_DAILY_USE_LIMIT}x in the last "
+                    f"24h. Try again in {hours}h {minutes}m."
+                )
+                return
+
         try:
             await self.bot.db.remove_item(ctx.author.id, item, 1)
         except InsufficientFunds:
             await ctx.send(f"⚠️ You don't own a {ITEMS[item]['name']}.")
             return
 
+        if item in LIMITED_ITEMS:
+            await self.bot.db.record_item_use(ctx.author.id, item, ITEM_USE_WINDOW, now)
+
         if item == "shield":
             until = datetime.datetime.utcnow() + SHIELD_DURATION
             await self.bot.db.set_protected_until(ctx.author.id, until)
             text = f"🛡️ You're now protected from `rob` until {until.strftime('%H:%M UTC')}."
         else:
-            await self.bot.db.clear_cooldowns(ctx.author.id, ("work", "crime", "slut", "rob", "dungeon", "duel"))
+            await self.bot.db.clear_cooldowns(ctx.author.id, ("work", "crime", "slut", "rob", "duel"))
             text = "⏩ All cooldowns have been reset."
 
         view = StaticView("✨ Item Used", text, color=discord.Color.green())
