@@ -258,8 +258,7 @@ class BlackjackView(ui.LayoutView):
         if self.finished:
             return
         hand = self.current_hand
-        self.double_button.disabled = True
-        self.split_button.disabled = True
+        self._set_action_buttons_disabled(True)
         self.render(footer="🎴 Drawing...", pending_hand=self.active_hand)
         await interaction.response.edit_message(view=self)
         await asyncio.sleep(DRAW_DELAY)
@@ -272,6 +271,8 @@ class BlackjackView(ui.LayoutView):
             await asyncio.sleep(RESOLVE_PAUSE)
             await self._advance_or_finish()
         else:
+            self.hit_button.disabled = False
+            self.stand_button.disabled = False
             self.render()
             await limited_edit(self.message, view=self)
 

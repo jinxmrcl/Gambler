@@ -98,8 +98,10 @@ the casino:
 
 **Economy** — a per-user virtual balance stored in MySQL, with:
 - `daily` bonus, `work`/`crime`/`slut` for risk-based income, and `rob` to steal from others
-- a passive **Payday**: every 6-24h, a random amount (100-10,000 by default) is announced
-  in a configurable channel (`PAYDAY_CHANNEL_ID`) — no command needed
+- a passive **Payday**: every 1-24h (randomized per user), a random amount (100-10,000 by
+  default) is announced in a configurable channel (`PAYDAY_CHANNEL_ID`) — no command
+  needed; if several land in the same check cycle their announcements are staggered
+  instead of firing all at once
 - a `bank` to protect balance from being robbed
 - a `shop` with items (rob shield, cooldown reset), plus `gift` and `trade` between players
 - `marry`/`divorce` and a weekly `lottery` with an automatic prize draw
@@ -170,7 +172,7 @@ the casino:
    | `SUPABASE_DB_URL` / `SUPABASE_DB_URL_FILE` | Optional Postgres/Supabase connection string (or a file holding one) — if set, the bot automatically falls back to it when MySQL is unreachable at startup |
    | `STARTING_BALANCE` | Starting balance for new players (default: 100000) |
    | `DAILY_AMOUNT` | Amount granted by the daily bonus (default: 500) |
-   | `PAYDAY_MIN_AMOUNT` / `PAYDAY_MAX_AMOUNT` | Range for the random passive Payday payout every 6-24h (default: 100-10000) |
+   | `PAYDAY_MIN_AMOUNT` / `PAYDAY_MAX_AMOUNT` | Range for the random passive Payday payout every 1-24h (default: 100-10000) |
    | `PAYDAY_CHANNEL_ID` | Channel Payday payouts are announced in |
    | `HOT_RELOAD` | Auto-reload changed cogs/modules in development (default: `true`) |
    | `RESTART_LOG_CHANNEL_ID` | Optional channel ID for startup/crash/restart announcements |
