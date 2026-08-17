@@ -176,6 +176,14 @@ class PostgresDatabase:
             )
             await conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS idle_tracker_state (
+                    id SMALLINT PRIMARY KEY,
+                    message_id BIGINT NULL
+                )
+                """
+            )
+            await conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS cooldowns (
                     user_id BIGINT NOT NULL,
                     action VARCHAR(32) NOT NULL,
@@ -687,6 +695,17 @@ class PostgresDatabase:
     async def set_crash_message(self, guild_id: int, message_id: int) -> None:
         await self._execute(
             "UPDATE crash_channels SET message_id = $1 WHERE guild_id = $2", message_id, guild_id
+        )
+
+    async def get_idle_tracker_message(self) -> int | None:
+        row = await self._fetchone("SELECT message_id FROM idle_tracker_state WHERE id = 1")
+        return row[0] if row and row[0] else None
+
+    async def set_idle_tracker_message(self, message_id: int) -> None:
+        await self._execute(
+            "INSERT INTO idle_tracker_state (id, message_id) VALUES (1, $1) "
+            "ON CONFLICT (id) DO UPDATE SET message_id = $1",
+            message_id,
         )
 
     async def get_updates_channel(self, guild_id: int) -> int | None:

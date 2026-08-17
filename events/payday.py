@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 import os
@@ -12,10 +13,12 @@ from utils.ratelimit import limited_send
 log = logging.getLogger("gambler")
 
 PAYDAY_CHECK_INTERVAL_SECONDS = 60
-PAYDAY_MIN_INTERVAL = datetime.timedelta(hours=6)
+PAYDAY_MIN_INTERVAL = datetime.timedelta(hours=1)
 PAYDAY_MAX_INTERVAL = datetime.timedelta(hours=24)
 PAYDAY_MIN_AMOUNT = int(os.getenv("PAYDAY_MIN_AMOUNT", "100"))
 PAYDAY_MAX_AMOUNT = int(os.getenv("PAYDAY_MAX_AMOUNT", "10000"))
+PAYDAY_NOTIFY_STAGGER_MIN_SECONDS = 3
+PAYDAY_NOTIFY_STAGGER_MAX_SECONDS = 20
 _raw_payday_channel = os.getenv("PAYDAY_CHANNEL_ID", "1537694458815053865")
 PAYDAY_CHANNEL_ID = int(_raw_payday_channel) if _raw_payday_channel.isdigit() else None
 
@@ -28,6 +31,7 @@ def _random_payday_interval() -> datetime.timedelta:
 class Payday(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._guild: discord.Guild | None = None
         self.payday_loop.start()
 
     def cog_unload(self):
@@ -52,7 +56,11 @@ class Payday(commands.Cog):
             await self.bot.db.set_cooldown(user_id, "payday", now + _random_payday_interval())
 
         due = await self.bot.db.get_due_paydays(now)
-        for user_id in due:
+        random.shuffle(due)
+        for i, user_id in enumerate(due):
+            if not await self._is_still_member(user_id):
+                await self.bot.db.set_cooldown(user_id, "payday", now + _random_payday_interval())
+                continue
             amount = random.randint(PAYDAY_MIN_AMOUNT, PAYDAY_MAX_AMOUNT)
             try:
                 await self.bot.db.update_balance(user_id, amount)
@@ -61,6 +69,36 @@ class Payday(commands.Cog):
                 continue
             await self.bot.db.set_cooldown(user_id, "payday", now + _random_payday_interval())
             await self._notify(user_id, amount)
+            if i < len(due) - 1:
+                await asyncio.sleep(random.uniform(PAYDAY_NOTIFY_STAGGER_MIN_SECONDS, PAYDAY_NOTIFY_STAGGER_MAX_SECONDS))
+
+    async def _get_guild(self) -> discord.Guild | None:
+        if self._guild is not None:
+            return self._guild
+        if not PAYDAY_CHANNEL_ID:
+            return None
+        channel = self.bot.get_channel(PAYDAY_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(PAYDAY_CHANNEL_ID)
+            except discord.HTTPException:
+                return None
+        self._guild = getattr(channel, "guild", None)
+        return self._guild
+
+    async def _is_still_member(self, user_id: int) -> bool:
+        guild = await self._get_guild()
+        if guild is None:
+            return True
+        if guild.get_member(user_id) is not None:
+            return True
+        try:
+            await guild.fetch_member(user_id)
+            return True
+        except discord.NotFound:
+            return False
+        except discord.HTTPException:
+            return True
 
     async def _notify(self, user_id: int, amount: int) -> None:
         if not PAYDAY_CHANNEL_ID:

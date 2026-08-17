@@ -546,6 +546,17 @@ class RPGDungeon(commands.Cog):
         for task in self._idle_tasks.values():
             task.cancel()
 
+    async def _get_idle_tracker_channel(self) -> discord.abc.Messageable | None:
+        channel = self.bot.get_channel(IDLE_ANNOUNCE_CHANNEL_ID)
+        if channel is None:
+            channel = await self.bot.fetch_channel(IDLE_ANNOUNCE_CHANNEL_ID)
+        return channel
+
+    async def _post_new_idle_tracker(self, view: StaticView) -> None:
+        channel = await self._get_idle_tracker_channel()
+        self._idle_tracker_message = await limited_send(channel, view=view)
+        await self.bot.db.set_idle_tracker_message(self._idle_tracker_message.id)
+
     async def _update_idle_tracker(self):
         if not IDLE_ANNOUNCE_CHANNEL_ID:
             return
@@ -565,12 +576,21 @@ class RPGDungeon(commands.Cog):
 
         try:
             if self._idle_tracker_message is None:
-                channel = self.bot.get_channel(IDLE_ANNOUNCE_CHANNEL_ID)
-                if channel is None:
-                    channel = await self.bot.fetch_channel(IDLE_ANNOUNCE_CHANNEL_ID)
-                self._idle_tracker_message = await limited_send(channel, view=view)
+                saved_id = await self.bot.db.get_idle_tracker_message()
+                if saved_id:
+                    try:
+                        channel = await self._get_idle_tracker_channel()
+                        self._idle_tracker_message = await channel.fetch_message(saved_id)
+                        await limited_edit(self._idle_tracker_message, view=view)
+                    except discord.NotFound:
+                        await self._post_new_idle_tracker(view)
+                else:
+                    await self._post_new_idle_tracker(view)
             else:
                 await limited_edit(self._idle_tracker_message, view=view)
+        except discord.NotFound:
+            self._idle_tracker_message = None
+            await self._post_new_idle_tracker(view)
         except discord.HTTPException:
             log.exception("[idle] failed to update the idle-tracker message")
 
@@ -860,13 +880,18 @@ class RPGDungeon(commands.Cog):
 
         body = "\n".join(lines) + loot_text
         title = f"🏕️ Idle Farming {'Interrupted' if interrupted else 'Complete'} — {d.name}"
+        color = discord.Color.orange() if interrupted else discord.Color.green()
         try:
-            await limited_edit(
-                message,
-                view=StaticView(title, body, color=discord.Color.orange() if interrupted else discord.Color.green()),
-            )
+            await limited_edit(message, view=StaticView(title, body, color=color))
         except Exception:
             log.exception("[idle] failed to send final summary for user %s", user_id)
+
+        if IDLE_ANNOUNCE_CHANNEL_ID:
+            try:
+                channel = await self._get_idle_tracker_channel()
+                await limited_send(channel, content=f"<@{user_id}>", view=StaticView(title, body, color=color))
+            except discord.HTTPException:
+                log.exception("[idle] failed to send completion ping for user %s", user_id)
 
         self._idle_sessions.pop(user_id, None)
         try:

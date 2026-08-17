@@ -208,6 +208,14 @@ class Database:
                 )
                 await cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS idle_tracker_state (
+                        id TINYINT PRIMARY KEY,
+                        message_id BIGINT UNSIGNED NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS cooldowns (
                         user_id BIGINT UNSIGNED NOT NULL,
                         action VARCHAR(32) NOT NULL,
@@ -749,6 +757,17 @@ class Database:
     async def set_crash_message(self, guild_id: int, message_id: int) -> None:
         await self._execute(
             "UPDATE crash_channels SET message_id = %s WHERE guild_id = %s", (message_id, guild_id)
+        )
+
+    async def get_idle_tracker_message(self) -> int | None:
+        row = await self._fetchone("SELECT message_id FROM idle_tracker_state WHERE id = 1")
+        return row[0] if row and row[0] else None
+
+    async def set_idle_tracker_message(self, message_id: int) -> None:
+        await self._execute(
+            "INSERT INTO idle_tracker_state (id, message_id) VALUES (1, %s) "
+            "ON DUPLICATE KEY UPDATE message_id = VALUES(message_id)",
+            (message_id,),
         )
 
     async def get_updates_channel(self, guild_id: int) -> int | None:
