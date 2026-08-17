@@ -80,6 +80,8 @@ the casino:
   party before the fight starts
 - `/idle` auto-farms a dungeon (monsters + occasional boss attempts) in the background for
   up to 2 hours, quietly, with a single summary message at the end instead of per-fight spam
+  — a live-updated tracker message in a configurable channel lists everyone currently idle
+  farming
 - prestige every 50 levels (up to prestige 29) once you hit the level cap, now with a small
   permanent stat bonus per tier (+0.5%, up to +14.5% at max prestige) on top of a smoother
   XP curve
@@ -166,12 +168,13 @@ the casino:
    | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | MySQL credentials |
    | `DB_PASSWORD_FILE` | Optional path to a file holding the MySQL password (for Docker secrets) instead of `DB_PASSWORD` |
    | `SUPABASE_DB_URL` / `SUPABASE_DB_URL_FILE` | Optional Postgres/Supabase connection string (or a file holding one) — if set, the bot automatically falls back to it when MySQL is unreachable at startup |
-   | `STARTING_BALANCE` | Starting balance for new players (default: 1000) |
+   | `STARTING_BALANCE` | Starting balance for new players (default: 100000) |
    | `DAILY_AMOUNT` | Amount granted by the daily bonus (default: 500) |
    | `PAYDAY_MIN_AMOUNT` / `PAYDAY_MAX_AMOUNT` | Range for the random passive Payday payout every 6-24h (default: 100-10000) |
    | `PAYDAY_CHANNEL_ID` | Channel Payday payouts are announced in |
    | `HOT_RELOAD` | Auto-reload changed cogs/modules in development (default: `true`) |
    | `RESTART_LOG_CHANNEL_ID` | Optional channel ID for startup/crash/restart announcements |
+   | `IDLE_ANNOUNCE_CHANNEL_ID` | Channel that shows a live-updated list of everyone currently `/idle` farming |
 
    In the Developer Portal, enable the **Message Content Intent** under **Bot** (required
    for text commands), and when inviting the bot, select the `bot` + `applications.commands`
