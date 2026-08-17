@@ -123,10 +123,11 @@ class BlackjackView(ui.LayoutView):
         dealer_tokens = [c.emoji for c in self.dealer[:dealer_shown]]
         dealer_tokens += [BACK_EMOJI] * (len(self.dealer) - dealer_shown)
         player_total = hand_value(hand.cards[:player_shown])
+        dealer_shown_text = f"  (**{hand_value(self.dealer[:dealer_shown])}** showing)" if dealer_shown else ""
 
         lines = [
             f"**Your hand:** {' '.join(player_tokens)}  (**{player_total}**)  •  Bet: {fmt(hand.bet)}",
-            f"**Dealer's hand:** {' '.join(dealer_tokens)}",
+            f"**Dealer's hand:** {' '.join(dealer_tokens)}{dealer_shown_text}",
             "-# 🎴 Dealing...",
         ]
         self.text.content = "## 🃏 Blackjack\n" + "\n".join(lines)
@@ -154,7 +155,8 @@ class BlackjackView(ui.LayoutView):
             dealer_total = hand_value(self.dealer)
             lines.append(f"**Dealer's hand:** {hand_str(self.dealer)}  (**{dealer_total}**)")
         else:
-            lines.append(f"**Dealer's hand:** {self.dealer[0].emoji} {BACK_EMOJI}")
+            showing = hand_value([self.dealer[0]])
+            lines.append(f"**Dealer's hand:** {self.dealer[0].emoji} {BACK_EMOJI}  (**{showing}** showing)")
 
         if footer:
             lines.append(f"-# {footer}")

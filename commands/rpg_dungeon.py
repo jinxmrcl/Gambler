@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 import random
 from typing import Literal
 
@@ -19,7 +20,7 @@ from rpg.leveling import apply_xp
 from rpg.monsters import BOSS_SKILLS, DUNGEONS, Dungeon, scaled_monster
 from rpg.primordial import HIGH_END_DUNGEONS, PRIMORDIAL_BASES, PRIMORDIAL_DROP_CHANCE, describe_affixes, generate_primordial_drop
 from utils.economy import StaticView, fmt, game_container
-from utils.ratelimit import limited_edit
+from utils.ratelimit import limited_edit, limited_send
 
 log = logging.getLogger("gambler")
 
@@ -35,6 +36,9 @@ BOSS_BONUS_LOOT_CHANCE = 0.15
 IDLE_POLL_SECONDS = 5
 IDLE_MAX_MINUTES = 120
 IDLE_DEFAULT_MINUTES = 30
+
+_raw_idle_announce_channel = os.getenv("IDLE_ANNOUNCE_CHANNEL_ID", "1538948163510083605")
+IDLE_ANNOUNCE_CHANNEL_ID = int(_raw_idle_announce_channel) if _raw_idle_announce_channel.isdigit() else None
 
 
 def _dungeon_list_text() -> str:
@@ -535,10 +539,40 @@ class RPGDungeon(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._idle_tasks: dict[int, asyncio.Task] = {}
+        self._idle_sessions: dict[int, dict] = {}
+        self._idle_tracker_message: discord.Message | None = None
 
     def cog_unload(self):
         for task in self._idle_tasks.values():
             task.cancel()
+
+    async def _update_idle_tracker(self):
+        if not IDLE_ANNOUNCE_CHANNEL_ID:
+            return
+
+        if not self._idle_sessions:
+            body = "No one is currently idle farming."
+        else:
+            now = datetime.datetime.utcnow()
+            lines = []
+            for user_id, info in self._idle_sessions.items():
+                remaining = max(datetime.timedelta(0), info["deadline"] - now)
+                remaining_min = int(remaining.total_seconds() // 60)
+                lines.append(f"• <@{user_id}> — {info['dungeon_name']} ({remaining_min}m left)")
+            body = "\n".join(lines)
+
+        view = StaticView("🏕️ Active Idle Farmers", body)
+
+        try:
+            if self._idle_tracker_message is None:
+                channel = self.bot.get_channel(IDLE_ANNOUNCE_CHANNEL_ID)
+                if channel is None:
+                    channel = await self.bot.fetch_channel(IDLE_ANNOUNCE_CHANNEL_ID)
+                self._idle_tracker_message = await limited_send(channel, view=view)
+            else:
+                await limited_edit(self._idle_tracker_message, view=view)
+        except discord.HTTPException:
+            log.exception("[idle] failed to update the idle-tracker message")
 
     @app_commands.command(name="dungeons", description="Shows the available RPG dungeons.")
     async def dungeons(self, interaction: discord.Interaction):
@@ -728,6 +762,12 @@ class RPGDungeon(commands.Cog):
         self._idle_tasks[interaction.user.id] = task
         task.add_done_callback(lambda _t: self._idle_tasks.pop(interaction.user.id, None))
 
+        self._idle_sessions[interaction.user.id] = {
+            "dungeon_name": d.name,
+            "deadline": datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes),
+        }
+        await self._update_idle_tracker()
+
     async def _run_idle(
         self, user_id: int, display_name: str, d: Dungeon, minutes: int, message: discord.Message
     ):
@@ -827,6 +867,12 @@ class RPGDungeon(commands.Cog):
             )
         except Exception:
             log.exception("[idle] failed to send final summary for user %s", user_id)
+
+        self._idle_sessions.pop(user_id, None)
+        try:
+            await self._update_idle_tracker()
+        except Exception:
+            log.exception("[idle] failed to update the idle-tracker message for user %s", user_id)
 
 
 async def setup(bot: commands.Bot):
