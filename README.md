@@ -99,10 +99,10 @@ the casino:
 
 **Economy** — a per-user virtual balance stored in MySQL, with:
 - `daily` bonus, `work`/`crime`/`slut` for risk-based income, and `rob` to steal from others
-- a passive **Payday**: every 1-24h (randomized per user), a random amount (100-10,000 by
-  default) is announced in a configurable channel (`PAYDAY_CHANNEL_ID`) — no command
-  needed; if several land in the same check cycle their announcements are staggered
-  instead of firing all at once
+- a passive **Payday**: every 2-4h, one random user gets a random amount (100-10,000 by
+  default), announced in a configurable channel (`PAYDAY_CHANNEL_ID`) — no command needed,
+  no per-user cooldown or fairness tracking, just a single global timer so payouts land one
+  at a time instead of clustering
 - a `bank` to protect balance from being robbed
 - a `shop` with items (rob shield, cooldown reset), plus `gift` and `trade` between players
 - `marry`/`divorce` and a weekly `lottery` with an automatic prize draw
@@ -180,7 +180,7 @@ the casino:
    | `SUPABASE_DB_URL` / `SUPABASE_DB_URL_FILE` | Optional Postgres/Supabase connection string (or a file holding one) — if set, the bot automatically falls back to it when MySQL is unreachable at startup |
    | `STARTING_BALANCE` | Starting balance for new players (default: 100000) |
    | `DAILY_AMOUNT` | Amount granted by the daily bonus (default: 500) |
-   | `PAYDAY_MIN_AMOUNT` / `PAYDAY_MAX_AMOUNT` | Range for the random passive Payday payout every 1-24h (default: 100-10000) |
+   | `PAYDAY_MIN_AMOUNT` / `PAYDAY_MAX_AMOUNT` | Range for the random passive Payday payout, one random user every 2-4h (default: 100-10000) |
    | `PAYDAY_CHANNEL_ID` | Channel Payday payouts are announced in |
    | `HOT_RELOAD` | Auto-reload changed cogs/modules in development (default: `true`) |
    | `RESTART_LOG_CHANNEL_ID` | Optional channel ID for startup/crash/restart announcements |
@@ -474,7 +474,7 @@ rpg/badges.py                 Prestige badge rendering
 rpg/events.py                 Random in-dungeon events
 events/on_ready.py            Startup logging & presence
 events/error_handler.py       Centralized error handling for text & slash commands, and every interactive view's buttons
-events/payday.py              Background loop: random passive payday payout per user, announced in a channel
+events/payday.py              Background loop: one random user gets a passive payday every 2-4h, announced in a channel
 database/db_postgres.py       Postgres/Supabase implementation of the same DB interface (automatic fallback)
 deploy/ecosystem.config.js    pm2 process config (autorestart, daily 4am cron_restart)
 deploy/install_pm2.sh         Starts the bot under pm2, posts a startup status message
