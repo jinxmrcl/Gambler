@@ -186,6 +186,14 @@ class PostgresDatabase:
             await conn.execute("ALTER TABLE idle_tracker_state ADD COLUMN IF NOT EXISTS posted_at TIMESTAMP NULL")
             await conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS payday_state (
+                    id SMALLINT PRIMARY KEY,
+                    next_payday TIMESTAMP NOT NULL
+                )
+                """
+            )
+            await conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS cooldowns (
                     user_id BIGINT NOT NULL,
                     action VARCHAR(32) NOT NULL,
@@ -504,19 +512,20 @@ class PostgresDatabase:
             return None
         return row[0] + window
 
-    async def get_users_needing_payday_schedule(self) -> list[int]:
-        rows = await self._fetchall(
-            "SELECT u.user_id FROM users u "
-            "LEFT JOIN cooldowns c ON c.user_id = u.user_id AND c.action = 'payday' "
-            "WHERE c.user_id IS NULL"
-        )
-        return [row[0] for row in rows]
+    async def get_random_user_id(self) -> int | None:
+        row = await self._fetchone("SELECT user_id FROM users ORDER BY RANDOM() LIMIT 1")
+        return row[0] if row else None
 
-    async def get_due_paydays(self, now: datetime.datetime) -> list[int]:
-        rows = await self._fetchall(
-            "SELECT user_id FROM cooldowns WHERE action = 'payday' AND expires_at <= $1", now
+    async def get_payday_next(self) -> datetime.datetime | None:
+        row = await self._fetchone("SELECT next_payday FROM payday_state WHERE id = 1")
+        return row[0] if row else None
+
+    async def set_payday_next(self, next_payday: datetime.datetime) -> None:
+        await self._execute(
+            "INSERT INTO payday_state (id, next_payday) VALUES (1, $1) "
+            "ON CONFLICT (id) DO UPDATE SET next_payday = $1",
+            next_payday,
         )
-        return [row[0] for row in rows]
 
 
     async def get_inventory(self, user_id: int) -> list[tuple[str, int]]:

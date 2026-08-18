@@ -1,4 +1,3 @@
-import asyncio
 import datetime
 import logging
 import os
@@ -13,18 +12,16 @@ from utils.ratelimit import limited_send
 log = logging.getLogger("gambler")
 
 PAYDAY_CHECK_INTERVAL_SECONDS = 60
-PAYDAY_MIN_INTERVAL = datetime.timedelta(hours=1)
-PAYDAY_MAX_INTERVAL = datetime.timedelta(hours=24)
+PAYDAY_MIN_GAP = datetime.timedelta(hours=2)
+PAYDAY_MAX_GAP = datetime.timedelta(hours=4)
 PAYDAY_MIN_AMOUNT = int(os.getenv("PAYDAY_MIN_AMOUNT", "100"))
 PAYDAY_MAX_AMOUNT = int(os.getenv("PAYDAY_MAX_AMOUNT", "10000"))
-PAYDAY_NOTIFY_STAGGER_MIN_SECONDS = 3
-PAYDAY_NOTIFY_STAGGER_MAX_SECONDS = 20
 _raw_payday_channel = os.getenv("PAYDAY_CHANNEL_ID", "1537694458815053865")
 PAYDAY_CHANNEL_ID = int(_raw_payday_channel) if _raw_payday_channel.isdigit() else None
 
 
-def _random_payday_interval() -> datetime.timedelta:
-    seconds = random.uniform(PAYDAY_MIN_INTERVAL.total_seconds(), PAYDAY_MAX_INTERVAL.total_seconds())
+def _random_gap() -> datetime.timedelta:
+    seconds = random.uniform(PAYDAY_MIN_GAP.total_seconds(), PAYDAY_MAX_GAP.total_seconds())
     return datetime.timedelta(seconds=seconds)
 
 
@@ -51,25 +48,29 @@ class Payday(commands.Cog):
     async def _check(self):
         now = datetime.datetime.utcnow()
 
-        unscheduled = await self.bot.db.get_users_needing_payday_schedule()
-        for user_id in unscheduled:
-            await self.bot.db.set_cooldown(user_id, "payday", now + _random_payday_interval())
+        next_at = await self.bot.db.get_payday_next()
+        if next_at is None:
+            await self.bot.db.set_payday_next(now + _random_gap())
+            return
+        if now < next_at:
+            return
 
-        due = await self.bot.db.get_due_paydays(now)
-        random.shuffle(due)
-        for i, user_id in enumerate(due):
-            await self.bot.db.set_cooldown(user_id, "payday", now + _random_payday_interval())
-            if not await self._is_still_member(user_id):
-                continue
-            amount = random.randint(PAYDAY_MIN_AMOUNT, PAYDAY_MAX_AMOUNT)
-            try:
-                await self.bot.db.update_balance(user_id, amount)
-            except Exception:
-                log.exception("[payday] failed to credit user %s", user_id)
-                continue
-            await self._notify(user_id, amount)
-            if i < len(due) - 1:
-                await asyncio.sleep(random.uniform(PAYDAY_NOTIFY_STAGGER_MIN_SECONDS, PAYDAY_NOTIFY_STAGGER_MAX_SECONDS))
+        await self.bot.db.set_payday_next(now + _random_gap())
+
+        user_id = await self.bot.db.get_random_user_id()
+        if user_id is None:
+            return
+        if not await self._is_still_member(user_id):
+            return
+
+        amount = random.randint(PAYDAY_MIN_AMOUNT, PAYDAY_MAX_AMOUNT)
+        try:
+            await self.bot.db.update_balance(user_id, amount)
+        except Exception:
+            log.exception("[payday] failed to credit user %s", user_id)
+            return
+
+        await self._notify(user_id, amount)
 
     async def _get_guild(self) -> discord.Guild | None:
         if self._guild is not None:
