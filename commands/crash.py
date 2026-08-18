@@ -16,6 +16,7 @@ log = logging.getLogger("gambler")
 
 RTP = 1 - HOUSE_EDGE
 MAX_CRASH = 1_000.0
+MIN_AUTO_TARGET = 1.01
 TICK_DELAY = 2.0
 GROWTH_RATE = 0.20
 AUTO_ERROR_BACKOFF = 10.0
@@ -56,17 +57,21 @@ class CashOutButton(ui.Button):
 
 
 class CrashView(ui.LayoutView):
-    def __init__(self, cog: "Crash", ctx: commands.Context, bet: int):
+    def __init__(self, cog: "Crash", ctx: commands.Context, bet: int, auto_cashout: float | None = None):
         super().__init__(timeout=90)
         self.cog = cog
         self.ctx = ctx
         self.bet = bet
+        self.auto_cashout = auto_cashout
         self.current_multiplier = 1.0
         self.finished = False
         self.message: discord.Message | None = None
 
+        bet_line = f"**Bet:** {fmt(bet)}"
+        if auto_cashout:
+            bet_line += f"  •  🤖 Auto cash out at {auto_cashout:g}x"
         self.container, self.text = game_container(
-            "🚀 Crash", f"**Bet:** {fmt(bet)}\n\n{render_rocket_track(1.0)}\n## 1.00x\n🚀 Launching..."
+            "🚀 Crash", f"{bet_line}\n\n{render_rocket_track(1.0)}\n## 1.00x\n🚀 Launching..."
         )
         self.cash_out_button = CashOutButton()
         row = ui.ActionRow()
@@ -82,7 +87,10 @@ class CrashView(ui.LayoutView):
 
     def render(self, *, footer: str | None = None, color: discord.Color | None = None, crashed: bool = False):
         track = render_rocket_track(self.current_multiplier, crashed=crashed)
-        body = f"**Bet:** {fmt(self.bet)}\n\n{track}\n## {self.current_multiplier:.2f}x"
+        bet_line = f"**Bet:** {fmt(self.bet)}"
+        if self.auto_cashout:
+            bet_line += f"  •  🤖 Auto cash out at {self.auto_cashout:g}x"
+        body = f"{bet_line}\n\n{track}\n## {self.current_multiplier:.2f}x"
         if footer:
             body += f"\n{footer}"
         self.text.content = f"## 🚀 Crash\n{body}"
@@ -118,12 +126,13 @@ class CrashView(ui.LayoutView):
 
 
 class Participant:
-    __slots__ = ("user_id", "name", "bet", "cashed_out", "cashout_multiplier")
+    __slots__ = ("user_id", "name", "bet", "auto_cashout", "cashed_out", "cashout_multiplier")
 
-    def __init__(self, user_id: int, name: str, bet: int):
+    def __init__(self, user_id: int, name: str, bet: int, auto_cashout: float | None = None):
         self.user_id = user_id
         self.name = name
         self.bet = bet
+        self.auto_cashout = auto_cashout
         self.cashed_out = False
         self.cashout_multiplier: float | None = None
 
@@ -146,7 +155,8 @@ def _participants_text(participants: dict[int, Participant]) -> str:
         if p.cashed_out:
             lines.append(f"🎉 {p.name} — {fmt(p.bet)} → cashed out at {p.cashout_multiplier:.2f}x")
         else:
-            lines.append(f"👤 {p.name} — {fmt(p.bet)}")
+            auto_note = f" (🤖 auto {p.auto_cashout:g}x)" if p.auto_cashout else ""
+            lines.append(f"👤 {p.name} — {fmt(p.bet)}{auto_note}")
     if len(items) > PARTICIPANT_DISPLAY_LIMIT:
         lines.append(f"*+{len(items) - PARTICIPANT_DISPLAY_LIMIT} more*")
     return "\n".join(lines)
@@ -190,6 +200,9 @@ class AutoCashOutButton(ui.Button):
 
 class BetModal(ui.Modal, title="Place your Crash bet"):
     amount = ui.TextInput(label="Bet amount", placeholder="e.g. 500, half, 25%, all", max_length=12)
+    auto_cashout = ui.TextInput(
+        label="Auto cash out at (optional)", placeholder="e.g. 2.5", required=False, max_length=10
+    )
 
     def __init__(self, cog: "Crash", guild_id: int):
         super().__init__()
@@ -197,7 +210,7 @@ class BetModal(ui.Modal, title="Place your Crash bet"):
         self.guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        await self.cog.place_bet(interaction, self.guild_id, self.amount.value)
+        await self.cog.place_bet(interaction, self.guild_id, self.amount.value, self.auto_cashout.value)
 
 
 class AutoCrashView(ui.LayoutView):
@@ -320,7 +333,9 @@ class Crash(commands.Cog):
         except discord.HTTPException:
             pass
 
-    async def place_bet(self, interaction: discord.Interaction, guild_id: int, raw_amount: str):
+    async def place_bet(
+        self, interaction: discord.Interaction, guild_id: int, raw_amount: str, raw_auto_cashout: str = ""
+    ):
         round_ = self._rounds.get(guild_id)
         if not round_ or round_.phase != "betting":
             await interaction.response.send_message(
@@ -334,6 +349,22 @@ class Crash(commands.Cog):
         pending.add(interaction.user.id)
 
         try:
+            raw_auto_cashout = raw_auto_cashout.strip()
+            auto_cashout = None
+            if raw_auto_cashout:
+                try:
+                    auto_cashout = float(raw_auto_cashout.replace(",", "."))
+                except ValueError:
+                    await interaction.response.send_message(
+                        f"⚠️ `{raw_auto_cashout}` is not a valid multiplier.", ephemeral=True
+                    )
+                    return
+                if not (MIN_AUTO_TARGET <= auto_cashout <= MAX_CRASH):
+                    await interaction.response.send_message(
+                        f"⚠️ Auto cash out must be between {MIN_AUTO_TARGET}x and {MAX_CRASH:g}x.", ephemeral=True
+                    )
+                    return
+
             await self.bot.db.ensure_user(interaction.user.id, self.bot.starting_balance)
             try:
                 amount = await resolve_bet(self.bot, interaction.user.id, raw_amount)
@@ -349,10 +380,14 @@ class Crash(commands.Cog):
 
             await self.bot.db.update_balance(interaction.user.id, -amount)
             round_.participants[interaction.user.id] = Participant(
-                interaction.user.id, interaction.user.display_name, amount
+                interaction.user.id, interaction.user.display_name, amount, auto_cashout
             )
 
-            await interaction.response.send_message(f"✅ Bet placed: {fmt(amount)}. Good luck! 🚀", ephemeral=True)
+            msg = f"✅ Bet placed: {fmt(amount)}."
+            if auto_cashout:
+                msg += f" 🤖 Auto cash out at {auto_cashout:g}x."
+            msg += " Good luck! 🚀"
+            await interaction.response.send_message(msg, ephemeral=True)
             await self._refresh_message(guild_id)
         finally:
             pending.discard(interaction.user.id)
@@ -380,6 +415,18 @@ class Crash(commands.Cog):
             f"🎉 Cashed out at {round_.current_multiplier:.2f}x — you won {fmt(payout)}!", ephemeral=True
         )
         await self._refresh_message(guild_id)
+
+    async def _apply_auto_cashouts(self, round_: AutoRound, multiplier: float):
+        for p in round_.participants.values():
+            if p.cashed_out or p.auto_cashout is None:
+                continue
+            if p.auto_cashout >= round_.crash_point or multiplier < p.auto_cashout:
+                continue
+            p.cashed_out = True
+            p.cashout_multiplier = p.auto_cashout
+            payout = int(p.bet * p.auto_cashout)
+            await self.bot.db.update_balance(p.user_id, payout)
+            await self.bot.db.record_game_result(p.user_id, p.bet, payout)
 
     async def _auto_loop(self, guild_id: int, channel_id: int):
         await self.bot.wait_until_ready()
@@ -435,6 +482,8 @@ class Crash(commands.Cog):
             elapsed = time.monotonic() - start
             multiplier = multiplier_at(elapsed)
 
+            await self._apply_auto_cashouts(round_, multiplier)
+
             if multiplier >= round_.crash_point:
                 round_.current_multiplier = round_.crash_point
                 break
@@ -454,15 +503,23 @@ class Crash(commands.Cog):
     @commands.hybrid_command(
         name="crash", description="Watch the multiplier climb and cash out before it crashes."
     )
-    @app_commands.describe(bet="Bet (a number, 'half', 'all', or e.g. '50%')")
+    @app_commands.describe(
+        bet="Bet (a number, 'half', 'all', or e.g. '50%')",
+        auto_cashout="Optional: automatically cash out once the multiplier reaches this (min. 1.01x)",
+    )
     @game_enabled("crash")
-    async def crash(self, ctx: commands.Context, bet: str):
+    async def crash(
+        self,
+        ctx: commands.Context,
+        bet: str,
+        auto_cashout: commands.Range[float, MIN_AUTO_TARGET, MAX_CRASH] | None = None,
+    ):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)
         await self.bot.db.update_balance(ctx.author.id, -amount)
 
         crash_point = roll_crash_point()
-        view = CrashView(self, ctx, amount)
+        view = CrashView(self, ctx, amount, auto_cashout)
         message = await ctx.send(view=view)
         view.message = message
 
@@ -477,6 +534,20 @@ class Crash(commands.Cog):
 
             elapsed = time.monotonic() - start
             multiplier = multiplier_at(elapsed)
+
+            if auto_cashout and auto_cashout < crash_point and multiplier >= auto_cashout:
+                view.current_multiplier = auto_cashout
+                view.finished = True
+                view.cash_out_button.disabled = True
+                payout = int(amount * auto_cashout)
+                await self.bot.db.update_balance(ctx.author.id, payout)
+                await self.bot.db.record_game_result(ctx.author.id, amount, payout)
+                view.render(
+                    footer=f"🤖 Auto cash out hit {auto_cashout:g}x! Payout: {fmt(payout)}",
+                    color=discord.Color.green(),
+                )
+                await limited_edit(message, view=view)
+                break
 
             if multiplier >= crash_point:
                 view.current_multiplier = crash_point

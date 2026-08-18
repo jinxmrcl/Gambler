@@ -359,15 +359,19 @@ Requires the **Administrator** permission on the server.
 ### Games
 All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 
-- `blackjack <bet> [perfect_pairs] [twentyone_plus_three]` — classic Blackjack with
-  Hit/Stand/Double/Split buttons; cards are dealt, drawn, and the dealer's hand is
-  revealed with an animated reveal instead of appearing instantly. Two optional side
-  bets settle right after the deal, independent of how the main hand plays out:
-  **Perfect Pairs** (your first two cards match — Mixed 5:1, Colored 10:1, Perfect
-  30:1) and **21+3** (your two cards + the dealer's up-card make a poker hand — Flush
-  5:1, Straight 10:1, Three of a Kind 30:1, Straight Flush 40:1, Suited Trips 100:1)
-- `mines <bet> [mines=3] [cols=5] [rows=4]` — customizable grid (2-5 cols, 2-5 rows —
-  the full 5x5 unlocks up to 23 mines), avoid mines, cash out anytime
+- `blackjack <bet> [perfect_pairs] [twentyone_plus_three] [insurance]` — classic
+  Blackjack with Hit/Stand/Double/Split buttons; cards are dealt, drawn, and the
+  dealer's hand is revealed with an animated reveal instead of appearing instantly.
+  Three optional side bets settle right after the deal, independent of how the main
+  hand plays out: **Perfect Pairs** (your first two cards match — Mixed 5:1, Colored
+  10:1, Perfect 30:1), **21+3** (your two cards + the dealer's up-card make a poker
+  hand — Flush 5:1, Straight 10:1, Three of a Kind 30:1, Straight Flush 40:1, Suited
+  Trips 100:1), and **Insurance** (max half your main bet, only offered when the
+  dealer's up-card is an Ace — pays 2:1 if the dealer has Blackjack)
+- `mines <bet> [mines=3] [cols=5] [rows=4] [auto_cashout]` — customizable grid (2-5
+  cols, 2-5 rows — the full 5x5 unlocks up to 23 mines), avoid mines, cash out
+  anytime; optionally set `auto_cashout` to a number of safe tiles and the game cashes
+  out for you automatically the moment you reach it
 - `hilo <bet>` — guess higher/lower, multiplier grows with each correct card
 - `plinko <bet> [risk=medium] [rows=12]` — drop a ball through the Plinko board
 - `limbo <bet> <target>` — set a target multiplier (up to 1,000x), the random result
@@ -375,7 +379,9 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 - `keno <bet> [picks=5]` — pick numbers and hope for hits in the draw
 - `slots <bet>` — animated 3x3 grid with 5 paylines (rows + both diagonals); reels stop
   one column at a time before the result is revealed
-- `roulette <bet> <choice>` — bet on a number, color, or even/odd
+- `roulette <bet> <choice>` — bet on a straight number (0-36), color (`red`/`black`),
+  even/odd, a dozen (`1st12`/`2nd12`/`3rd12`, pays 3x), a column (`col1`/`col2`/`col3`,
+  pays 3x), or a split between two table-adjacent numbers (e.g. `17/18`, pays 18x)
 - `dice <bet> <prediction>` — predict the sum of two dice (2-12)
 - `soloflip <bet> [call=heads]` (alias `cf`) — call heads or tails against the house
 - `scratchcard <bet>` (alias `scratch`) — click each of the 9 tiles yourself to scratch
@@ -385,8 +391,12 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
   to ~40x longshot) and watch the animated race
 - `baccarat <bet> <choice>` — bet on Player, Banker, or Tie; plays out the real casino
   drawing rules (natural 8/9, third-card rules for both hands) with an animated reveal
-- `crash <bet>` — watch the multiplier climb in real time and hit **Cash Out** before it
-  crashes; wait too long and you lose the bet entirely
+- `crash <bet> [auto_cashout]` — watch the multiplier climb in real time and hit
+  **Cash Out** before it crashes; wait too long and you lose the bet entirely.
+  Optionally set `auto_cashout` to a target multiplier and the game cashes out for you
+  the instant it's reached — works both for the private `/crash` round and when
+  placing a bet in a shared autoplay-channel round (an extra field in the Place Bet
+  modal)
 
 All games share a 3% house edge (`HOUSE_EDGE` in `utils/economy.py`, or the standard
 European single-zero odds for `roulette`), which scales payout multipliers to stay
