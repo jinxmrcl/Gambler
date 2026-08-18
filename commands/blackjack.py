@@ -215,6 +215,28 @@ class BlackjackView(ui.LayoutView):
         self.side_payout = payout
         self.side_bet_lines = lines
 
+    async def resolve_insurance(self, insurance_amount: int):
+        if not insurance_amount:
+            return
+        if self.dealer[0].rank != "A":
+            self.side_bet_lines.append("🛡️ Insurance: not offered — dealer's up-card wasn't an Ace, bet not placed.")
+            return
+
+        try:
+            await self.cog.bot.db.update_balance(self.ctx.author.id, -insurance_amount)
+        except InsufficientFunds:
+            self.side_bet_lines.append("🛡️ Insurance: skipped — insufficient balance.")
+            return
+
+        self.side_wagered += insurance_amount
+        if is_blackjack(self.dealer):
+            win = insurance_amount * 3
+            self.side_payout += win
+            await self.cog.bot.db.update_balance(self.ctx.author.id, win)
+            self.side_bet_lines.append(f"🛡️ Insurance: 🎉 Dealer has Blackjack (2:1) — {fmt(win)}")
+        else:
+            self.side_bet_lines.append(f"🛡️ Insurance: 😢 Dealer has no Blackjack — lost {fmt(insurance_amount)}")
+
     async def animate_deal(self):
         for player_shown, dealer_shown in ((1, 0), (1, 1), (2, 1)):
             await asyncio.sleep(DEAL_DELAY)
@@ -479,6 +501,7 @@ class Blackjack(commands.Cog):
         bet="Bet (a number, 'half', 'all', or e.g. '50%')",
         perfect_pairs="Optional side bet: wins if your first two cards are a pair (5:1 / 10:1 / 30:1)",
         twentyone_plus_three="Optional side bet: your 2 cards + dealer's up-card make a poker hand (5:1 up to 100:1)",
+        insurance="Optional side bet, max half your main bet: wins 2:1 if the dealer's up-card is an Ace and they have Blackjack",
     )
     @game_enabled("blackjack")
     async def blackjack(
@@ -487,6 +510,7 @@ class Blackjack(commands.Cog):
         bet: str,
         perfect_pairs: str | None = None,
         twentyone_plus_three: str | None = None,
+        insurance: str | None = None,
     ):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)
@@ -494,6 +518,7 @@ class Blackjack(commands.Cog):
 
         pp_amount = 0
         tt_amount = 0
+        insurance_amount = 0
         try:
             if perfect_pairs is not None:
                 pp_amount = await resolve_bet(self.bot, ctx.author.id, perfect_pairs)
@@ -501,8 +526,12 @@ class Blackjack(commands.Cog):
             if twentyone_plus_three is not None:
                 tt_amount = await resolve_bet(self.bot, ctx.author.id, twentyone_plus_three)
                 await self.bot.db.update_balance(ctx.author.id, -tt_amount)
+            if insurance is not None:
+                insurance_amount = await resolve_bet(self.bot, ctx.author.id, insurance)
+                if insurance_amount > amount // 2:
+                    raise BetError(f"Insurance can be at most half your main bet ({fmt(amount // 2)}).")
         except (BetError, InsufficientFunds):
-            await self.bot.db.update_balance(ctx.author.id, amount + pp_amount)
+            await self.bot.db.update_balance(ctx.author.id, amount + pp_amount + tt_amount)
             raise
 
         view = BlackjackView(self, ctx, amount)
@@ -510,6 +539,7 @@ class Blackjack(commands.Cog):
         view.message = message
         await view.animate_deal()
         await view.resolve_side_bets(pp_amount, tt_amount)
+        await view.resolve_insurance(insurance_amount)
 
         hand = view.hands[0]
         if is_blackjack(hand.cards):

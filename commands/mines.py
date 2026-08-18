@@ -53,7 +53,16 @@ class CashOutButton(ui.Button):
 
 
 class MinesView(ui.LayoutView):
-    def __init__(self, cog: "Mines", ctx: commands.Context, bet: int, mines: int, rows: int, cols: int):
+    def __init__(
+        self,
+        cog: "Mines",
+        ctx: commands.Context,
+        bet: int,
+        mines: int,
+        rows: int,
+        cols: int,
+        auto_cashout: int | None = None,
+    ):
         super().__init__(timeout=120)
         self.cog = cog
         self.ctx = ctx
@@ -61,6 +70,7 @@ class MinesView(ui.LayoutView):
         self.mines = mines
         self.rows = rows
         self.cols = cols
+        self.auto_cashout_tiles = auto_cashout
         self.total_tiles = compute_total_tiles(rows, cols)
         self.mine_positions = set(random.sample(range(self.total_tiles), mines))
         self.revealed = 0
@@ -113,6 +123,8 @@ class MinesView(ui.LayoutView):
             f"**Multiplier:** {mult:.2f}x",
             f"**Current winnings:** {fmt(potential)}",
         ]
+        if self.auto_cashout_tiles:
+            lines.append(f"**Auto cash out:** after {self.auto_cashout_tiles} safe tile(s)")
         if footer:
             lines.append(f"-# {footer}")
         self.text.content = "## 💣 Mines\n" + "\n".join(lines)
@@ -159,6 +171,17 @@ class MinesView(ui.LayoutView):
             await self.end_game(interaction, won=True, footer="🎉 All safe tiles revealed!")
             return
 
+        if self.auto_cashout_tiles and self.revealed >= self.auto_cashout_tiles:
+            await self.end_game(
+                interaction,
+                won=True,
+                footer=(
+                    f"🤖 Auto cash out hit {self.auto_cashout_tiles} safe tile(s) — "
+                    f"cashed out at {self.current_multiplier():.2f}x."
+                ),
+            )
+            return
+
         self.cash_out_button.disabled = False
         self.render()
         await interaction.response.edit_message(view=self)
@@ -196,6 +219,7 @@ class Mines(commands.Cog):
         mines=f"Number of mines on the grid (1-{MAX_TOTAL_TILES - 1}, default: 3)",
         cols=f"Grid columns ({MIN_COLS}-{MAX_COLS}, default: {DEFAULT_COLS})",
         rows=f"Grid rows ({MIN_ROWS}-{MAX_ROWS}, default: {DEFAULT_ROWS})",
+        auto_cashout="Optional: automatically cash out after revealing this many safe tiles",
     )
     @game_enabled("mines")
     async def mines(
@@ -205,6 +229,7 @@ class Mines(commands.Cog):
         mines: commands.Range[int, 1, MAX_TOTAL_TILES - 1] = 3,
         cols: commands.Range[int, MIN_COLS, MAX_COLS] = DEFAULT_COLS,
         rows: commands.Range[int, MIN_ROWS, MAX_ROWS] = DEFAULT_ROWS,
+        auto_cashout: commands.Range[int, 1] | None = None,
     ):
         total_tiles = compute_total_tiles(rows, cols)
         if mines >= total_tiles:
@@ -214,11 +239,19 @@ class Mines(commands.Cog):
             )
             return
 
+        safe_tiles = total_tiles - mines
+        if auto_cashout and auto_cashout > safe_tiles:
+            await ctx.send(
+                f"⚠️ Only {safe_tiles} safe tile(s) exist on this grid. "
+                f"Auto cash out can be at most {safe_tiles}."
+            )
+            return
+
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)
         await self.bot.db.update_balance(ctx.author.id, -amount)
 
-        view = MinesView(self, ctx, amount, mines, rows, cols)
+        view = MinesView(self, ctx, amount, mines, rows, cols, auto_cashout)
         message = await ctx.send(view=view)
         view.message = message
 
