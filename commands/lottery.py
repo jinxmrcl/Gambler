@@ -1,11 +1,15 @@
 import datetime
+import logging
 import random
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from database.db import InsufficientFunds
 from utils.economy import HOUSE_EDGE, StaticView, fmt
+
+log = logging.getLogger("gambler")
 
 TICKET_PRICE = 100
 DRAW_INTERVAL = datetime.timedelta(days=7)
@@ -23,6 +27,12 @@ class Lottery(commands.Cog):
 
     @tasks.loop(hours=1)
     async def draw_loop(self):
+        try:
+            await self._draw()
+        except Exception:
+            log.exception("[lottery] draw check failed")
+
+    async def _draw(self):
         state = await self.bot.db.get_lottery_state()
         if datetime.datetime.utcnow() < state["next_draw"]:
             return
@@ -82,7 +92,11 @@ class Lottery(commands.Cog):
             await ctx.send(f"⚠️ You need {fmt(cost)} for {quantity} ticket(s).")
             return
 
-        await self.bot.db.buy_lottery_tickets(ctx.author.id, quantity, cost)
+        try:
+            await self.bot.db.buy_lottery_tickets(ctx.author.id, quantity, cost)
+        except InsufficientFunds:
+            await ctx.send(f"⚠️ You need {fmt(cost)} for {quantity} ticket(s).")
+            return
         my_tickets = await self.bot.db.get_lottery_tickets(ctx.author.id)
 
         view = StaticView(

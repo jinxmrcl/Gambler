@@ -82,6 +82,17 @@ class DuelView(ui.LayoutView):
         fighter_b = to_fighter(opponent_char, self.opponent.display_name)
         result = simulate(fighter_a, fighter_b)
 
+        if result["winner"] is None:
+            log_tail = "\n".join(result["log"][-8:])
+            self.text.content = (
+                f"## ⚔️ Duel Result\n{log_tail}\n\n"
+                "🤝 The duel dragged on too long and ended in a draw. No rewards this time."
+            )
+            self.container.accent_colour = discord.Color.greyple()
+            await interaction.response.edit_message(view=self)
+            self.stop()
+            return
+
         winner_user, loser_user = (
             (self.challenger, self.opponent) if result["winner"] is fighter_a else (self.opponent, self.challenger)
         )

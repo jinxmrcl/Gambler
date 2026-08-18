@@ -48,6 +48,7 @@ import importlib
 import json
 import logging
 import os
+import random
 import signal
 import sys
 from datetime import datetime, timezone
@@ -93,6 +94,12 @@ KNOWN_COMMANDS_PATH = DATA_DIR / "known_commands.json"
 
 LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
+
+BACKUPS_DIR = BASE_DIR / "backups"
+BACKUPS_DIR.mkdir(exist_ok=True)
+DB_BACKUP_MIN_INTERVAL_SECONDS = 30 * 60
+DB_BACKUP_MAX_INTERVAL_SECONDS = 60 * 60
+DB_BACKUP_RETENTION = 48
 
 HOT_RELOAD = os.getenv("HOT_RELOAD", "true").lower() not in ("0", "false", "no")
 HOT_RELOAD_DIRS = ("commands", "events", "rpg", "utils", "database")
@@ -343,9 +350,31 @@ class GamblerBot(commands.Bot):
             self._hot_reload_task = asyncio.create_task(self._hot_reload_loop())
             log.info("Hot reload enabled — watching %s for changes.", ", ".join(HOT_RELOAD_DIRS))
 
+        self._db_backup_task = asyncio.create_task(self._db_backup_loop())
+        log.info("DB backup enabled — snapshotting every 30-60 min to %s.", BACKUPS_DIR)
+
         if (BASE_DIR / ".git").exists():
             self._git_watch_task = asyncio.create_task(self._git_watch_loop())
             log.info("Git watch enabled — checking %s every %ds.", GIT_REPO_URL, GIT_WATCH_INTERVAL_SECONDS)
+
+    async def _db_backup_loop(self) -> None:
+        while True:
+            await asyncio.sleep(random.uniform(DB_BACKUP_MIN_INTERVAL_SECONDS, DB_BACKUP_MAX_INTERVAL_SECONDS))
+            try:
+                await self._run_db_backup()
+            except Exception:
+                log.exception("[db-backup] backup failed")
+
+    async def _run_db_backup(self) -> None:
+        data = await self.db.dump_all_tables()
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        path = BACKUPS_DIR / f"backup_{timestamp}.json"
+        await asyncio.to_thread(path.write_text, json.dumps(data, default=str), encoding="utf-8")
+        log.info("[db-backup] wrote %s (%d tables)", path.name, len(data))
+
+        backups = sorted(BACKUPS_DIR.glob("backup_*.json"))
+        for old in backups[: max(0, len(backups) - DB_BACKUP_RETENTION)]:
+            old.unlink(missing_ok=True)
 
     async def _git_watch_loop(self) -> None:
         while True:
@@ -412,22 +441,29 @@ class GamblerBot(commands.Bot):
             changed_names = ", ".join(f.name for f in changed) or "(file removed)"
             log.info("[hot-reload] change detected: %s", changed_names)
 
-            for modname, mod in list(sys.modules.items()):
-                modfile = getattr(mod, "__file__", None)
-                if not modfile:
-                    continue
-                try:
-                    modpath = Path(modfile).resolve()
-                except OSError:
-                    continue
-                if any(
-                    modpath.is_relative_to((BASE_DIR / folder).resolve())
-                    for folder in ("rpg", "utils", "database")
-                ):
+            shared_dirs_touched = any(
+                f.resolve().is_relative_to((BASE_DIR / folder).resolve())
+                for f in (changed | removed)
+                for folder in ("rpg", "utils", "database")
+            )
+
+            if shared_dirs_touched:
+                for modname, mod in list(sys.modules.items()):
+                    modfile = getattr(mod, "__file__", None)
+                    if not modfile:
+                        continue
                     try:
-                        importlib.reload(mod)
-                    except Exception:
-                        log.exception("[hot-reload] failed to reload module %s", modname)
+                        modpath = Path(modfile).resolve()
+                    except OSError:
+                        continue
+                    if any(
+                        modpath.is_relative_to((BASE_DIR / folder).resolve())
+                        for folder in ("rpg", "utils", "database")
+                    ):
+                        try:
+                            importlib.reload(mod)
+                        except Exception:
+                            log.exception("[hot-reload] failed to reload module %s", modname)
 
             for extension in list(self.extensions):
                 try:
@@ -444,7 +480,7 @@ class GamblerBot(commands.Bot):
                 log.exception("[hot-reload] failed to sync commands")
 
     async def close(self) -> None:
-        for attr in ("_hot_reload_task", "_git_watch_task"):
+        for attr in ("_hot_reload_task", "_git_watch_task", "_db_backup_task"):
             task = getattr(self, attr, None)
             if task:
                 task.cancel()
@@ -460,6 +496,12 @@ def _install_signal_handlers(loop: asyncio.AbstractEventLoop, bot: GamblerBot) -
             pass
 
 
+def _handle_loop_exception(_loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    exc = context.get("exception")
+    message = context.get("message", "Unhandled exception in event loop")
+    log.error("[event-loop] %s", message, exc_info=exc)
+
+
 async def main():
     if not TOKEN:
         raise SystemExit("DISCORD_TOKEN is not set. Please check your .env file.")
@@ -467,7 +509,9 @@ async def main():
     setup_discord_logger()
 
     bot = GamblerBot()
-    _install_signal_handlers(asyncio.get_running_loop(), bot)
+    loop = asyncio.get_running_loop()
+    loop.set_exception_handler(_handle_loop_exception)
+    _install_signal_handlers(loop, bot)
     async with bot:
         await bot.start(TOKEN)
 

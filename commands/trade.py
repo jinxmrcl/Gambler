@@ -18,20 +18,6 @@ def asset_label(asset: str, quantity: int) -> str:
     return f"{quantity}x {ITEMS[asset]['name']}"
 
 
-async def _take(bot: commands.Bot, user_id: int, asset: str, quantity: int) -> None:
-    if asset == "money":
-        await bot.db.update_balance(user_id, -quantity)
-    else:
-        await bot.db.remove_item(user_id, asset, quantity)
-
-
-async def _give(bot: commands.Bot, user_id: int, asset: str, quantity: int) -> None:
-    if asset == "money":
-        await bot.db.update_balance(user_id, quantity)
-    else:
-        await bot.db.add_item(user_id, asset, quantity)
-
-
 class AcceptButton(ui.Button):
     def __init__(self):
         super().__init__(style=discord.ButtonStyle.success, label="Accept", emoji="✅")
@@ -101,26 +87,20 @@ class TradeView(ui.LayoutView):
         self._disable_buttons()
 
         try:
-            await _take(self.cog.bot, self.proposer.id, self.give_asset, self.give_qty)
-        except InsufficientFunds:
-            self.text.content = f"## 🤝 Trade Offer\n⚠️ {self.proposer.mention} no longer has {asset_label(self.give_asset, self.give_qty)}."
+            await self.cog.bot.db.execute_trade(
+                self.proposer.id, self.give_asset, self.give_qty,
+                self.target.id, self.want_asset, self.want_qty,
+            )
+        except InsufficientFunds as exc:
+            if getattr(exc, "user_id", None) == self.target.id:
+                text = f"⚠️ You no longer have {asset_label(self.want_asset, self.want_qty)}."
+            else:
+                text = f"⚠️ {self.proposer.mention} no longer has {asset_label(self.give_asset, self.give_qty)}."
+            self.text.content = f"## 🤝 Trade Offer\n{text}"
             self.container.accent_colour = discord.Color.red()
             await interaction.response.edit_message(view=self)
             self.stop()
             return
-
-        try:
-            await _take(self.cog.bot, self.target.id, self.want_asset, self.want_qty)
-        except InsufficientFunds:
-            await _give(self.cog.bot, self.proposer.id, self.give_asset, self.give_qty)
-            self.text.content = f"## 🤝 Trade Offer\n⚠️ You no longer have {asset_label(self.want_asset, self.want_qty)}."
-            self.container.accent_colour = discord.Color.red()
-            await interaction.response.edit_message(view=self)
-            self.stop()
-            return
-
-        await _give(self.cog.bot, self.target.id, self.give_asset, self.give_qty)
-        await _give(self.cog.bot, self.proposer.id, self.want_asset, self.want_qty)
 
         self.text.content = (
             f"## 🤝 Trade Offer\n✅ Trade completed! {self.proposer.mention} and {self.target.mention} "

@@ -70,19 +70,13 @@ class CoinflipView(ui.LayoutView):
         self._disable_buttons()
 
         try:
-            await self.cog.bot.db.update_balance(self.challenger.id, -self.amount)
-        except InsufficientFunds:
-            self.text.content = f"## 🪙 Coinflip Challenge\n⚠️ {self.challenger.mention} no longer has enough balance."
-            self.container.accent_colour = discord.Color.red()
-            await interaction.response.edit_message(view=self)
-            self.stop()
-            return
-
-        try:
-            await self.cog.bot.db.update_balance(self.opponent.id, -self.amount)
-        except InsufficientFunds:
-            await self.cog.bot.db.update_balance(self.challenger.id, self.amount)
-            self.text.content = f"## 🪙 Coinflip Challenge\n⚠️ {self.opponent.mention} doesn't have enough balance."
+            await self.cog.bot.db.debit_both(self.challenger.id, self.opponent.id, self.amount)
+        except InsufficientFunds as exc:
+            if getattr(exc, "user_id", None) == self.opponent.id:
+                text = f"⚠️ {self.opponent.mention} doesn't have enough balance."
+            else:
+                text = f"⚠️ {self.challenger.mention} no longer has enough balance."
+            self.text.content = f"## 🪙 Coinflip Challenge\n{text}"
             self.container.accent_colour = discord.Color.red()
             await interaction.response.edit_message(view=self)
             self.stop()
@@ -107,6 +101,8 @@ class CoinflipView(ui.LayoutView):
         self.stop()
 
     async def decline(self, interaction: discord.Interaction):
+        if self.finished:
+            return
         self.finished = True
         self._disable_buttons()
         self.text.content = f"## 🪙 Coinflip Challenge\n{self.opponent.mention} declined the challenge."

@@ -79,9 +79,10 @@ the casino:
   solo-equivalent reward, and anyone in the lobby can spend one potion to heal the whole
   party before the fight starts
 - `/idle` auto-farms a dungeon (monsters + occasional boss attempts) in the background for
-  up to 2 hours, quietly, with a single summary message at the end instead of per-fight spam
-  — a live-updated tracker message in a configurable channel lists everyone currently idle
-  farming
+  up to 2 hours, quietly, with a single summary + ping at the end instead of per-fight spam
+  (posted as a new message if the run outlasted Discord's 15-minute reply window) — a
+  live-updated tracker message in a configurable channel lists everyone currently idle
+  farming and reposts itself if it goes over 12 hours without refreshing
 - prestige every 50 levels (up to prestige 29) once you hit the level cap, now with a small
   permanent stat bonus per tier (+0.5%, up to +14.5% at max prestige) on top of a smoother
   XP curve
@@ -129,6 +130,13 @@ the casino:
   new commits, posting to the restart channel when one lands
 - A Supabase/Postgres fallback database that only kicks in if MySQL can't be reached
   at bot startup
+- An automated DB backup every 30-60 minutes — a full JSON snapshot of every table,
+  written silently to `backups/` (gitignored) with the oldest pruned once more than 48
+  accumulate; works against whichever backend (MySQL or the Postgres fallback) is
+  currently active
+- A shared error handler for every interactive button/menu (`discord.ui.View`), so a
+  failed click gets logged and the player sees a friendly message instead of the
+  interaction silently doing nothing
 - Optional restart/crash health announcements to a bot-owner-configured channel
 - Separately, a per-server `/set-updateschannel` posts a Components V2 Container
   listing whatever new commands/game modes were detected after an actual process
@@ -395,7 +403,7 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
 - `dungeonboss <name> [team=False]` — challenge a dungeon's boss for bigger rewards, no
   cooldown; `team: True` opens a join lobby, scaling the boss to party size
 - `idle <name> [minutes=30]` — auto-farms that dungeon (monsters + boss) in the
-  background for up to 120 minutes, then posts one summary — no per-fight spam
+  background for up to 120 minutes, then posts one summary with a ping — no per-fight spam
 - `rpgshop` — shows the equipment and potion shop
 - `rpgbuy <item> [quantity=1]` — buy a piece of equipment or a potion
 - `rpgequip <item>` — equip an owned weapon, armor, or accessory
@@ -416,7 +424,7 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
 ## Project structure
 
 ```
-main.py                     Bot entry point, loads cogs, connects to MySQL, hot reload, restart announcements, git watcher
+main.py                     Bot entry point, loads cogs, connects to MySQL, hot reload, restart announcements, git watcher, DB backups
 database/db.py               aiomysql connection pool + wallet/bank/inventory/stats/social/RPG functions
 utils/economy.py             Bet parsing, formatting, house edge constant, UI building blocks
 utils/cards.py                Card deck + custom card emoji mapping for Blackjack & Hilo
@@ -465,7 +473,7 @@ rpg/character.py              Character dataclass helpers, full stat resolution 
 rpg/badges.py                 Prestige badge rendering
 rpg/events.py                 Random in-dungeon events
 events/on_ready.py            Startup logging & presence
-events/error_handler.py       Centralized error handling for text & slash commands
+events/error_handler.py       Centralized error handling for text & slash commands, and every interactive view's buttons
 events/payday.py              Background loop: random passive payday payout per user, announced in a channel
 database/db_postgres.py       Postgres/Supabase implementation of the same DB interface (automatic fallback)
 deploy/ecosystem.config.js    pm2 process config (autorestart, daily 4am cron_restart)

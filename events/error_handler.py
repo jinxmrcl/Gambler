@@ -64,10 +64,23 @@ def _friendly_message(error: Exception, ctx: commands.Context | None = None) -> 
     return text
 
 
+async def _view_on_error(view: discord.ui.View, interaction: discord.Interaction, error: Exception, item) -> None:
+    log.exception("Unhandled error in view %r for item %r", view, item, exc_info=error)
+    message = _friendly_message(error) or "Something went wrong. Please try again later."
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(f"⚠️ {message}", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⚠️ {message}", ephemeral=True)
+    except (discord.HTTPException, aiohttp.ClientError, ConnectionError, OSError):
+        log.warning("Failed to send error message for view %r", view)
+
+
 class ErrorHandler(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         bot.tree.on_error = self.on_app_command_error
+        discord.ui.view.BaseView.on_error = _view_on_error
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):

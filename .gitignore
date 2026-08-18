@@ -13,6 +13,7 @@ Thumbs.db
 /scripts/
 /data/
 /logs/
+/backups/
 /graphify-out/
 .obsidian/
 *.obsidian.vault

@@ -58,8 +58,8 @@ class Payday(commands.Cog):
         due = await self.bot.db.get_due_paydays(now)
         random.shuffle(due)
         for i, user_id in enumerate(due):
+            await self.bot.db.set_cooldown(user_id, "payday", now + _random_payday_interval())
             if not await self._is_still_member(user_id):
-                await self.bot.db.set_cooldown(user_id, "payday", now + _random_payday_interval())
                 continue
             amount = random.randint(PAYDAY_MIN_AMOUNT, PAYDAY_MAX_AMOUNT)
             try:
@@ -67,7 +67,6 @@ class Payday(commands.Cog):
             except Exception:
                 log.exception("[payday] failed to credit user %s", user_id)
                 continue
-            await self.bot.db.set_cooldown(user_id, "payday", now + _random_payday_interval())
             await self._notify(user_id, amount)
             if i < len(due) - 1:
                 await asyncio.sleep(random.uniform(PAYDAY_NOTIFY_STAGGER_MIN_SECONDS, PAYDAY_NOTIFY_STAGGER_MAX_SECONDS))

@@ -178,10 +178,12 @@ class PostgresDatabase:
                 """
                 CREATE TABLE IF NOT EXISTS idle_tracker_state (
                     id SMALLINT PRIMARY KEY,
-                    message_id BIGINT NULL
+                    message_id BIGINT NULL,
+                    posted_at TIMESTAMP NULL
                 )
                 """
             )
+            await conn.execute("ALTER TABLE idle_tracker_state ADD COLUMN IF NOT EXISTS posted_at TIMESTAMP NULL")
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS cooldowns (
@@ -310,6 +312,20 @@ class PostgresDatabase:
             raise InsufficientFunds(f"User {user_id} cannot afford a change of {delta}")
         row = await self._fetchone("SELECT balance FROM users WHERE user_id = $1", user_id)
         return row[0]
+
+    async def debit_both(self, user_a_id: int, user_b_id: int, amount: int) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                for user_id in (user_a_id, user_b_id):
+                    status = await conn.execute(
+                        "UPDATE users SET balance = balance - $1 WHERE user_id = $2 AND balance >= $1",
+                        amount,
+                        user_id,
+                    )
+                    if _rowcount(status) == 0:
+                        exc = InsufficientFunds(f"User {user_id} cannot afford {amount}")
+                        exc.user_id = user_id
+                        raise exc
 
     async def transfer_balance(self, sender_id: int, recipient_id: int, amount: int) -> int:
         async with self.pool.acquire() as conn:
@@ -451,44 +467,30 @@ class PostgresDatabase:
             list(actions),
         )
 
-    async def get_item_use_count(
-        self, user_id: int, item_key: str, window: datetime.timedelta, now: datetime.datetime
-    ) -> int:
-        row = await self._fetchone(
-            "SELECT use_count, window_started_at FROM item_use_limits WHERE user_id = $1 AND item_key = $2",
-            user_id,
-            item_key,
-        )
-        if not row:
-            return 0
-        use_count, window_started_at = row
-        if now - window_started_at >= window:
-            return 0
-        return use_count
-
-    async def record_item_use(
-        self, user_id: int, item_key: str, window: datetime.timedelta, now: datetime.datetime
-    ) -> None:
-        row = await self._fetchone(
-            "SELECT use_count, window_started_at FROM item_use_limits WHERE user_id = $1 AND item_key = $2",
-            user_id,
-            item_key,
-        )
-        if row and (now - row[1]) < window:
-            new_count = row[0] + 1
-            window_start = row[1]
-        else:
-            new_count = 1
-            window_start = now
-        await self._execute(
+    async def try_record_item_use(
+        self, user_id: int, item_key: str, limit: int, window: datetime.timedelta, now: datetime.datetime
+    ) -> bool:
+        window_cutoff = now - window
+        status = await self._execute(
             "INSERT INTO item_use_limits (user_id, item_key, use_count, window_started_at) "
-            "VALUES ($1, $2, $3, $4) "
-            "ON CONFLICT (user_id, item_key) DO UPDATE SET use_count = $3, window_started_at = $4",
+            "VALUES ($1, $2, 1, $3) "
+            "ON CONFLICT (user_id, item_key) DO UPDATE SET "
+            "use_count = CASE "
+            "  WHEN item_use_limits.window_started_at <= $4 THEN 1 "
+            "  ELSE item_use_limits.use_count + 1 "
+            "END, "
+            "window_started_at = CASE "
+            "  WHEN item_use_limits.window_started_at <= $4 THEN $3 "
+            "  ELSE item_use_limits.window_started_at "
+            "END "
+            "WHERE item_use_limits.window_started_at <= $4 OR item_use_limits.use_count < $5",
             user_id,
             item_key,
-            new_count,
-            window_start,
+            now,
+            window_cutoff,
+            limit,
         )
+        return status > 0
 
     async def get_item_use_reset(
         self, user_id: int, item_key: str, window: datetime.timedelta
@@ -522,6 +524,51 @@ class PostgresDatabase:
             "SELECT item_key, quantity FROM inventory WHERE user_id = $1 AND quantity > 0", user_id
         )
         return [(r[0], r[1]) for r in rows]
+
+    async def execute_trade(
+        self,
+        give_user_id: int, give_asset: str, give_qty: int,
+        want_user_id: int, want_asset: str, want_qty: int,
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await self._trade_deduct(conn, give_user_id, give_asset, give_qty)
+                await self._trade_deduct(conn, want_user_id, want_asset, want_qty)
+                await self._trade_credit(conn, want_user_id, give_asset, give_qty)
+                await self._trade_credit(conn, give_user_id, want_asset, want_qty)
+
+    async def _trade_deduct(self, conn, user_id: int, asset: str, quantity: int) -> None:
+        if asset == "money":
+            status = await conn.execute(
+                "UPDATE users SET balance = balance - $1 WHERE user_id = $2 AND balance >= $1",
+                quantity,
+                user_id,
+            )
+        else:
+            status = await conn.execute(
+                "UPDATE inventory SET quantity = quantity - $1 "
+                "WHERE user_id = $2 AND item_key = $3 AND quantity >= $1",
+                quantity,
+                user_id,
+                asset,
+            )
+        if _rowcount(status) == 0:
+            exc = InsufficientFunds(f"User {user_id} cannot afford {quantity}x {asset}")
+            exc.user_id = user_id
+            raise exc
+
+    async def _trade_credit(self, conn, user_id: int, asset: str, quantity: int) -> None:
+        if asset == "money":
+            await conn.execute("UPDATE users SET balance = balance + $1 WHERE user_id = $2", quantity, user_id)
+        else:
+            await conn.execute(
+                "INSERT INTO inventory (user_id, item_key, quantity) VALUES ($1, $2, $3) "
+                "ON CONFLICT (user_id, item_key) DO UPDATE SET "
+                "quantity = inventory.quantity + EXCLUDED.quantity",
+                user_id,
+                asset,
+                quantity,
+            )
 
     async def get_item_quantity(self, user_id: int, item_key: str) -> int:
         row = await self._fetchone(
@@ -697,15 +744,16 @@ class PostgresDatabase:
             "UPDATE crash_channels SET message_id = $1 WHERE guild_id = $2", message_id, guild_id
         )
 
-    async def get_idle_tracker_message(self) -> int | None:
-        row = await self._fetchone("SELECT message_id FROM idle_tracker_state WHERE id = 1")
-        return row[0] if row and row[0] else None
+    async def get_idle_tracker_message(self) -> tuple[int, datetime.datetime | None] | None:
+        row = await self._fetchone("SELECT message_id, posted_at FROM idle_tracker_state WHERE id = 1")
+        return (row[0], row[1]) if row and row[0] else None
 
-    async def set_idle_tracker_message(self, message_id: int) -> None:
+    async def set_idle_tracker_message(self, message_id: int, posted_at: datetime.datetime) -> None:
         await self._execute(
-            "INSERT INTO idle_tracker_state (id, message_id) VALUES (1, $1) "
-            "ON CONFLICT (id) DO UPDATE SET message_id = $1",
+            "INSERT INTO idle_tracker_state (id, message_id, posted_at) VALUES (1, $1, $2) "
+            "ON CONFLICT (id) DO UPDATE SET message_id = $1, posted_at = $2",
             message_id,
+            posted_at,
         )
 
     async def get_updates_channel(self, guild_id: int) -> int | None:
@@ -794,12 +842,16 @@ class PostgresDatabase:
         return row[0] if row else 0
 
     async def deposit_marriage_bank(self, user_id: int, amount: int) -> tuple[int, int]:
-        partner_id = await self.get_marriage(user_id)
-        if partner_id is None:
-            raise InsufficientFunds(f"User {user_id} is not married")
-        a, b = (user_id, partner_id) if user_id < partner_id else (partner_id, user_id)
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                row = await conn.fetchrow(
+                    "SELECT partner_id FROM marriages WHERE user_id = $1 FOR UPDATE", user_id
+                )
+                if row is None:
+                    raise InsufficientFunds(f"User {user_id} is not married")
+                partner_id = row[0]
+                a, b = (user_id, partner_id) if user_id < partner_id else (partner_id, user_id)
+
                 status = await conn.execute(
                     "UPDATE users SET balance = balance - $1 WHERE user_id = $2 AND balance >= $1",
                     amount,
@@ -1176,4 +1228,19 @@ class PostgresDatabase:
                 await conn.execute("DELETE FROM characters WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM rpg_equipment WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM boss_kills WHERE user_id = $1", user_id)
+                await conn.execute("DELETE FROM primordial_items WHERE user_id = $1", user_id)
+                await conn.execute("DELETE FROM item_use_limits WHERE user_id = $1", user_id)
         await self.divorce(user_id)
+
+    async def dump_all_tables(self) -> dict[str, list[dict]]:
+        async with self.pool.acquire() as conn:
+            table_rows = await conn.fetch(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+            )
+            tables = [row[0] for row in table_rows]
+
+            result: dict[str, list[dict]] = {}
+            for table in tables:
+                records = await conn.fetch(f'SELECT * FROM "{table}"')
+                result[table] = [dict(r) for r in records]
+            return result

@@ -64,6 +64,7 @@ class BlackjackView(ui.LayoutView):
         self.dealer = [self.deck.draw(), self.deck.draw()]
         self.active_hand = 0
         self.finished = False
+        self._busy = False
         self.message: discord.Message | None = None
 
         self.container, self.text = game_container("🃏 Blackjack", color=discord.Color.dark_green())
@@ -190,6 +191,8 @@ class BlackjackView(ui.LayoutView):
             await self._resolve_dealer_and_finish()
 
     async def _resolve_dealer_and_finish(self, *, extra_note: str | None = None):
+        if self.finished:
+            return
         self.finished = True
         self._set_action_buttons_disabled(True)
 
@@ -255,107 +258,124 @@ class BlackjackView(ui.LayoutView):
         self.stop()
 
     async def hit(self, interaction: discord.Interaction):
-        if self.finished:
+        if self.finished or self._busy:
             return
-        hand = self.current_hand
-        self._set_action_buttons_disabled(True)
-        self.render(footer="🎴 Drawing...", pending_hand=self.active_hand)
-        await interaction.response.edit_message(view=self)
-        await asyncio.sleep(DRAW_DELAY)
+        self._busy = True
+        try:
+            hand = self.current_hand
+            self._set_action_buttons_disabled(True)
+            self.render(footer="🎴 Drawing...", pending_hand=self.active_hand)
+            await interaction.response.edit_message(view=self)
+            await asyncio.sleep(DRAW_DELAY)
 
-        hand.cards.append(self.deck.draw())
-        if hand_value(hand.cards) > 21:
-            hand.finished = True
-            self.render(footer="💥 Bust!")
-            await limited_edit(self.message, view=self)
-            await asyncio.sleep(RESOLVE_PAUSE)
-            await self._advance_or_finish()
-        else:
-            self.hit_button.disabled = False
-            self.stand_button.disabled = False
-            self.render()
-            await limited_edit(self.message, view=self)
+            hand.cards.append(self.deck.draw())
+            if hand_value(hand.cards) > 21:
+                hand.finished = True
+                self.render(footer="💥 Bust!")
+                await limited_edit(self.message, view=self)
+                await asyncio.sleep(RESOLVE_PAUSE)
+                await self._advance_or_finish()
+            else:
+                self.hit_button.disabled = False
+                self.stand_button.disabled = False
+                self.render()
+                await limited_edit(self.message, view=self)
+        finally:
+            self._busy = False
 
     async def stand(self, interaction: discord.Interaction):
-        if self.finished:
+        if self.finished or self._busy:
             return
-        self.current_hand.finished = True
-        self._set_action_buttons_disabled(True)
-        self.render()
-        await interaction.response.edit_message(view=self)
-        await self._advance_or_finish()
+        self._busy = True
+        try:
+            self.current_hand.finished = True
+            self._set_action_buttons_disabled(True)
+            self.render()
+            await interaction.response.edit_message(view=self)
+            await self._advance_or_finish()
+        finally:
+            self._busy = False
 
     async def double(self, interaction: discord.Interaction):
-        if self.finished:
+        if self.finished or self._busy:
             return
-        hand = self.current_hand
+        self._busy = True
         try:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, -hand.bet)
-        except InsufficientFunds:
-            await interaction.response.send_message(
-                "⚠️ You don't have enough balance to double down.", ephemeral=True
-            )
-            return
+            hand = self.current_hand
+            try:
+                await self.cog.bot.db.update_balance(self.ctx.author.id, -hand.bet)
+            except InsufficientFunds:
+                await interaction.response.send_message(
+                    "⚠️ You don't have enough balance to double down.", ephemeral=True
+                )
+                return
 
-        hand.bet *= 2
-        self._set_action_buttons_disabled(True)
-        self.render(footer="🎴 Drawing...", pending_hand=self.active_hand)
-        await interaction.response.edit_message(view=self)
-        await asyncio.sleep(DRAW_DELAY)
+            hand.bet *= 2
+            self._set_action_buttons_disabled(True)
+            self.render(footer="🎴 Drawing...", pending_hand=self.active_hand)
+            await interaction.response.edit_message(view=self)
+            await asyncio.sleep(DRAW_DELAY)
 
-        hand.cards.append(self.deck.draw())
-        hand.finished = True
-        busted = hand_value(hand.cards) > 21
-        self.render(footer="💥 Bust!" if busted else None)
-        await limited_edit(self.message, view=self)
-        if busted:
-            await asyncio.sleep(RESOLVE_PAUSE)
-        await self._advance_or_finish()
+            hand.cards.append(self.deck.draw())
+            hand.finished = True
+            busted = hand_value(hand.cards) > 21
+            self.render(footer="💥 Bust!" if busted else None)
+            await limited_edit(self.message, view=self)
+            if busted:
+                await asyncio.sleep(RESOLVE_PAUSE)
+            await self._advance_or_finish()
+        finally:
+            self._busy = False
 
     async def split(self, interaction: discord.Interaction):
-        if self.finished or not self._can_split():
+        if self.finished or self._busy or not self._can_split():
             return
-        hand = self.hands[0]
+        self._busy = True
         try:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, -hand.bet)
-        except InsufficientFunds:
-            await interaction.response.send_message("⚠️ You don't have enough balance to split.", ephemeral=True)
-            return
+            hand = self.hands[0]
+            try:
+                await self.cog.bot.db.update_balance(self.ctx.author.id, -hand.bet)
+            except InsufficientFunds:
+                await interaction.response.send_message("⚠️ You don't have enough balance to split.", ephemeral=True)
+                return
 
-        card_a, card_b = hand.cards
-        is_aces = card_a.rank == "A"
-        hand_a = Hand([card_a], hand.bet)
-        hand_b = Hand([card_b], hand.bet)
-        self.hands = [hand_a, hand_b]
-        self.active_hand = 0
+            card_a, card_b = hand.cards
+            is_aces = card_a.rank == "A"
+            hand_a = Hand([card_a], hand.bet)
+            hand_b = Hand([card_b], hand.bet)
+            self.hands = [hand_a, hand_b]
+            self.active_hand = 0
 
-        self._set_action_buttons_disabled(True)
-        self.render(footer="🎴 Splitting...", pending_hand=0)
-        await interaction.response.edit_message(view=self)
-        await asyncio.sleep(DRAW_DELAY)
+            self._set_action_buttons_disabled(True)
+            self.render(footer="🎴 Splitting...", pending_hand=0)
+            await interaction.response.edit_message(view=self)
+            await asyncio.sleep(DRAW_DELAY)
 
-        hand_a.cards.append(self.deck.draw())
-        self.render(footer="🎴 Splitting...", pending_hand=1)
-        await limited_edit(self.message, view=self)
-        await asyncio.sleep(DRAW_DELAY)
-
-        hand_b.cards.append(self.deck.draw())
-
-        if is_aces:
-            hand_a.finished = True
-            hand_b.finished = True
-            self.render(footer="Split Aces draw one card each and auto-stand.")
+            hand_a.cards.append(self.deck.draw())
+            self.render(footer="🎴 Splitting...", pending_hand=1)
             await limited_edit(self.message, view=self)
-            await asyncio.sleep(RESOLVE_PAUSE)
-            await self._advance_or_finish()
-        else:
-            self._update_button_states()
-            self.render()
-            await limited_edit(self.message, view=self)
+            await asyncio.sleep(DRAW_DELAY)
+
+            hand_b.cards.append(self.deck.draw())
+
+            if is_aces:
+                hand_a.finished = True
+                hand_b.finished = True
+                self.render(footer="Split Aces draw one card each and auto-stand.")
+                await limited_edit(self.message, view=self)
+                await asyncio.sleep(RESOLVE_PAUSE)
+                await self._advance_or_finish()
+            else:
+                self._update_button_states()
+                self.render()
+                await limited_edit(self.message, view=self)
+        finally:
+            self._busy = False
 
     async def on_timeout(self):
-        if self.finished:
+        if self.finished or self._busy:
             return
+        self._busy = True
         for hand in self.hands:
             hand.finished = True
         if self.message:
