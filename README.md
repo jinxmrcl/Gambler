@@ -359,9 +359,13 @@ Requires the **Administrator** permission on the server.
 ### Games
 All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 
-- `blackjack <bet>` — classic Blackjack with Hit/Stand/Double/Split buttons; cards are
-  dealt, drawn, and the dealer's hand is revealed with an animated reveal instead of
-  appearing instantly
+- `blackjack <bet> [perfect_pairs] [twentyone_plus_three]` — classic Blackjack with
+  Hit/Stand/Double/Split buttons; cards are dealt, drawn, and the dealer's hand is
+  revealed with an animated reveal instead of appearing instantly. Two optional side
+  bets settle right after the deal, independent of how the main hand plays out:
+  **Perfect Pairs** (your first two cards match — Mixed 5:1, Colored 10:1, Perfect
+  30:1) and **21+3** (your two cards + the dealer's up-card make a poker hand — Flush
+  5:1, Straight 10:1, Three of a Kind 30:1, Straight Flush 40:1, Suited Trips 100:1)
 - `mines <bet> [mines=3] [cols=5] [rows=4]` — customizable grid (2-5 cols, 2-5 rows —
   the full 5x5 unlocks up to 23 mines), avoid mines, cash out anytime
 - `hilo <bet>` — guess higher/lower, multiplier grows with each correct card
