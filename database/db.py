@@ -210,10 +210,18 @@ class Database:
                     """
                     CREATE TABLE IF NOT EXISTS idle_tracker_state (
                         id TINYINT PRIMARY KEY,
-                        message_id BIGINT UNSIGNED NULL
+                        message_id BIGINT UNSIGNED NULL,
+                        posted_at DATETIME NULL
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
+                await cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_schema = DATABASE() AND table_name = 'idle_tracker_state' AND column_name = 'posted_at'"
+                )
+                (has_idle_posted_at,) = await cur.fetchone()
+                if not has_idle_posted_at:
+                    await cur.execute("ALTER TABLE idle_tracker_state ADD COLUMN posted_at DATETIME NULL")
                 await cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS cooldowns (
@@ -358,6 +366,25 @@ class Database:
             raise InsufficientFunds(f"User {user_id} cannot afford a change of {delta}")
         row = await self._fetchone("SELECT balance FROM users WHERE user_id = %s", (user_id,))
         return row[0]
+
+    async def debit_both(self, user_a_id: int, user_b_id: int, amount: int) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await conn.begin()
+                try:
+                    for user_id in (user_a_id, user_b_id):
+                        await cur.execute(
+                            "UPDATE users SET balance = balance - %s WHERE user_id = %s AND balance >= %s",
+                            (amount, user_id, amount),
+                        )
+                        if cur.rowcount == 0:
+                            exc = InsufficientFunds(f"User {user_id} cannot afford {amount}")
+                            exc.user_id = user_id
+                            raise exc
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
 
     async def transfer_balance(self, sender_id: int, recipient_id: int, amount: int) -> int:
         async with self.pool.acquire() as conn:
@@ -520,39 +547,26 @@ class Database:
             (user_id, *actions),
         )
 
-    async def get_item_use_count(
-        self, user_id: int, item_key: str, window: datetime.timedelta, now: datetime.datetime
-    ) -> int:
-        row = await self._fetchone(
-            "SELECT use_count, window_started_at FROM item_use_limits WHERE user_id = %s AND item_key = %s",
-            (user_id, item_key),
-        )
-        if not row:
-            return 0
-        use_count, window_started_at = row
-        if now - window_started_at >= window:
-            return 0
-        return use_count
-
-    async def record_item_use(
-        self, user_id: int, item_key: str, window: datetime.timedelta, now: datetime.datetime
-    ) -> None:
-        row = await self._fetchone(
-            "SELECT use_count, window_started_at FROM item_use_limits WHERE user_id = %s AND item_key = %s",
-            (user_id, item_key),
-        )
-        if row and (now - row[1]) < window:
-            new_count = row[0] + 1
-            window_start = row[1]
-        else:
-            new_count = 1
-            window_start = now
-        await self._execute(
+    async def try_record_item_use(
+        self, user_id: int, item_key: str, limit: int, window: datetime.timedelta, now: datetime.datetime
+    ) -> bool:
+        window_cutoff = now - window
+        rowcount = await self._execute(
             "INSERT INTO item_use_limits (user_id, item_key, use_count, window_started_at) "
-            "VALUES (%s, %s, %s, %s) "
-            "ON DUPLICATE KEY UPDATE use_count = %s, window_started_at = %s",
-            (user_id, item_key, new_count, window_start, new_count, window_start),
+            "VALUES (%s, %s, 1, %s) AS new "
+            "ON DUPLICATE KEY UPDATE "
+            "use_count = CASE "
+            "  WHEN item_use_limits.window_started_at <= %s THEN 1 "
+            "  WHEN item_use_limits.use_count < %s THEN item_use_limits.use_count + 1 "
+            "  ELSE item_use_limits.use_count "
+            "END, "
+            "window_started_at = CASE "
+            "  WHEN item_use_limits.window_started_at <= %s THEN new.window_started_at "
+            "  ELSE item_use_limits.window_started_at "
+            "END",
+            (user_id, item_key, now, window_cutoff, limit, window_cutoff),
         )
+        return rowcount > 0
 
     async def get_item_use_reset(
         self, user_id: int, item_key: str, window: datetime.timedelta
@@ -585,6 +599,51 @@ class Database:
             "SELECT item_key, quantity FROM inventory WHERE user_id = %s AND quantity > 0",
             (user_id,),
         )
+
+    async def execute_trade(
+        self,
+        give_user_id: int, give_asset: str, give_qty: int,
+        want_user_id: int, want_asset: str, want_qty: int,
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await conn.begin()
+                try:
+                    await self._trade_deduct(cur, give_user_id, give_asset, give_qty)
+                    await self._trade_deduct(cur, want_user_id, want_asset, want_qty)
+                    await self._trade_credit(cur, want_user_id, give_asset, give_qty)
+                    await self._trade_credit(cur, give_user_id, want_asset, want_qty)
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
+
+    async def _trade_deduct(self, cur, user_id: int, asset: str, quantity: int) -> None:
+        if asset == "money":
+            await cur.execute(
+                "UPDATE users SET balance = balance - %s WHERE user_id = %s AND balance >= %s",
+                (quantity, user_id, quantity),
+            )
+        else:
+            await cur.execute(
+                "UPDATE inventory SET quantity = quantity - %s "
+                "WHERE user_id = %s AND item_key = %s AND quantity >= %s",
+                (quantity, user_id, asset, quantity),
+            )
+        if cur.rowcount == 0:
+            exc = InsufficientFunds(f"User {user_id} cannot afford {quantity}x {asset}")
+            exc.user_id = user_id
+            raise exc
+
+    async def _trade_credit(self, cur, user_id: int, asset: str, quantity: int) -> None:
+        if asset == "money":
+            await cur.execute("UPDATE users SET balance = balance + %s WHERE user_id = %s", (quantity, user_id))
+        else:
+            await cur.execute(
+                "INSERT INTO inventory (user_id, item_key, quantity) VALUES (%s, %s, %s) AS new "
+                "ON DUPLICATE KEY UPDATE quantity = inventory.quantity + new.quantity",
+                (user_id, asset, quantity),
+            )
 
     async def get_item_quantity(self, user_id: int, item_key: str) -> int:
         row = await self._fetchone(
@@ -759,15 +818,15 @@ class Database:
             "UPDATE crash_channels SET message_id = %s WHERE guild_id = %s", (message_id, guild_id)
         )
 
-    async def get_idle_tracker_message(self) -> int | None:
-        row = await self._fetchone("SELECT message_id FROM idle_tracker_state WHERE id = 1")
-        return row[0] if row and row[0] else None
+    async def get_idle_tracker_message(self) -> tuple[int, datetime.datetime | None] | None:
+        row = await self._fetchone("SELECT message_id, posted_at FROM idle_tracker_state WHERE id = 1")
+        return (row[0], row[1]) if row and row[0] else None
 
-    async def set_idle_tracker_message(self, message_id: int) -> None:
+    async def set_idle_tracker_message(self, message_id: int, posted_at: datetime.datetime) -> None:
         await self._execute(
-            "INSERT INTO idle_tracker_state (id, message_id) VALUES (1, %s) "
-            "ON DUPLICATE KEY UPDATE message_id = VALUES(message_id)",
-            (message_id,),
+            "INSERT INTO idle_tracker_state (id, message_id, posted_at) VALUES (1, %s, %s) "
+            "ON DUPLICATE KEY UPDATE message_id = VALUES(message_id), posted_at = VALUES(posted_at)",
+            (message_id, posted_at),
         )
 
     async def get_updates_channel(self, guild_id: int) -> int | None:
@@ -801,14 +860,20 @@ class Database:
         now = datetime.datetime.utcnow()
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO marriages (user_id, partner_id, married_at) VALUES (%s, %s, %s)",
-                    (user_id, partner_id, now),
-                )
-                await cur.execute(
-                    "INSERT INTO marriages (user_id, partner_id, married_at) VALUES (%s, %s, %s)",
-                    (partner_id, user_id, now),
-                )
+                await conn.begin()
+                try:
+                    await cur.execute(
+                        "INSERT INTO marriages (user_id, partner_id, married_at) VALUES (%s, %s, %s)",
+                        (user_id, partner_id, now),
+                    )
+                    await cur.execute(
+                        "INSERT INTO marriages (user_id, partner_id, married_at) VALUES (%s, %s, %s)",
+                        (partner_id, user_id, now),
+                    )
+                    await conn.commit()
+                except Exception:
+                    await conn.rollback()
+                    raise
 
     async def divorce(self, user_id: int) -> int | None:
         partner_id = await self.get_marriage(user_id)
@@ -856,15 +921,20 @@ class Database:
         return row[0] if row else 0
 
     async def deposit_marriage_bank(self, user_id: int, amount: int) -> tuple[int, int]:
-        partner_id = await self.get_marriage(user_id)
-        if partner_id is None:
-            raise InsufficientFunds(f"User {user_id} is not married")
-        a, b = (user_id, partner_id) if user_id < partner_id else (partner_id, user_id)
-
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await conn.begin()
                 try:
+                    await cur.execute(
+                        "SELECT partner_id FROM marriages WHERE user_id = %s FOR UPDATE", (user_id,)
+                    )
+                    row = await cur.fetchone()
+                    if row is None:
+                        await conn.rollback()
+                        raise InsufficientFunds(f"User {user_id} is not married")
+                    partner_id = row[0]
+                    a, b = (user_id, partner_id) if user_id < partner_id else (partner_id, user_id)
+
                     await cur.execute(
                         "UPDATE users SET balance = balance - %s "
                         "WHERE user_id = %s AND balance >= %s",
@@ -1260,8 +1330,23 @@ class Database:
                     await cur.execute("DELETE FROM characters WHERE user_id = %s", (user_id,))
                     await cur.execute("DELETE FROM rpg_equipment WHERE user_id = %s", (user_id,))
                     await cur.execute("DELETE FROM boss_kills WHERE user_id = %s", (user_id,))
+                    await cur.execute("DELETE FROM primordial_items WHERE user_id = %s", (user_id,))
+                    await cur.execute("DELETE FROM item_use_limits WHERE user_id = %s", (user_id,))
                     await conn.commit()
                 except Exception:
                     await conn.rollback()
                     raise
         await self.divorce(user_id)
+
+    async def dump_all_tables(self) -> dict[str, list[dict]]:
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SHOW TABLES")
+                tables = [row[0] for row in await cur.fetchall()]
+
+            result: dict[str, list[dict]] = {}
+            async with conn.cursor(aiomysql.DictCursor) as dict_cur:
+                for table in tables:
+                    await dict_cur.execute(f"SELECT * FROM `{table}`")
+                    result[table] = list(await dict_cur.fetchall())
+            return result

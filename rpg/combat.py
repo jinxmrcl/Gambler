@@ -156,7 +156,10 @@ def simulate(fighter_a: Fighter, fighter_b: Fighter) -> dict:
     else:
         winner = None
 
-    return {"log": log, "winner": winner, "fighter_a": fighter_a, "fighter_b": fighter_b}
+    timed_out = winner is None and fighter_a.hp > 0 and fighter_b.hp > 0
+    return {
+        "log": log, "winner": winner, "fighter_a": fighter_a, "fighter_b": fighter_b, "timed_out": timed_out,
+    }
 
 
 def simulate_team(party: list[Fighter], monster: Fighter) -> dict:
@@ -196,4 +199,5 @@ def simulate_team(party: list[Fighter], monster: Fighter) -> dict:
         round_num += 1
 
     won = monster.hp <= 0
-    return {"log": log, "won": won, "party": party, "monster": monster}
+    timed_out = not won and bool(alive(party))
+    return {"log": log, "won": won, "party": party, "monster": monster, "timed_out": timed_out}

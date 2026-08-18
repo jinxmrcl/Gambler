@@ -84,6 +84,7 @@ def _shop_text() -> str:
 class RPGShop(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._autoupgrading: set[int] = set()
 
     @app_commands.command(name="rpgshop", description="Shows the RPG equipment and potion shop.")
     async def rpgshop(self, interaction: discord.Interaction):
@@ -135,8 +136,10 @@ class RPGShop(commands.Cog):
             return
 
         info = EQUIPMENT[item]
+        already_equipped = character.get(f"equipped_{info.slot}") == item
         await self.bot.db.set_equipped(interaction.user.id, info.slot, item)
-        await self.bot.db.set_enchant_level(interaction.user.id, info.slot, 0)
+        if not already_equipped:
+            await self.bot.db.set_enchant_level(interaction.user.id, info.slot, 0)
 
         note = ""
         if character.get(f"primordial_{info.slot}"):
@@ -183,7 +186,11 @@ class RPGShop(commands.Cog):
             return
 
         proceeds = int(_item_price(item) * SELL_FRACTION) * quantity
-        await self.bot.db.remove_rpg_item(interaction.user.id, item, quantity)
+        try:
+            await self.bot.db.remove_rpg_item(interaction.user.id, item, quantity)
+        except InsufficientFunds:
+            await interaction.response.send_message(f"⚠️ You don't own {quantity}x {_item_name(item)}.")
+            return
         await self.bot.db.update_balance(interaction.user.id, proceeds)
 
         view = StaticView(
@@ -236,6 +243,16 @@ class RPGShop(commands.Cog):
 
     @app_commands.command(name="rpgautoupgrade", description="Repeatedly upgrade your equipped gear until you're out of gold.")
     async def rpgautoupgrade(self, interaction: discord.Interaction):
+        if interaction.user.id in self._autoupgrading:
+            await interaction.response.send_message("⚠️ You already have an auto-upgrade running.")
+            return
+        self._autoupgrading.add(interaction.user.id)
+        try:
+            await self._run_autoupgrade(interaction)
+        finally:
+            self._autoupgrading.discard(interaction.user.id)
+
+    async def _run_autoupgrade(self, interaction: discord.Interaction):
         character = await self.bot.db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")

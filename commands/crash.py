@@ -222,6 +222,7 @@ class Crash(commands.Cog):
         self._auto_tasks: dict[int, asyncio.Task] = {}
         self._rounds: dict[int, AutoRound] = {}
         self._messages: dict[int, discord.Message] = {}
+        self._pending_bets: dict[int, set[int]] = {}
 
     async def cog_load(self):
         try:
@@ -326,26 +327,35 @@ class Crash(commands.Cog):
                 "⚠️ Betting is closed for this round — wait for the next one!", ephemeral=True
             )
             return
-        if interaction.user.id in round_.participants:
+        pending = self._pending_bets.setdefault(guild_id, set())
+        if interaction.user.id in round_.participants or interaction.user.id in pending:
             await interaction.response.send_message("⚠️ You already placed a bet this round!", ephemeral=True)
             return
+        pending.add(interaction.user.id)
 
-        await self.bot.db.ensure_user(interaction.user.id, self.bot.starting_balance)
         try:
-            amount = await resolve_bet(self.bot, interaction.user.id, raw_amount)
-        except BetError as e:
-            await interaction.response.send_message(f"⚠️ {e.message}", ephemeral=True)
-            return
+            await self.bot.db.ensure_user(interaction.user.id, self.bot.starting_balance)
+            try:
+                amount = await resolve_bet(self.bot, interaction.user.id, raw_amount)
+            except BetError as e:
+                await interaction.response.send_message(f"⚠️ {e.message}", ephemeral=True)
+                return
 
-        if not round_ or round_.phase != "betting" or interaction.user.id in round_.participants:
-            await interaction.response.send_message("⚠️ Betting closed just before your bet went through!", ephemeral=True)
-            return
+            if not round_ or round_.phase != "betting" or interaction.user.id in round_.participants:
+                await interaction.response.send_message(
+                    "⚠️ Betting closed just before your bet went through!", ephemeral=True
+                )
+                return
 
-        await self.bot.db.update_balance(interaction.user.id, -amount)
-        round_.participants[interaction.user.id] = Participant(interaction.user.id, interaction.user.display_name, amount)
+            await self.bot.db.update_balance(interaction.user.id, -amount)
+            round_.participants[interaction.user.id] = Participant(
+                interaction.user.id, interaction.user.display_name, amount
+            )
 
-        await interaction.response.send_message(f"✅ Bet placed: {fmt(amount)}. Good luck! 🚀", ephemeral=True)
-        await self._refresh_message(guild_id)
+            await interaction.response.send_message(f"✅ Bet placed: {fmt(amount)}. Good luck! 🚀", ephemeral=True)
+            await self._refresh_message(guild_id)
+        finally:
+            pending.discard(interaction.user.id)
 
     async def auto_cash_out(self, interaction: discord.Interaction, guild_id: int):
         round_ = self._rounds.get(guild_id)

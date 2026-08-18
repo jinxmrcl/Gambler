@@ -66,9 +66,18 @@ class Shop(commands.Cog):
     async def use(self, ctx: commands.Context, item: ItemKey):
         now = datetime.datetime.utcnow()
 
+        try:
+            await self.bot.db.remove_item(ctx.author.id, item, 1)
+        except InsufficientFunds:
+            await ctx.send(f"⚠️ You don't own a {ITEMS[item]['name']}.")
+            return
+
         if item in LIMITED_ITEMS:
-            count = await self.bot.db.get_item_use_count(ctx.author.id, item, ITEM_USE_WINDOW, now)
-            if count >= ITEM_DAILY_USE_LIMIT:
+            claimed = await self.bot.db.try_record_item_use(
+                ctx.author.id, item, ITEM_DAILY_USE_LIMIT, ITEM_USE_WINDOW, now
+            )
+            if not claimed:
+                await self.bot.db.add_item(ctx.author.id, item, 1)
                 reset_at = await self.bot.db.get_item_use_reset(ctx.author.id, item, ITEM_USE_WINDOW)
                 remaining = reset_at - now
                 hours, rem = divmod(max(int(remaining.total_seconds()), 0), 3600)
@@ -78,15 +87,6 @@ class Shop(commands.Cog):
                     f"24h. Try again in {hours}h {minutes}m."
                 )
                 return
-
-        try:
-            await self.bot.db.remove_item(ctx.author.id, item, 1)
-        except InsufficientFunds:
-            await ctx.send(f"⚠️ You don't own a {ITEMS[item]['name']}.")
-            return
-
-        if item in LIMITED_ITEMS:
-            await self.bot.db.record_item_use(ctx.author.id, item, ITEM_USE_WINDOW, now)
 
         if item == "shield":
             until = datetime.datetime.utcnow() + SHIELD_DURATION

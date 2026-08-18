@@ -74,7 +74,18 @@ class ProposalView(ui.LayoutView):
             self.stop()
             return
 
-        await self.cog.bot.db.marry(self.proposer.id, self.target.id)
+        try:
+            await self.cog.bot.db.marry(self.proposer.id, self.target.id)
+        except Exception:
+            self.text.content = (
+                "## 💍 Marriage Proposal\n⚠️ One of you got married to someone else just now — "
+                "this proposal can no longer go through."
+            )
+            self.container.accent_colour = discord.Color.red()
+            await interaction.response.edit_message(view=self)
+            self.stop()
+            return
+
         self.text.content = f"## 💍 Marriage Proposal\n🎉 {self.proposer.mention} and {self.target.mention} are now married!"
         self.container.accent_colour = discord.Color.green()
         await interaction.response.edit_message(view=self)

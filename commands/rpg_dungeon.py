@@ -39,6 +39,7 @@ IDLE_DEFAULT_MINUTES = 30
 
 _raw_idle_announce_channel = os.getenv("IDLE_ANNOUNCE_CHANNEL_ID", "1538948163510083605")
 IDLE_ANNOUNCE_CHANNEL_ID = int(_raw_idle_announce_channel) if _raw_idle_announce_channel.isdigit() else None
+IDLE_TRACKER_REPOST_AFTER = datetime.timedelta(hours=12)
 
 
 def _dungeon_list_text() -> str:
@@ -95,7 +96,7 @@ async def _resolve_dungeon_fight(
 
     outcome.update(
         won=won, elite=elite, monster_name=monster_name, log=result["log"],
-        hp=player_fighter.hp, max_hp=player_fighter.max_hp,
+        hp=player_fighter.hp, max_hp=player_fighter.max_hp, timed_out=result["timed_out"],
     )
 
     if won:
@@ -131,7 +132,7 @@ async def _resolve_boss_fight(
 
     outcome = {
         "won": won, "boss_name": boss_name, "log": result["log"],
-        "hp": player_fighter.hp, "max_hp": player_fighter.max_hp,
+        "hp": player_fighter.hp, "max_hp": player_fighter.max_hp, "timed_out": result["timed_out"],
         "gold": 0, "xp": 0, "levels_gained": 0, "new_level": character["level"],
         "loot_item": None, "bonus_loot_item": None, "kills": None, "primordial_drop": None,
     }
@@ -201,6 +202,7 @@ class TeamLobbyView(ui.LayoutView):
         self.finished = False
         self.message: discord.Message | None = None
         self.potion_log: list[str] = []
+        self._join_lock = asyncio.Lock()
 
         self.heading = f"{'👑 ' if is_boss else ''}{dungeon.emoji} {dungeon.name}{' — Boss' if is_boss else ''}"
         self.container, self.text = game_container(self.heading, self._lobby_body())
@@ -242,81 +244,85 @@ class TeamLobbyView(ui.LayoutView):
             await limited_edit(self.message, view=self)
 
     async def join(self, interaction: discord.Interaction):
-        if self.finished:
-            await interaction.response.send_message("This lobby has already started.", ephemeral=True)
-            return
-        if any(m.id == interaction.user.id for m in self.members):
-            await interaction.response.send_message("You're already in this party.", ephemeral=True)
-            return
-        if len(self.members) >= TEAM_MAX_SIZE:
-            await interaction.response.send_message("This party is full.", ephemeral=True)
-            return
+        async with self._join_lock:
+            if self.finished:
+                await interaction.response.send_message("This lobby has already started.", ephemeral=True)
+                return
+            if any(m.id == interaction.user.id for m in self.members):
+                await interaction.response.send_message("You're already in this party.", ephemeral=True)
+                return
+            if len(self.members) >= TEAM_MAX_SIZE:
+                await interaction.response.send_message("This party is full.", ephemeral=True)
+                return
 
-        character = await self.cog.bot.db.get_character(interaction.user.id)
-        if not character:
-            await interaction.response.send_message(
-                "⚠️ You don't have a character yet. Use `/rpgstart` to create one.", ephemeral=True
-            )
-            return
-        if character["level"] < self.dungeon.min_level:
-            await interaction.response.send_message(
-                f"⚠️ {self.dungeon.name} recommends level {self.dungeon.min_level}+. "
-                f"You're level {character['level']}.",
-                ephemeral=True,
-            )
-            return
+            character = await self.cog.bot.db.get_character(interaction.user.id)
+            if not character:
+                await interaction.response.send_message(
+                    "⚠️ You don't have a character yet. Use `/rpgstart` to create one.", ephemeral=True
+                )
+                return
+            if character["level"] < self.dungeon.min_level:
+                await interaction.response.send_message(
+                    f"⚠️ {self.dungeon.name} recommends level {self.dungeon.min_level}+. "
+                    f"You're level {character['level']}.",
+                    ephemeral=True,
+                )
+                return
 
-        self.members.append(interaction.user)
-        self._set_body(self._lobby_body())
-        await interaction.response.edit_message(view=self)
+            self.members.append(interaction.user)
+            self._set_body(self._lobby_body())
+            await interaction.response.edit_message(view=self)
 
     async def use_potion(self, interaction: discord.Interaction):
-        if self.finished:
-            await interaction.response.send_message("This lobby has already started.", ephemeral=True)
-            return
-        if not any(m.id == interaction.user.id for m in self.members):
-            await interaction.response.send_message("Join the party first before using a potion.", ephemeral=True)
-            return
+        async with self._join_lock:
+            if self.finished:
+                await interaction.response.send_message("This lobby has already started.", ephemeral=True)
+                return
+            if not any(m.id == interaction.user.id for m in self.members):
+                await interaction.response.send_message(
+                    "Join the party first before using a potion.", ephemeral=True
+                )
+                return
 
-        db = self.cog.bot.db
-        potion_key = None
-        for key in ("minor_potion", "greater_potion", "superior_potion"):
-            if await db.get_rpg_item_quantity(interaction.user.id, key) > 0:
-                potion_key = key
-                break
+            db = self.cog.bot.db
+            potion_key = None
+            for key in ("minor_potion", "greater_potion", "superior_potion"):
+                if await db.get_rpg_item_quantity(interaction.user.id, key) > 0:
+                    potion_key = key
+                    break
 
-        if not potion_key:
-            await interaction.response.send_message("⚠️ You don't own any potions.", ephemeral=True)
-            return
+            if not potion_key:
+                await interaction.response.send_message("⚠️ You don't own any potions.", ephemeral=True)
+                return
 
-        try:
-            await db.remove_rpg_item(interaction.user.id, potion_key, 1)
-        except InsufficientFunds:
-            await interaction.response.send_message("⚠️ You don't own any potions.", ephemeral=True)
-            return
+            try:
+                await db.remove_rpg_item(interaction.user.id, potion_key, 1)
+            except InsufficientFunds:
+                await interaction.response.send_message("⚠️ You don't own any potions.", ephemeral=True)
+                return
 
-        potion = CONSUMABLES[potion_key]
-        now = datetime.datetime.utcnow()
-        healed_lines = []
-        for member in self.members:
-            character = await db.get_character(member.id)
-            if not character:
-                continue
-            stats = full_stats(character)
-            hp_now = current_hp(character, stats["hp"], now)
-            healed = min(stats["hp"] - hp_now, int(stats["hp"] * potion.heal_pct))
-            if healed <= 0:
-                continue
-            new_hp = hp_now + healed
-            await db.set_character_hp(member.id, new_hp, now)
-            healed_lines.append(f"{member.mention} +{healed} HP")
+            potion = CONSUMABLES[potion_key]
+            now = datetime.datetime.utcnow()
+            healed_lines = []
+            for member in self.members:
+                character = await db.get_character(member.id)
+                if not character:
+                    continue
+                stats = full_stats(character)
+                hp_now = current_hp(character, stats["hp"], now)
+                healed = min(stats["hp"] - hp_now, int(stats["hp"] * potion.heal_pct))
+                if healed <= 0:
+                    continue
+                new_hp = hp_now + healed
+                await db.set_character_hp(member.id, new_hp, now)
+                healed_lines.append(f"{member.mention} +{healed} HP")
 
-        summary = f"🧪 {interaction.user.mention} used a {potion.name} — " + (
-            ", ".join(healed_lines) if healed_lines else "the party was already at full HP."
-        )
-        self.potion_log.append(summary)
-        self._set_body(self._lobby_body())
-        await interaction.response.edit_message(view=self)
+            summary = f"🧪 {interaction.user.mention} used a {potion.name} — " + (
+                ", ".join(healed_lines) if healed_lines else "the party was already at full HP."
+            )
+            self.potion_log.append(summary)
+            self._set_body(self._lobby_body())
+            await interaction.response.edit_message(view=self)
 
     async def start_now(self, interaction: discord.Interaction):
         if self.finished:
@@ -333,25 +339,30 @@ class TeamLobbyView(ui.LayoutView):
         await self._run_fight(None)
 
     async def _run_fight(self, interaction: discord.Interaction | None):
-        if self.finished:
-            return
-        self.finished = True
-        self._disable_buttons()
+        async with self._join_lock:
+            if self.finished:
+                return
+            self.finished = True
+            self._disable_buttons()
 
         now = datetime.datetime.utcnow()
         db = self.cog.bot.db
         d = self.dungeon
 
         roster: list[tuple[discord.abc.User, dict]] = []
+        dropped: list[str] = []
         for member in self.members:
             character = await db.get_character(member.id)
             if character and character["level"] >= d.min_level:
                 roster.append((member, character))
+            elif character:
+                dropped.append(f"{member.mention} (below level {d.min_level})")
+            else:
+                dropped.append(f"{member.mention} (no character)")
 
         fighters: list[Fighter] = []
         fighter_members: list[discord.abc.User] = []
         fighter_characters: list[dict] = []
-        dropped: list[str] = []
 
         for member, character in roster:
             player_stats = full_stats(character)
@@ -407,6 +418,9 @@ class TeamLobbyView(ui.LayoutView):
             header += "\n⚠️ Couldn't join the fight: " + ", ".join(dropped)
 
         if not won:
+            if result["timed_out"]:
+                body = f"{header}\n\n{log_tail}\n\n😐 The fight dragged on too long and ended in a standstill. No rewards this time."
+                return body, discord.Color.greyple()
             body = f"{header}\n\n{log_tail}\n\n😢 The party was defeated. No rewards this time."
             return body, discord.Color.red()
 
@@ -509,6 +523,9 @@ class TeamLobbyView(ui.LayoutView):
             header += "\n⚠️ Couldn't join the fight: " + ", ".join(dropped)
 
         if not won:
+            if result["timed_out"]:
+                body = f"{header}\n\n{log_tail}\n\n😐 The fight dragged on too long and ended in a standstill. No rewards this time."
+                return body, discord.Color.greyple()
             body = f"{header}\n\n{log_tail}\n\n😢 The party was defeated. No rewards this time."
             return body, discord.Color.red()
 
@@ -541,6 +558,7 @@ class RPGDungeon(commands.Cog):
         self._idle_tasks: dict[int, asyncio.Task] = {}
         self._idle_sessions: dict[int, dict] = {}
         self._idle_tracker_message: discord.Message | None = None
+        self._idle_tracker_posted_at: datetime.datetime | None = None
 
     def cog_unload(self):
         for task in self._idle_tasks.values():
@@ -555,7 +573,8 @@ class RPGDungeon(commands.Cog):
     async def _post_new_idle_tracker(self, view: StaticView) -> None:
         channel = await self._get_idle_tracker_channel()
         self._idle_tracker_message = await limited_send(channel, view=view)
-        await self.bot.db.set_idle_tracker_message(self._idle_tracker_message.id)
+        self._idle_tracker_posted_at = datetime.datetime.utcnow()
+        await self.bot.db.set_idle_tracker_message(self._idle_tracker_message.id, self._idle_tracker_posted_at)
 
     async def _update_idle_tracker(self):
         if not IDLE_ANNOUNCE_CHANNEL_ID:
@@ -573,19 +592,27 @@ class RPGDungeon(commands.Cog):
             body = "\n".join(lines)
 
         view = StaticView("🏕️ Active Idle Farmers", body)
+        now = datetime.datetime.utcnow()
 
         try:
             if self._idle_tracker_message is None:
-                saved_id = await self.bot.db.get_idle_tracker_message()
-                if saved_id:
-                    try:
-                        channel = await self._get_idle_tracker_channel()
-                        self._idle_tracker_message = await channel.fetch_message(saved_id)
-                        await limited_edit(self._idle_tracker_message, view=view)
-                    except discord.NotFound:
+                saved = await self.bot.db.get_idle_tracker_message()
+                if saved:
+                    saved_id, saved_posted_at = saved
+                    if saved_posted_at and now - saved_posted_at >= IDLE_TRACKER_REPOST_AFTER:
                         await self._post_new_idle_tracker(view)
+                    else:
+                        try:
+                            channel = await self._get_idle_tracker_channel()
+                            self._idle_tracker_message = await channel.fetch_message(saved_id)
+                            self._idle_tracker_posted_at = saved_posted_at
+                            await limited_edit(self._idle_tracker_message, view=view)
+                        except discord.NotFound:
+                            await self._post_new_idle_tracker(view)
                 else:
                     await self._post_new_idle_tracker(view)
+            elif self._idle_tracker_posted_at and now - self._idle_tracker_posted_at >= IDLE_TRACKER_REPOST_AFTER:
+                await self._post_new_idle_tracker(view)
             else:
                 await limited_edit(self._idle_tracker_message, view=view)
         except discord.NotFound:
@@ -673,6 +700,9 @@ class RPGDungeon(commands.Cog):
 
             body = f"{header}You defeated the {monster_name}!\n\n{log_tail}{footer}{loot_text}{hp_line}"
             color = discord.Color.green()
+        elif outcome["timed_out"]:
+            body = f"{header}You and the {monster_name} fought to a standstill...\n\n{log_tail}\n\n😐 No rewards this time.{hp_line}"
+            color = discord.Color.greyple()
         else:
             downed_text = "\n💀 You've been knocked out! Use `/heal` or wait to recover." if outcome["hp"] <= 0 else ""
             body = f"{header}The {monster_name} defeated you...\n\n{log_tail}\n\n😢 No rewards this time.{hp_line}{downed_text}"
@@ -736,6 +766,9 @@ class RPGDungeon(commands.Cog):
 
             body = f"You defeated **{boss_name}**!\n\n{log_tail}{footer}{loot_text}{hp_line}"
             color = discord.Color.gold()
+        elif outcome["timed_out"]:
+            body = f"You and **{boss_name}** fought to a standstill...\n\n{log_tail}\n\n😐 No rewards this time.{hp_line}"
+            color = discord.Color.greyple()
         else:
             downed_text = "\n💀 You've been knocked out! Use `/heal` or wait to recover." if outcome["hp"] <= 0 else ""
             body = f"**{boss_name}** was too strong...\n\n{log_tail}\n\n😢 No rewards this time.{hp_line}{downed_text}"
@@ -752,41 +785,47 @@ class RPGDungeon(commands.Cog):
         dungeon: DungeonKey,
         minutes: app_commands.Range[int, 1, IDLE_MAX_MINUTES] = IDLE_DEFAULT_MINUTES,
     ):
-        character = await self.bot.db.get_character(interaction.user.id)
-        if not character:
-            await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
-            return
-
-        d = DUNGEONS[dungeon]
-        if character["level"] < d.min_level:
-            await interaction.response.send_message(
-                f"⚠️ {d.name} recommends level {d.min_level}+. You're level {character['level']}."
-            )
-            return
-
         if interaction.user.id in self._idle_tasks:
             await interaction.response.send_message("⚠️ You're already idle farming. Wait for it to finish.")
             return
+        self._idle_tasks[interaction.user.id] = None
+        started = False
+        try:
+            character = await self.bot.db.get_character(interaction.user.id)
+            if not character:
+                await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+                return
 
-        await interaction.response.send_message(
-            view=StaticView(
-                f"🏕️ Idle Farming — {d.name}",
-                f"Farming quietly for {minutes} minute(s). You'll get a summary when it's done.",
+            d = DUNGEONS[dungeon]
+            if character["level"] < d.min_level:
+                await interaction.response.send_message(
+                    f"⚠️ {d.name} recommends level {d.min_level}+. You're level {character['level']}."
+                )
+                return
+
+            await interaction.response.send_message(
+                view=StaticView(
+                    f"🏕️ Idle Farming — {d.name}",
+                    f"Farming quietly for {minutes} minute(s). You'll get a summary when it's done.",
+                )
             )
-        )
-        message = await interaction.original_response()
+            message = await interaction.original_response()
 
-        task = asyncio.create_task(
-            self._run_idle(interaction.user.id, interaction.user.display_name, d, minutes, message)
-        )
-        self._idle_tasks[interaction.user.id] = task
-        task.add_done_callback(lambda _t: self._idle_tasks.pop(interaction.user.id, None))
+            task = asyncio.create_task(
+                self._run_idle(interaction.user.id, interaction.user.display_name, d, minutes, message)
+            )
+            self._idle_tasks[interaction.user.id] = task
+            task.add_done_callback(lambda _t: self._idle_tasks.pop(interaction.user.id, None))
+            started = True
 
-        self._idle_sessions[interaction.user.id] = {
-            "dungeon_name": d.name,
-            "deadline": datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes),
-        }
-        await self._update_idle_tracker()
+            self._idle_sessions[interaction.user.id] = {
+                "dungeon_name": d.name,
+                "deadline": datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes),
+            }
+            await self._update_idle_tracker()
+        finally:
+            if not started:
+                self._idle_tasks.pop(interaction.user.id, None)
 
     async def _run_idle(
         self, user_id: int, display_name: str, d: Dungeon, minutes: int, message: discord.Message
@@ -853,7 +892,11 @@ class RPGDungeon(commands.Cog):
             interrupted = True
             log.exception("[idle] unexpected error during idle farming for user %s", user_id)
 
-        character = await self.bot.db.get_character(user_id)
+        try:
+            character = await self.bot.db.get_character(user_id)
+        except Exception:
+            character = None
+            log.exception("[idle] failed to fetch final character state for user %s", user_id)
         final_level = character["level"] if character else None
 
         loot_text = ""
@@ -884,7 +927,10 @@ class RPGDungeon(commands.Cog):
         try:
             await limited_edit(message, view=StaticView(title, body, color=color))
         except Exception:
-            log.exception("[idle] failed to send final summary for user %s", user_id)
+            try:
+                await limited_send(message.channel, content=f"<@{user_id}>", view=StaticView(title, body, color=color))
+            except Exception:
+                log.exception("[idle] failed to send final summary for user %s", user_id)
 
         if IDLE_ANNOUNCE_CHANNEL_ID:
             try:

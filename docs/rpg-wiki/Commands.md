@@ -11,7 +11,7 @@
 - `/dungeons` — list all [dungeons](RPG%20Overview.md#dungeons-in-level-order)
 - `/dungeon` — fight a regular monster, no cooldown (add `team: True` to open a [team-fight](Combat%20System.md#team-fights) lobby)
 - `/dungeonboss` — challenge a dungeon's [boss](RPG%20Overview.md#bosses), no cooldown (add `team: True` for a team fight)
-- `/idle <dungeon> [minutes=30]` — auto-farms that dungeon's regular monsters and its boss in the background for up to 120 minutes, then edits its message once with a final summary — no per-fight spam. A separate tracker message in a configured channel (`IDLE_ANNOUNCE_CHANNEL_ID`) lists everyone currently idle farming and updates as sessions start/finish
+- `/idle <dungeon> [minutes=30]` — auto-farms that dungeon's regular monsters and its boss in the background for up to 120 minutes, then delivers one final summary — no per-fight spam. Discord invalidates the command's reply token after 15 minutes, so for runs longer than that the summary can't edit the original message and is posted as a fresh, pinging message in the same channel instead; either way you get pinged with the results in the tracker channel too (`IDLE_ANNOUNCE_CHANNEL_ID`). A separate tracker message in that channel lists everyone currently idle farming, updates as sessions start/finish, and reposts itself (rather than editing forever) once it's over 12 hours old
 
 ## Shop
 - `/rpgshop` — browse [gear](Equipment%20%26%20Upgrades.md) and [potions](Consumables.md)
