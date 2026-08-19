@@ -6,9 +6,10 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
+from database.db import InsufficientFunds
 from utils.cards import BACK_EMOJI, RANKS, SUITS, Deck
 from utils.checks import game_enabled
-from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
+from utils.economy import BetError, HOUSE_EDGE, fmt, game_container, resolve_bet
 from utils.ratelimit import limited_edit
 
 RTP = 1 - HOUSE_EDGE
@@ -67,6 +68,12 @@ def _deal(draw_fn):
     return player, banker
 
 
+def _is_pair(cards) -> bool:
+    rank_a = cards[0][0] if isinstance(cards[0], tuple) else cards[0].rank
+    rank_b = cards[1][0] if isinstance(cards[1], tuple) else cards[1].rank
+    return rank_a == rank_b
+
+
 def _resolve(player_total: int, banker_total: int) -> str:
     if player_total == banker_total:
         return "tie"
@@ -99,13 +106,16 @@ PAYOUTS = _calibrate_odds()
 
 
 class BaccaratView(ui.LayoutView):
-    def __init__(self, bet: int, choice: str):
+    def __init__(self, bet: int, choice: str, side_lines: list[str] | None = None):
         super().__init__(timeout=None)
         self.bet = bet
         self.choice = choice
-        self.container, self.text = game_container(
-            "🎴 Baccarat", f"**Bet:** {fmt(bet)} on **{choice.capitalize()}** ({PAYOUTS[choice]:g}x)\n🎴 Dealing..."
-        )
+        self.side_lines = side_lines or []
+        body = f"**Bet:** {fmt(bet)} on **{choice.capitalize()}** ({PAYOUTS[choice]:g}x)"
+        if self.side_lines:
+            body += "\n" + "\n".join(self.side_lines)
+        body += "\n🎴 Dealing..."
+        self.container, self.text = game_container("🎴 Baccarat", body)
         self.add_item(self.container)
 
     def update(self, player, banker, *, player_shown, banker_shown, footer=None, color=None):
@@ -119,6 +129,7 @@ class BaccaratView(ui.LayoutView):
             f"**Banker:** {' '.join(banker_tokens)}  (**{banker_total}**)",
             f"**Bet:** {fmt(self.bet)} on **{self.choice.capitalize()}** ({PAYOUTS[self.choice]:g}x)",
         ]
+        lines.extend(self.side_lines)
         if footer:
             lines.append(f"-# {footer}")
         self.text.content = "## 🎴 Baccarat\n" + "\n".join(lines)
@@ -131,17 +142,64 @@ class Baccarat(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name="baccarat", description="Bet on Player, Banker, or Tie in a game of Baccarat.")
-    @app_commands.describe(bet="Bet (a number, 'half', 'all', or e.g. '50%')", choice="Who you think wins")
+    @app_commands.describe(
+        bet="Bet (a number, 'half', 'all', or e.g. '50%')",
+        choice="Who you think wins",
+        player_pair="Optional side bet: wins 11:1 if Player's first two cards are a pair",
+        banker_pair="Optional side bet: wins 11:1 if Banker's first two cards are a pair",
+    )
     @game_enabled("baccarat")
-    async def baccarat(self, ctx: commands.Context, bet: str, choice: BetChoice):
+    async def baccarat(
+        self,
+        ctx: commands.Context,
+        bet: str,
+        choice: BetChoice,
+        player_pair: str | None = None,
+        banker_pair: str | None = None,
+    ):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         amount = await resolve_bet(self.bot, ctx.author.id, bet)
         await self.bot.db.update_balance(ctx.author.id, -amount)
 
+        pp_amount = 0
+        bp_amount = 0
+        try:
+            if player_pair is not None:
+                pp_amount = await resolve_bet(self.bot, ctx.author.id, player_pair)
+                await self.bot.db.update_balance(ctx.author.id, -pp_amount)
+            if banker_pair is not None:
+                bp_amount = await resolve_bet(self.bot, ctx.author.id, banker_pair)
+                await self.bot.db.update_balance(ctx.author.id, -bp_amount)
+        except (BetError, InsufficientFunds):
+            await self.bot.db.update_balance(ctx.author.id, amount + pp_amount)
+            raise
+
         deck = Deck()
         player, banker = _deal(deck.draw)
 
-        view = BaccaratView(amount, choice)
+        side_wagered = 0
+        side_payout = 0
+        side_lines = []
+        if pp_amount:
+            side_wagered += pp_amount
+            if _is_pair(player):
+                win = pp_amount * 12
+                side_payout += win
+                side_lines.append(f"👥 Player Pair: 🎉 (11:1) — {fmt(win)}")
+            else:
+                side_lines.append(f"👥 Player Pair: 😢 lost {fmt(pp_amount)}")
+        if bp_amount:
+            side_wagered += bp_amount
+            if _is_pair(banker):
+                win = bp_amount * 12
+                side_payout += win
+                side_lines.append(f"🏦 Banker Pair: 🎉 (11:1) — {fmt(win)}")
+            else:
+                side_lines.append(f"🏦 Banker Pair: 😢 lost {fmt(bp_amount)}")
+        if side_payout:
+            await self.bot.db.update_balance(ctx.author.id, side_payout)
+
+        view = BaccaratView(amount, choice, side_lines)
         message = await ctx.send(view=view)
 
         steps = [(1, 0, None), (1, 1, None), (2, 1, None), (2, 2, None)]
@@ -168,7 +226,9 @@ class Baccarat(commands.Cog):
 
         if payout:
             await self.bot.db.update_balance(ctx.author.id, payout)
-        await self.bot.db.record_game_result(ctx.author.id, amount, payout)
+        await self.bot.db.record_game_result(
+            ctx.author.id, amount + side_wagered, payout + side_payout
+        )
 
         if result == choice:
             footer = f"🎉 **{result.capitalize()} wins ({player_total} vs {banker_total})!** {PAYOUTS[choice]:g}x → Payout {fmt(payout)}"

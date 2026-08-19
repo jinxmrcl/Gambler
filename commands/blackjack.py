@@ -97,6 +97,14 @@ class SplitButton(ui.Button):
         await self.view.split(interaction)
 
 
+class SurrenderButton(ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.danger, label="Surrender", emoji="🏳️")
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.surrender(interaction)
+
+
 class BlackjackView(ui.LayoutView):
     def __init__(self, cog: "Blackjack", ctx: commands.Context, bet: int):
         super().__init__(timeout=60)
@@ -118,11 +126,13 @@ class BlackjackView(ui.LayoutView):
         self.stand_button = StandButton()
         self.double_button = DoubleButton()
         self.split_button = SplitButton()
+        self.surrender_button = SurrenderButton()
         row = ui.ActionRow()
         row.add_item(self.hit_button)
         row.add_item(self.stand_button)
         row.add_item(self.double_button)
         row.add_item(self.split_button)
+        row.add_item(self.surrender_button)
         self.container.add_item(row)
         self.add_item(self.container)
 
@@ -139,6 +149,9 @@ class BlackjackView(ui.LayoutView):
         cards = self.hands[0].cards
         return len(cards) == 2 and cards[0].rank == cards[1].rank
 
+    def _can_surrender(self) -> bool:
+        return len(self.hands) == 1 and len(self.hands[0].cards) == 2
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.ctx.author.id:
             await interaction.response.send_message("This isn't your game!", ephemeral=True)
@@ -150,18 +163,21 @@ class BlackjackView(ui.LayoutView):
         self.stand_button.disabled = disabled
         self.double_button.disabled = disabled
         self.split_button.disabled = disabled
+        self.surrender_button.disabled = disabled
 
     def _set_initial_button_states(self):
         self.hit_button.disabled = False
         self.stand_button.disabled = False
         self.double_button.disabled = False
         self.split_button.disabled = not self._can_split()
+        self.surrender_button.disabled = not self._can_surrender()
 
     def _update_button_states(self):
         self.hit_button.disabled = False
         self.stand_button.disabled = False
         self.double_button.disabled = len(self.current_hand.cards) != 2
         self.split_button.disabled = True
+        self.surrender_button.disabled = True
 
     def _render_dealing(self, player_shown: int, dealer_shown: int):
         hand = self.hands[0]
@@ -479,6 +495,30 @@ class BlackjackView(ui.LayoutView):
                 self._update_button_states()
                 self.render()
                 await limited_edit(self.message, view=self)
+        finally:
+            self._busy = False
+
+    async def surrender(self, interaction: discord.Interaction):
+        if self.finished or self._busy or not self._can_surrender():
+            return
+        self._busy = True
+        try:
+            self.finished = True
+            self._set_action_buttons_disabled(True)
+
+            hand = self.hands[0]
+            refund = hand.bet // 2
+            if refund:
+                await self.cog.bot.db.update_balance(self.ctx.author.id, refund)
+            await self.cog.bot.db.record_game_result(
+                self.ctx.author.id, hand.bet + self.side_wagered, refund + self.side_payout
+            )
+
+            footer = f"🏳️ Surrendered — refunded half your bet ({fmt(refund)})."
+            self.render(footer=footer)
+            self.container.accent_colour = discord.Color.greyple()
+            await interaction.response.edit_message(view=self)
+            self.stop()
         finally:
             self._busy = False
 

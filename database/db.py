@@ -99,11 +99,19 @@ class Database:
                         balance BIGINT NOT NULL DEFAULT 0,
                         bank_balance BIGINT NOT NULL DEFAULT 0,
                         last_daily DATETIME NULL,
+                        daily_streak INT NOT NULL DEFAULT 0,
                         protected_until DATETIME NULL,
                         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
+                await cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'daily_streak'"
+                )
+                (has_daily_streak,) = await cur.fetchone()
+                if not has_daily_streak:
+                    await cur.execute("ALTER TABLE users ADD COLUMN daily_streak INT NOT NULL DEFAULT 0")
                 await cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS inventory (
@@ -423,18 +431,33 @@ class Database:
         await self._execute("UPDATE users SET balance = %s WHERE user_id = %s", (amount, user_id))
 
     async def claim_daily(
-        self, user_id: int, amount: int, period: datetime.timedelta, now: datetime.datetime
-    ) -> int | None:
+        self,
+        user_id: int,
+        base_amount: int,
+        period: datetime.timedelta,
+        now: datetime.datetime,
+        *,
+        bonus_per_day: float = 0.1,
+        max_bonus_days: int = 10,
+    ) -> tuple[int, int, int] | None:
+        """Returns (new_balance, payout, streak) or None if not yet eligible."""
         cutoff = now - period
+        row = await self._fetchone("SELECT last_daily, daily_streak FROM users WHERE user_id = %s", (user_id,))
+        last_daily, streak = row if row else (None, 0)
+        continues = last_daily is not None and (now - last_daily) <= period * 2
+        new_streak = streak + 1 if continues else 1
+        multiplier = 1 + bonus_per_day * min(new_streak - 1, max_bonus_days)
+        payout = int(base_amount * multiplier)
+
         rowcount = await self._execute(
-            "UPDATE users SET balance = balance + %s, last_daily = %s "
+            "UPDATE users SET balance = balance + %s, last_daily = %s, daily_streak = %s "
             "WHERE user_id = %s AND (last_daily IS NULL OR last_daily <= %s)",
-            (amount, now, user_id, cutoff),
+            (payout, now, new_streak, user_id, cutoff),
         )
         if rowcount == 0:
             return None
         row = await self._fetchone("SELECT balance FROM users WHERE user_id = %s", (user_id,))
-        return row[0]
+        return row[0], payout, new_streak
 
     async def get_last_daily(self, user_id: int) -> datetime.datetime | None:
         row = await self._fetchone("SELECT last_daily FROM users WHERE user_id = %s", (user_id,))
@@ -1329,7 +1352,7 @@ class Database:
                 try:
                     await cur.execute(
                         "UPDATE users SET balance = %s, bank_balance = 0, last_daily = NULL, "
-                        "protected_until = NULL WHERE user_id = %s",
+                        "daily_streak = 0, protected_until = NULL WHERE user_id = %s",
                         (starting_balance, user_id),
                     )
                     await cur.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
