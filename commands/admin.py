@@ -16,13 +16,22 @@ from utils.ratelimit import get_status as ratelimit_status, limited_send
 
 PrimordialSlotKey = Literal["weapon", "armor", "accessory"]
 
-RPGItemKey = Literal[
-    "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
-    "leather_armor", "chainmail", "plate_armor", "dragonscale_armor", "void_plate", "worldguard",
-    "lucky_charm", "hawk_eye_ring", "assassins_pendant", "phoenix_feather", "void_sigil", "crown_of_fate",
-    "wooden_shield", "iron_shield", "tower_shield", "dragonbone_shield", "void_aegis", "worldwarden",
-    "minor_potion", "greater_potion", "superior_potion",
-]
+RPGITEM_AUTOCOMPLETE_LIMIT = 25
+
+
+def _rpgitem_name(key: str) -> str:
+    if key in EQUIPMENT:
+        return EQUIPMENT[key].name
+    if key in CONSUMABLES:
+        return CONSUMABLES[key].name
+    return key
+
+
+async def _rpgitem_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    current = current.lower()
+    keys = list(EQUIPMENT.keys()) + list(CONSUMABLES.keys())
+    matches = [k for k in keys if current in k.lower() or current in _rpgitem_name(k).lower()]
+    return [app_commands.Choice(name=_rpgitem_name(k), value=k) for k in matches[:RPGITEM_AUTOCOMPLETE_LIMIT]]
 
 _raw_updates_channel = os.getenv("UPDATES_CHANNEL_ID", "1538079078186229760")
 UPDATES_CHANNEL_ID = int(_raw_updates_channel) if _raw_updates_channel.isdigit() else None
@@ -229,14 +238,19 @@ class Admin(commands.Cog):
 
     @app_commands.command(name="rpggive", description="[Admin] Give a player a piece of equipment for free.")
     @app_commands.describe(user="Target user", item="Which item to give", quantity="How many (default: 1)")
+    @app_commands.autocomplete(item=_rpgitem_autocomplete)
     @app_commands.checks.has_permissions(administrator=True)
     async def rpggive(
         self,
         interaction: discord.Interaction,
         user: discord.User,
-        item: RPGItemKey,
+        item: str,
         quantity: app_commands.Range[int, 1, 99] = 1,
     ):
+        if item not in EQUIPMENT and item not in CONSUMABLES:
+            await interaction.response.send_message(f"⚠️ Unknown item `{item}`.")
+            return
+
         character = await self.bot.db.get_character(user.id)
         if not character:
             await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")

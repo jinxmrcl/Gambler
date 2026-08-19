@@ -23,23 +23,11 @@ from rpg.primordial import PRIMORDIAL_BASES, describe_affixes
 from utils.economy import StaticView, fmt, game_container
 from utils.ratelimit import limited_edit
 
-EquipmentKey = Literal[
-    "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
-    "leather_armor", "chainmail", "plate_armor", "dragonscale_armor", "void_plate", "worldguard",
-    "lucky_charm", "hawk_eye_ring", "assassins_pendant", "phoenix_feather", "void_sigil", "crown_of_fate",
-    "wooden_shield", "iron_shield", "tower_shield", "dragonbone_shield", "void_aegis", "worldwarden",
-]
-ItemKey = Literal[
-    "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
-    "leather_armor", "chainmail", "plate_armor", "dragonscale_armor", "void_plate", "worldguard",
-    "lucky_charm", "hawk_eye_ring", "assassins_pendant", "phoenix_feather", "void_sigil", "crown_of_fate",
-    "wooden_shield", "iron_shield", "tower_shield", "dragonbone_shield", "void_aegis", "worldwarden",
-    "minor_potion", "greater_potion", "superior_potion",
-]
 SlotKey = Literal["weapon", "armor", "accessory", "shield"]
 
 TIER_ORDER = ["common", "rare", "epic", "legendary", "mythic", "ancient"]
 SELL_FRACTION = 0.4
+AUTOCOMPLETE_LIMIT = 25
 
 
 def _item_name(key: str) -> str:
@@ -48,6 +36,22 @@ def _item_name(key: str) -> str:
     if key in CONSUMABLES:
         return CONSUMABLES[key].name
     return key
+
+
+async def _equipment_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    current = current.lower()
+    matches = [
+        k for k in EQUIPMENT
+        if current in k.lower() or current in EQUIPMENT[k].name.lower()
+    ]
+    return [app_commands.Choice(name=EQUIPMENT[k].name, value=k) for k in matches[:AUTOCOMPLETE_LIMIT]]
+
+
+async def _item_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    current = current.lower()
+    keys = list(EQUIPMENT.keys()) + list(CONSUMABLES.keys())
+    matches = [k for k in keys if current in k.lower() or current in _item_name(k).lower()]
+    return [app_commands.Choice(name=_item_name(k), value=k) for k in matches[:AUTOCOMPLETE_LIMIT]]
 
 
 def _item_price(key: str) -> int:
@@ -206,7 +210,12 @@ class RPGShop(commands.Cog):
 
     @app_commands.command(name="rpgbuy", description="Buy a piece of equipment or a potion.")
     @app_commands.describe(item="Which item to buy", quantity="How many (default: 1, potions only)")
-    async def rpgbuy(self, interaction: discord.Interaction, item: ItemKey, quantity: app_commands.Range[int, 1, 99] = 1):
+    @app_commands.autocomplete(item=_item_autocomplete)
+    async def rpgbuy(self, interaction: discord.Interaction, item: str, quantity: app_commands.Range[int, 1, 99] = 1):
+        if item not in EQUIPMENT and item not in CONSUMABLES:
+            await interaction.response.send_message(f"⚠️ Unknown item `{item}`.")
+            return
+
         character = await self.bot.db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
@@ -238,7 +247,12 @@ class RPGShop(commands.Cog):
 
     @app_commands.command(name="rpgequip", description="Equip a weapon, armor, accessory, or (Paladin-only) shield you own.")
     @app_commands.describe(item="Which item to equip")
-    async def rpgequip(self, interaction: discord.Interaction, item: EquipmentKey):
+    @app_commands.autocomplete(item=_equipment_autocomplete)
+    async def rpgequip(self, interaction: discord.Interaction, item: str):
+        if item not in EQUIPMENT:
+            await interaction.response.send_message(f"⚠️ Unknown item `{item}`.")
+            return
+
         character = await self.bot.db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
@@ -299,7 +313,12 @@ class RPGShop(commands.Cog):
 
     @app_commands.command(name="rpgsell", description="Sell an owned item back for gold.")
     @app_commands.describe(item="Which item to sell", quantity="How many (default: 1)")
-    async def rpgsell(self, interaction: discord.Interaction, item: ItemKey, quantity: app_commands.Range[int, 1, 99] = 1):
+    @app_commands.autocomplete(item=_item_autocomplete)
+    async def rpgsell(self, interaction: discord.Interaction, item: str, quantity: app_commands.Range[int, 1, 99] = 1):
+        if item not in EQUIPMENT and item not in CONSUMABLES:
+            await interaction.response.send_message(f"⚠️ Unknown item `{item}`.")
+            return
+
         owned = await self.bot.db.get_rpg_item_quantity(interaction.user.id, item)
         if owned < quantity:
             await interaction.response.send_message(f"⚠️ You don't own {quantity}x {_item_name(item)}.")
