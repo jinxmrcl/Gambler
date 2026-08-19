@@ -80,9 +80,11 @@ the casino:
   party before the fight starts
 - `/idle` auto-farms a dungeon (monsters + occasional boss attempts) in the background for
   up to 2 hours, quietly, with a single summary + ping at the end instead of per-fight spam
-  (posted as a new message if the run outlasted Discord's 15-minute reply window) — a
-  live-updated tracker message in a configurable channel lists everyone currently idle
-  farming and reposts itself if it goes over 12 hours without refreshing
+  (posted as a new message if the run outlasted Discord's 15-minute reply window) — progress
+  and the remaining time are saved every tick, so a hot-reload or restart just pauses the run
+  silently and it resumes on its own next time the bot is up, still counting toward the
+  original end time — a live-updated tracker message in a configurable channel lists everyone
+  currently idle farming and reposts itself if it goes over 12 hours without refreshing
 - prestige every 50 levels (up to prestige 29) once you hit the level cap, now with a small
   permanent stat bonus per tier (+0.5%, up to +14.5% at max prestige) on top of a smoother
   XP curve
@@ -120,6 +122,19 @@ the casino:
   levels/items directly, and per-server `settings` to disable individual games or
   restrict them to specific channels
 
+**Level System** — a per-server activity leveling system separate from the RPG's own
+character leveling:
+- earns XP from chatting (with a spam-proof per-message cooldown) and from being active
+  in voice channels (deafened members and empty/AFK channels don't count); max level 150,
+  tuned to take months of real activity to reach
+- every level 1-150 has its own unique badge, and leveling up pays out gold into the same
+  balance every casino game uses
+- anyone holding a role in `BLACKLIST_ROLE_IDS` earns nothing from this system at all — the
+  same blacklist Payday checks before picking a winner
+- admins can run a temporary server-wide XP multiplier with `/level-boost`
+- `/level`, `/stats`, `/level-leaderboard`, `/level-badges` for everyone;
+  `/level-boost`, `/level-boost-clear` for admins
+
 **Commands** — casino/economy commands are hybrid commands (work as both `/slash` and
 `!prefix`); the RPG is slash-only for simplicity.
 
@@ -130,7 +145,11 @@ the casino:
 
 - A global + per-channel rate limiter (`utils/ratelimit.py`), both congestion-aware —
   they throttle harder the more callers are waiting simultaneously, then relax back
-  down — to avoid Discord API throttling on frequent message edits and sends
+  down — to avoid Discord API throttling on frequent message edits and sends. Edits
+  (in-progress game state — blackjack draws, crash ticks, idle tracker updates) and new
+  sends (initial command replies) draw from separate budgets, so a burst of new commands
+  slows down how fast new replies go out without ever making an already-running game feel
+  laggy
 - Hot code reloading in development (`HOT_RELOAD=true`, picks up changes to
   `commands/`, `events/`, `rpg/`, `utils/`, and `database/` within ~1.5s, no restart)
 - An in-process git watcher that checks `origin` every 60s and fast-forward-pulls any
@@ -192,6 +211,7 @@ the casino:
    | `HOT_RELOAD` | Auto-reload changed cogs/modules in development (default: `true`) |
    | `RESTART_LOG_CHANNEL_ID` | Optional channel ID for startup/crash/restart announcements |
    | `IDLE_ANNOUNCE_CHANNEL_ID` | Channel that shows a live-updated list of everyone currently `/idle` farming |
+   | `BLACKLIST_ROLE_IDS` | Comma-separated role IDs excluded from Level System XP/badges/gold and from being picked for Payday |
 
    In the Developer Portal, enable the **Message Content Intent** under **Bot** (required
    for text commands), and when inviting the bot, select the `bot` + `applications.commands`
@@ -472,6 +492,9 @@ utils/items.py                Shop catalog (item keys, prices, effects)
 utils/achievements.py         Achievement catalog + unlock/announce logic, shared by /profile and the listener
 utils/checks.py               Per-server game enable/channel checks
 utils/ratelimit.py            Global + per-channel, congestion-aware token-bucket limiters for edits/sends
+utils/level_math.py           Level System XP↔level curve math
+utils/level_badges.py         Level System badge rendering (mirrors rpg/badges.py)
+utils/role_blacklist.py       Shared role-ID blacklist, checked by the Level System and Payday
 commands/economy.py           balance, daily, leaderboard, pay
 commands/hustle.py            work, crime, slut, rob
 commands/bank.py              bank, deposit, withdraw
@@ -502,6 +525,7 @@ commands/rpg_character.py     rpgstart, rpgswitchclass, classes, character, heal
 commands/rpg_dungeon.py       dungeons, dungeon, dungeonboss (both with a team-fight lobby mode), idle
 commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpgautoupgrade, rpgautobuy, rpgequipprimordial, rpgunequipprimordial, rpginventory
 commands/rpg_arena.py         duel, arena
+commands/levels.py            level, stats, level-leaderboard, level-badges, level-boost, level-boost-clear
 rpg/classes.py                9 class definitions (stats + active skill)
 rpg/combat.py                 Turn-based solo + team combat simulation, damage mitigation, class skills, boss abilities
 rpg/monsters.py               16 dungeons, boss generation + abilities, level-scaling, party-size scaling
