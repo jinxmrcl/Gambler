@@ -250,6 +250,42 @@ class Database:
                 )
                 await cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS idle_sessions (
+                        user_id BIGINT UNSIGNED PRIMARY KEY,
+                        dungeon_key VARCHAR(32) NOT NULL,
+                        display_name VARCHAR(128) NOT NULL,
+                        deadline DATETIME NOT NULL,
+                        channel_id BIGINT UNSIGNED NOT NULL,
+                        message_id BIGINT UNSIGNED NOT NULL,
+                        stats_json TEXT NOT NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS level_xp (
+                        guild_id BIGINT UNSIGNED NOT NULL,
+                        user_id BIGINT UNSIGNED NOT NULL,
+                        xp BIGINT NOT NULL DEFAULT 0,
+                        message_xp BIGINT NOT NULL DEFAULT 0,
+                        voice_xp BIGINT NOT NULL DEFAULT 0,
+                        vc_seconds BIGINT NOT NULL DEFAULT 0,
+                        last_xp_at DATETIME NULL,
+                        PRIMARY KEY (guild_id, user_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS level_boost (
+                        guild_id BIGINT UNSIGNED PRIMARY KEY,
+                        multiplier FLOAT NOT NULL,
+                        expires_at DATETIME NOT NULL
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS cooldowns (
                         user_id BIGINT UNSIGNED NOT NULL,
                         action VARCHAR(32) NOT NULL,
@@ -911,6 +947,35 @@ class Database:
             (message_id, posted_at),
         )
 
+    async def save_idle_session(
+        self,
+        user_id: int, dungeon_key: str, display_name: str, deadline: datetime.datetime,
+        channel_id: int, message_id: int, stats_json: str,
+    ) -> None:
+        await self._execute(
+            "INSERT INTO idle_sessions "
+            "(user_id, dungeon_key, display_name, deadline, channel_id, message_id, stats_json) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE deadline = new.deadline, stats_json = new.stats_json",
+            (user_id, dungeon_key, display_name, deadline, channel_id, message_id, stats_json),
+        )
+
+    async def get_all_idle_sessions(self) -> list[dict]:
+        rows = await self._fetchall(
+            "SELECT user_id, dungeon_key, display_name, deadline, channel_id, message_id, stats_json "
+            "FROM idle_sessions"
+        )
+        return [
+            {
+                "user_id": r[0], "dungeon_key": r[1], "display_name": r[2], "deadline": r[3],
+                "channel_id": r[4], "message_id": r[5], "stats_json": r[6],
+            }
+            for r in rows
+        ]
+
+    async def delete_idle_session(self, user_id: int) -> None:
+        await self._execute("DELETE FROM idle_sessions WHERE user_id = %s", (user_id,))
+
     async def get_updates_channel(self, guild_id: int) -> int | None:
         row = await self._fetchone(
             "SELECT channel_id FROM updates_channels WHERE guild_id = %s", (guild_id,)
@@ -1421,6 +1486,75 @@ class Database:
                     await conn.rollback()
                     raise
         await self.divorce(user_id)
+
+    async def get_level_xp(self, guild_id: int, user_id: int) -> int:
+        row = await self._fetchone(
+            "SELECT xp FROM level_xp WHERE guild_id = %s AND user_id = %s", (guild_id, user_id)
+        )
+        return row[0] if row else 0
+
+    async def get_level_last_xp_at(self, guild_id: int, user_id: int) -> datetime.datetime | None:
+        row = await self._fetchone(
+            "SELECT last_xp_at FROM level_xp WHERE guild_id = %s AND user_id = %s", (guild_id, user_id)
+        )
+        return row[0] if row and row[0] else None
+
+    async def add_level_xp(self, guild_id: int, user_id: int, amount: int, now: datetime.datetime) -> int:
+        await self._execute(
+            "INSERT INTO level_xp (guild_id, user_id, xp, message_xp, last_xp_at) VALUES (%s, %s, %s, %s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE xp = level_xp.xp + new.xp, message_xp = level_xp.message_xp + new.message_xp, "
+            "last_xp_at = new.last_xp_at",
+            (guild_id, user_id, amount, amount, now),
+        )
+        row = await self._fetchone(
+            "SELECT xp FROM level_xp WHERE guild_id = %s AND user_id = %s", (guild_id, user_id)
+        )
+        return row[0]
+
+    async def add_level_voice(self, guild_id: int, user_id: int, amount: int, seconds: int) -> int:
+        await self._execute(
+            "INSERT INTO level_xp (guild_id, user_id, xp, voice_xp, vc_seconds) VALUES (%s, %s, %s, %s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE xp = level_xp.xp + new.xp, voice_xp = level_xp.voice_xp + new.voice_xp, "
+            "vc_seconds = level_xp.vc_seconds + new.vc_seconds",
+            (guild_id, user_id, amount, amount, seconds),
+        )
+        row = await self._fetchone(
+            "SELECT xp FROM level_xp WHERE guild_id = %s AND user_id = %s", (guild_id, user_id)
+        )
+        return row[0]
+
+    async def get_level_stats(self, guild_id: int, user_id: int) -> dict:
+        row = await self._fetchone(
+            "SELECT xp, message_xp, voice_xp, vc_seconds FROM level_xp WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
+        if not row:
+            return {"xp": 0, "message_xp": 0, "voice_xp": 0, "vc_seconds": 0}
+        return {"xp": row[0], "message_xp": row[1], "voice_xp": row[2], "vc_seconds": row[3]}
+
+    async def get_level_leaderboard(self, guild_id: int, limit: int = 10) -> list[tuple[int, int]]:
+        rows = await self._fetchall(
+            "SELECT user_id, xp FROM level_xp WHERE guild_id = %s ORDER BY xp DESC LIMIT %s",
+            (guild_id, limit),
+        )
+        return [(r[0], r[1]) for r in rows]
+
+    async def set_level_boost(self, guild_id: int, multiplier: float, expires_at: datetime.datetime) -> None:
+        await self._execute(
+            "INSERT INTO level_boost (guild_id, multiplier, expires_at) VALUES (%s, %s, %s) AS new "
+            "ON DUPLICATE KEY UPDATE multiplier = new.multiplier, expires_at = new.expires_at",
+            (guild_id, multiplier, expires_at),
+        )
+
+    async def get_level_boost(self, guild_id: int) -> tuple[float, datetime.datetime] | None:
+        row = await self._fetchone(
+            "SELECT multiplier, expires_at FROM level_boost WHERE guild_id = %s", (guild_id,)
+        )
+        return (row[0], row[1]) if row else None
+
+    async def clear_level_boost(self, guild_id: int) -> bool:
+        rowcount = await self._execute("DELETE FROM level_boost WHERE guild_id = %s", (guild_id,))
+        return rowcount > 0
 
     async def dump_all_tables(self) -> dict[str, list[dict]]:
         async with self.pool.acquire() as conn:

@@ -10,8 +10,10 @@ away. Announced in a single configurable channel (`PAYDAY_CHANNEL_ID`), mentioni
 — not a DM, since balance is global across every server a user shares with the bot.
 
 Before crediting, the bot checks whether the winner is still a member of that channel's
-server. If they've left, that firing is skipped (no credit, no announcement) and the next
-payday timer still moves forward as normal — they're simply eligible to be picked again once
-they rejoin.
+server and doesn't hold any role in the shared `BLACKLIST_ROLE_IDS` set (see the
+[Level System](../Level%20System.md), which checks the same list). If either check fails,
+that firing is skipped (no credit, no announcement) and the next payday timer still moves
+forward as normal — a left member is simply eligible to be picked again once they rejoin;
+a blacklisted one stays excluded until the role is removed.
 
 See [Economy Overview](Economy%20Overview.md).

@@ -8,6 +8,7 @@ from discord.ext import commands, tasks
 
 from utils.economy import StaticView, fmt
 from utils.ratelimit import limited_send
+from utils.role_blacklist import is_blacklisted
 
 log = logging.getLogger("gambler")
 
@@ -60,7 +61,7 @@ class Payday(commands.Cog):
         user_id = await self.bot.db.get_random_user_id()
         if user_id is None:
             return
-        if not await self._is_still_member(user_id):
+        if not await self._should_pay(user_id):
             return
 
         amount = random.randint(PAYDAY_MIN_AMOUNT, PAYDAY_MAX_AMOUNT)
@@ -86,19 +87,19 @@ class Payday(commands.Cog):
         self._guild = getattr(channel, "guild", None)
         return self._guild
 
-    async def _is_still_member(self, user_id: int) -> bool:
+    async def _should_pay(self, user_id: int) -> bool:
         guild = await self._get_guild()
         if guild is None:
             return True
-        if guild.get_member(user_id) is not None:
-            return True
-        try:
-            await guild.fetch_member(user_id)
-            return True
-        except discord.NotFound:
-            return False
-        except discord.HTTPException:
-            return True
+        member = guild.get_member(user_id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(user_id)
+            except discord.NotFound:
+                return False
+            except discord.HTTPException:
+                return True
+        return not is_blacklisted(member)
 
     async def _notify(self, user_id: int, amount: int) -> None:
         if not PAYDAY_CHANNEL_ID:

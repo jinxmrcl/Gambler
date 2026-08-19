@@ -564,6 +564,39 @@ class RPGDungeon(commands.Cog):
         for task in self._idle_tasks.values():
             task.cancel()
 
+    async def cog_load(self):
+        try:
+            sessions = await self.bot.db.get_all_idle_sessions()
+        except Exception:
+            log.exception("[idle] failed to load persisted idle sessions")
+            return
+
+        for row in sessions:
+            user_id = row["user_id"]
+            d = DUNGEONS.get(row["dungeon_key"])
+            if d is None:
+                await self.bot.db.delete_idle_session(user_id)
+                continue
+
+            try:
+                stats = json.loads(row["stats_json"])
+            except (TypeError, ValueError):
+                stats = None
+
+            task = asyncio.create_task(
+                self._run_idle(user_id, row["display_name"], d, row["channel_id"], row["deadline"], stats)
+            )
+            self._idle_tasks[user_id] = task
+            task.add_done_callback(lambda _t, uid=user_id: self._idle_tasks.pop(uid, None))
+            self._idle_sessions[user_id] = {"dungeon_name": d.name, "deadline": row["deadline"]}
+
+        if sessions:
+            log.info("[idle] resumed %d idle session(s) after reload", len(sessions))
+            try:
+                await self._update_idle_tracker()
+            except Exception:
+                log.exception("[idle] failed to update tracker after resuming idle sessions")
+
     async def _get_idle_tracker_channel(self) -> discord.abc.Messageable | None:
         channel = self.bot.get_channel(IDLE_ANNOUNCE_CHANNEL_ID)
         if channel is None:
@@ -809,10 +842,10 @@ class RPGDungeon(commands.Cog):
                     f"Farming quietly for {minutes} minute(s). You'll get a summary when it's done.",
                 )
             )
-            message = await interaction.original_response()
+            deadline = datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes)
 
             task = asyncio.create_task(
-                self._run_idle(interaction.user.id, interaction.user.display_name, d, minutes, message)
+                self._run_idle(interaction.user.id, interaction.user.display_name, d, interaction.channel_id, deadline)
             )
             self._idle_tasks[interaction.user.id] = task
             task.add_done_callback(lambda _t: self._idle_tasks.pop(interaction.user.id, None))
@@ -820,7 +853,7 @@ class RPGDungeon(commands.Cog):
 
             self._idle_sessions[interaction.user.id] = {
                 "dungeon_name": d.name,
-                "deadline": datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes),
+                "deadline": deadline,
             }
             await self._update_idle_tracker()
         finally:
@@ -828,15 +861,27 @@ class RPGDungeon(commands.Cog):
                 self._idle_tasks.pop(interaction.user.id, None)
 
     async def _run_idle(
-        self, user_id: int, display_name: str, d: Dungeon, minutes: int, message: discord.Message
+        self,
+        user_id: int, display_name: str, d: Dungeon, channel_id: int,
+        deadline: datetime.datetime, stats: dict | None = None,
     ):
-        stats = {
-            "dungeon_attempts": 0, "dungeon_wins": 0, "boss_attempts": 0, "boss_wins": 0,
-            "gold": 0, "xp": 0, "levels_gained": 0, "loot": [], "primordial_drops": [],
-        }
-        deadline = datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes)
-        interrupted = False
+        if stats is None:
+            stats = {
+                "dungeon_attempts": 0, "dungeon_wins": 0, "boss_attempts": 0, "boss_wins": 0,
+                "gold": 0, "xp": 0, "levels_gained": 0, "loot": [], "primordial_drops": [],
+            }
 
+        async def _persist():
+            try:
+                await self.bot.db.save_idle_session(
+                    user_id, d.key, display_name, deadline, channel_id, 0, json.dumps(stats)
+                )
+            except Exception:
+                log.exception("[idle] failed to persist session state for user %s", user_id)
+
+        await _persist()
+
+        had_error = False
         try:
             while datetime.datetime.utcnow() < deadline:
                 now = datetime.datetime.utcnow()
@@ -885,13 +930,21 @@ class RPGDungeon(commands.Cog):
                         if outcome["primordial_drop"]:
                             stats["primordial_drops"].append(outcome["primordial_drop"])
 
+                await _persist()
                 await asyncio.sleep(IDLE_POLL_SECONDS)
         except asyncio.CancelledError:
-            interrupted = True
+            return
         except Exception:
-            interrupted = True
+            had_error = True
             log.exception("[idle] unexpected error during idle farming for user %s", user_id)
 
+        await asyncio.shield(self._finish_idle(user_id, d, channel_id, stats, had_error))
+
+    async def _finish_idle(
+        self,
+        user_id: int, d: Dungeon, channel_id: int,
+        stats: dict, had_error: bool,
+    ):
         try:
             character = await self.bot.db.get_character(user_id)
         except Exception:
@@ -918,28 +971,33 @@ class RPGDungeon(commands.Cog):
         lines.append(f"💰 **+{fmt(stats['gold'])}**  •  **+{stats['xp']} XP**")
         if stats["levels_gained"] and final_level is not None:
             lines.append(f"⬆️ Leveled up to **{final_level}**!")
-        if interrupted:
-            lines.append("\n⚠️ *Stopped early — the bot restarted or updated mid-run, so this is partial progress, not the full requested time.*")
+        if had_error:
+            lines.append("\n⚠️ *Something went wrong partway through — this is partial progress.*")
 
         body = "\n".join(lines) + loot_text
-        title = f"🏕️ Idle Farming {'Interrupted' if interrupted else 'Complete'} — {d.name}"
-        color = discord.Color.orange() if interrupted else discord.Color.green()
+        title = f"🏕️ Idle Farming {'Interrupted' if had_error else 'Complete'} — {d.name}"
+        color = discord.Color.orange() if had_error else discord.Color.green()
+
         try:
-            await limited_edit(message, view=StaticView(title, body, color=color))
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                channel = await self.bot.fetch_channel(channel_id)
+            await limited_send(channel, content=f"<@{user_id}>", view=StaticView(title, body, color=color))
         except Exception:
-            try:
-                await limited_send(message.channel, content=f"<@{user_id}>", view=StaticView(title, body, color=color))
-            except Exception:
-                log.exception("[idle] failed to send final summary for user %s", user_id)
+            log.exception("[idle] failed to send final summary for user %s", user_id)
 
         if IDLE_ANNOUNCE_CHANNEL_ID:
             try:
-                channel = await self._get_idle_tracker_channel()
-                await limited_send(channel, content=f"<@{user_id}>", view=StaticView(title, body, color=color))
+                tracker_channel = await self._get_idle_tracker_channel()
+                await limited_send(tracker_channel, content=f"<@{user_id}>", view=StaticView(title, body, color=color))
             except discord.HTTPException:
                 log.exception("[idle] failed to send completion ping for user %s", user_id)
 
         self._idle_sessions.pop(user_id, None)
+        try:
+            await self.bot.db.delete_idle_session(user_id)
+        except Exception:
+            log.exception("[idle] failed to delete persisted session for user %s", user_id)
         try:
             await self._update_idle_tracker()
         except Exception:
