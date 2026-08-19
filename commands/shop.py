@@ -13,6 +13,7 @@ ItemKey = Literal["shield", "cooldown_reset"]
 LIMITED_ITEMS = ("shield", "cooldown_reset")
 ITEM_DAILY_USE_LIMIT = 2
 ITEM_USE_WINDOW = datetime.timedelta(hours=24)
+DIVIDER = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
 
 
 class Shop(commands.Cog):
@@ -21,11 +22,16 @@ class Shop(commands.Cog):
 
     @commands.hybrid_command(name="shop", description="Shows all purchasable items.")
     async def shop(self, ctx: commands.Context):
-        lines = [
-            f"**{item['name']}** — {fmt(item['price'])}\n-# {item['description']}"
-            for item in ITEMS.values()
-        ]
-        view = StaticView("🛒 Shop", "\n\n".join(lines) + "\n\nBuy with `/buy <item>`.")
+        lines = []
+        for key, item in ITEMS.items():
+            lines.append(f"{item['name']}  •  `{key}`  •  **{fmt(item['price'])}**")
+            lines.append(f"-# {item['description']}")
+            lines.append("")
+        lines.pop()
+        lines.append(DIVIDER)
+        lines.append("-# Buy with `/buy <item> [quantity]`")
+
+        view = StaticView("🛒 Shop", "\n".join(lines), color=discord.Color.gold())
         await ctx.send(view=view)
 
     @commands.hybrid_command(name="buy", description="Buy an item from the shop.")
@@ -57,7 +63,9 @@ class Shop(commands.Cog):
             await ctx.send("🎒 Your inventory is empty. Check out `/shop`!")
             return
 
-        lines = [f"**{ITEMS.get(key, {'name': key})['name']}** x{qty}" for key, qty in rows]
+        lines = [f"{ITEMS.get(key, {'name': key})['name']}  `{key}`  —  **x{qty}**" for key, qty in rows]
+        lines.append(DIVIDER)
+        lines.append(f"-# {len(rows)} distinct item{'s' if len(rows) != 1 else ''}")
         view = StaticView("🎒 Inventory", "\n".join(lines))
         await ctx.send(view=view)
 

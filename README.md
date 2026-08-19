@@ -310,9 +310,9 @@ but every note is plain Markdown and browsable directly on GitHub too.
 Money in the bank can't be stolen with `rob`.
 
 ### Shop, Inventory & Trading
-- `shop` — shows purchasable items
+- `shop` — shows purchasable items with their item key, price, and description
 - `buy <item> [quantity=1]` — buy an item (`shield` or `cooldown_reset`)
-- `inventory` (alias `inv`) — shows your inventory
+- `inventory` (alias `inv`) — shows your inventory with item keys and quantities
 - `use <item>` — use an item (`shield` protects you from `rob` for 2h, `cooldown_reset`
   instantly resets work/crime/slut/rob) — each item can only be *used* up to 2x per
   rolling 24h, independent of how many you own
@@ -331,7 +331,9 @@ Money in the bank can't be stolen with `rob`.
 
 ### Statistics
 - `profile [user]` (alias `stats`) — net worth, total wagered/won, biggest win, rob
-  success rate, and how often you've been robbed
+  success rate, and how often you've been robbed, grouped into sections with a divider;
+  shows earned badges (net worth, wagering, robbery, games played, daily streak tiers)
+  and an accent color reflecting overall profit/loss
 
 ### Admin
 Requires the **Administrator** permission on the server.
@@ -358,7 +360,9 @@ Requires the **Administrator** permission on the server.
 
 ### Misc
 - `help` — interactive command browser with a category dropdown (economy, games, RPG,
-  admin, etc.) instead of one long wall of text
+  admin, etc.) instead of one long wall of text; the overview groups categories into
+  sections (Economy & Social, Casino Games, RPG, Server & Admin) with a running command
+  count, and each category has its own accent color when selected
 
 ### Games
 All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
