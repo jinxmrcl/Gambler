@@ -12,7 +12,7 @@ from rpg.equipment import EQUIPMENT
 from rpg.leveling import MAX_LEVEL, apply_xp, xp_for_level
 from rpg.primordial import PRIMORDIAL_BASES, describe_affixes, generate_primordial_drop
 from utils.economy import StaticView, fmt
-from utils.ratelimit import limited_send
+from utils.ratelimit import get_status as ratelimit_status, limited_send
 
 PrimordialSlotKey = Literal["weapon", "armor", "accessory"]
 
@@ -129,6 +129,20 @@ class Admin(commands.Cog):
             f"Permanent rob shield is now **{state}** for {user.mention}.",
             color=discord.Color.blue(),
         )
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(name="botstatus", description="[Admin] Shows gateway latency and rate-limit health.")
+    @commands.has_permissions(administrator=True)
+    async def botstatus(self, ctx: commands.Context):
+        rl = ratelimit_status()
+        lines = [
+            f"**Gateway latency:** {self.bot.latency * 1000:.0f}ms",
+            f"**Gateway rate-limited:** {'⚠️ yes' if self.bot.is_ws_ratelimited() else '✅ no'}",
+            f"**Edit budget:** {rl['edit_tokens']} / {rl['edit_rate']} tokens",
+            f"**Send budget:** {rl['send_tokens']} / {rl['send_rate']} tokens",
+            f"**Tracked channels / messages:** {rl['tracked_channels']} / {rl['tracked_messages']}",
+        ]
+        view = StaticView("📡 Bot Status", "\n".join(lines), color=discord.Color.blue())
         await ctx.send(view=view)
 
     @commands.hybrid_command(name="restart", description="[Admin] Restart the bot process.")

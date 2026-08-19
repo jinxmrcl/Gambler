@@ -40,6 +40,7 @@ IDLE_DEFAULT_MINUTES = 30
 _raw_idle_announce_channel = os.getenv("IDLE_ANNOUNCE_CHANNEL_ID", "1538948163510083605")
 IDLE_ANNOUNCE_CHANNEL_ID = int(_raw_idle_announce_channel) if _raw_idle_announce_channel.isdigit() else None
 IDLE_TRACKER_REPOST_AFTER = datetime.timedelta(hours=12)
+IDLE_TRACKER_DEBOUNCE_SECONDS = 3.0
 
 
 def _dungeon_list_text() -> str:
@@ -559,10 +560,13 @@ class RPGDungeon(commands.Cog):
         self._idle_sessions: dict[int, dict] = {}
         self._idle_tracker_message: discord.Message | None = None
         self._idle_tracker_posted_at: datetime.datetime | None = None
+        self._tracker_update_task: asyncio.Task | None = None
 
     def cog_unload(self):
         for task in self._idle_tasks.values():
             task.cancel()
+        if self._tracker_update_task is not None:
+            self._tracker_update_task.cancel()
 
     async def cog_load(self):
         try:
@@ -592,16 +596,26 @@ class RPGDungeon(commands.Cog):
 
         if sessions:
             log.info("[idle] resumed %d idle session(s) after reload", len(sessions))
-            try:
-                await self._update_idle_tracker()
-            except Exception:
-                log.exception("[idle] failed to update tracker after resuming idle sessions")
+            self._schedule_tracker_update()
 
     async def _get_idle_tracker_channel(self) -> discord.abc.Messageable | None:
         channel = self.bot.get_channel(IDLE_ANNOUNCE_CHANNEL_ID)
         if channel is None:
             channel = await self.bot.fetch_channel(IDLE_ANNOUNCE_CHANNEL_ID)
         return channel
+
+    def _schedule_tracker_update(self) -> None:
+        """Coalesces bursts of tracker-update triggers (e.g. many idle sessions
+        expiring at once on restart) into a single edit instead of one per event."""
+        if self._tracker_update_task is None or self._tracker_update_task.done():
+            self._tracker_update_task = asyncio.create_task(self._debounced_tracker_update())
+
+    async def _debounced_tracker_update(self) -> None:
+        await asyncio.sleep(IDLE_TRACKER_DEBOUNCE_SECONDS)
+        try:
+            await self._update_idle_tracker()
+        except Exception:
+            log.exception("[idle] failed to update the idle-tracker message")
 
     async def _post_new_idle_tracker(self, view: StaticView) -> None:
         channel = await self._get_idle_tracker_channel()
@@ -855,7 +869,7 @@ class RPGDungeon(commands.Cog):
                 "dungeon_name": d.name,
                 "deadline": deadline,
             }
-            await self._update_idle_tracker()
+            self._schedule_tracker_update()
         finally:
             if not started:
                 self._idle_tasks.pop(interaction.user.id, None)
@@ -1008,10 +1022,7 @@ class RPGDungeon(commands.Cog):
             await self.bot.db.delete_idle_session(user_id)
         except Exception:
             log.exception("[idle] failed to delete persisted session for user %s", user_id)
-        try:
-            await self._update_idle_tracker()
-        except Exception:
-            log.exception("[idle] failed to update the idle-tracker message for user %s", user_id)
+        self._schedule_tracker_update()
 
 
 async def setup(bot: commands.Bot):
