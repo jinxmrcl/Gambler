@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 from typing import Literal
@@ -24,6 +25,8 @@ RPGItemKey = Literal[
 
 _raw_updates_channel = os.getenv("UPDATES_CHANNEL_ID", "1538079078186229760")
 UPDATES_CHANNEL_ID = int(_raw_updates_channel) if _raw_updates_channel.isdigit() else None
+
+PERMANENT_SHIELD_UNTIL = datetime.datetime(9999, 1, 1)
 
 
 class Admin(commands.Cog):
@@ -82,6 +85,42 @@ class Admin(commands.Cog):
             "🛠️ User Reset",
             f"{user.mention} was reset to {fmt(self.bot.starting_balance)} "
             f"(bank, inventory, and statistics cleared).",
+            color=discord.Color.blue(),
+        )
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(
+        name="permcooldown", description="[Admin] Toggle a permanent cooldown bypass for a user."
+    )
+    @app_commands.describe(user="Target user", enabled="Enable or disable the bypass")
+    @commands.has_permissions(administrator=True)
+    async def permcooldown(self, ctx: commands.Context, user: discord.User, enabled: bool):
+        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
+        await self.bot.db.set_cooldown_bypass(user.id, enabled)
+        if enabled:
+            await self.bot.db.clear_cooldowns(user.id, ("work", "crime", "slut", "rob", "duel"))
+
+        state = "enabled" if enabled else "disabled"
+        view = StaticView(
+            "🛠️ Cooldown Bypass Toggled",
+            f"Permanent cooldown bypass is now **{state}** for {user.mention}.",
+            color=discord.Color.blue(),
+        )
+        await ctx.send(view=view)
+
+    @commands.hybrid_command(
+        name="permshield", description="[Admin] Toggle a permanent rob shield for a user."
+    )
+    @app_commands.describe(user="Target user", enabled="Enable or disable the shield")
+    @commands.has_permissions(administrator=True)
+    async def permshield(self, ctx: commands.Context, user: discord.User, enabled: bool):
+        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
+        await self.bot.db.set_protected_until(user.id, PERMANENT_SHIELD_UNTIL if enabled else None)
+
+        state = "enabled" if enabled else "disabled"
+        view = StaticView(
+            "🛠️ Permanent Shield Toggled",
+            f"Permanent rob shield is now **{state}** for {user.mention}.",
             color=discord.Color.blue(),
         )
         await ctx.send(view=view)
