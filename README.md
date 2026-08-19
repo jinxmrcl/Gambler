@@ -288,7 +288,9 @@ but every note is plain Markdown and browsable directly on GitHub too.
 - `balance [user]` — view balance
 - `daily` — claim your daily bonus
 - `leaderboard [board] [limit]` — leaderboard (`balance`, `games_played`,
-  `total_wagered`, `biggest_win`, or `robs_succeeded`)
+  `total_wagered`, `biggest_win`, or `robs_succeeded`); medals for the top 3, a divider
+  before the rest, comma-formatted values, a `(you)` tag on your own row if you're
+  shown, and a board-specific accent color
 - `pay <user> <amount>` — transfer balance to another player
 
 ### Earning money (on cooldown)
