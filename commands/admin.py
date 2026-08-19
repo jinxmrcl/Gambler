@@ -115,7 +115,13 @@ class Admin(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def permshield(self, ctx: commands.Context, user: discord.User, enabled: bool):
         await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
-        await self.bot.db.set_protected_until(user.id, PERMANENT_SHIELD_UNTIL if enabled else None)
+
+        if enabled:
+            await self.bot.db.set_protected_until(user.id, PERMANENT_SHIELD_UNTIL)
+        else:
+            current = await self.bot.db.get_protected_until(user.id)
+            if current == PERMANENT_SHIELD_UNTIL:
+                await self.bot.db.set_protected_until(user.id, None)
 
         state = "enabled" if enabled else "disabled"
         view = StaticView(

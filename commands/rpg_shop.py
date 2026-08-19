@@ -393,7 +393,7 @@ class RPGShop(commands.Cog):
                 character.get("equipped_primordial_weapon_id"),
                 character.get("equipped_primordial_armor_id"),
                 character.get("equipped_primordial_accessory_id"),
-            }
+            } if character else set()
             prim_lines = []
             for item in primordial_items:
                 mark = " ✅ *equipped*" if item["id"] in equipped_ids else ""

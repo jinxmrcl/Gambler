@@ -163,15 +163,19 @@ class Baccarat(commands.Cog):
 
         pp_amount = 0
         bp_amount = 0
+        pp_deducted = 0
+        bp_deducted = 0
         try:
             if player_pair is not None:
                 pp_amount = await resolve_bet(self.bot, ctx.author.id, player_pair)
                 await self.bot.db.update_balance(ctx.author.id, -pp_amount)
+                pp_deducted = pp_amount
             if banker_pair is not None:
                 bp_amount = await resolve_bet(self.bot, ctx.author.id, banker_pair)
                 await self.bot.db.update_balance(ctx.author.id, -bp_amount)
+                bp_deducted = bp_amount
         except (BetError, InsufficientFunds):
-            await self.bot.db.update_balance(ctx.author.id, amount + pp_amount)
+            await self.bot.db.update_balance(ctx.author.id, amount + pp_deducted + bp_deducted)
             raise
 
         deck = Deck()

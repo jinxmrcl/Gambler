@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.achievements import check_and_announce
+from utils.achievements import ACHIEVEMENTS, check_and_announce
 from utils.economy import StaticView, fmt
 
 DIVIDER = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
@@ -38,7 +38,11 @@ class Profile(commands.Cog):
             "games_played": stats["games_played"],
             "daily_streak": streak,
         }
-        all_unlocked, _ = await check_and_announce(self.bot, target, ctx.channel, metrics)
+        if target == ctx.author:
+            all_unlocked, _ = await check_and_announce(self.bot, target, ctx.channel, metrics)
+        else:
+            unlocked_keys = await self.bot.db.get_unlocked_achievements(target.id)
+            all_unlocked = [a for a in ACHIEVEMENTS if a.key in unlocked_keys]
         badges = [a.label for a in all_unlocked]
 
         lines = [

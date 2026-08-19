@@ -559,19 +559,23 @@ class Blackjack(commands.Cog):
         pp_amount = 0
         tt_amount = 0
         insurance_amount = 0
+        pp_deducted = 0
+        tt_deducted = 0
         try:
             if perfect_pairs is not None:
                 pp_amount = await resolve_bet(self.bot, ctx.author.id, perfect_pairs)
                 await self.bot.db.update_balance(ctx.author.id, -pp_amount)
+                pp_deducted = pp_amount
             if twentyone_plus_three is not None:
                 tt_amount = await resolve_bet(self.bot, ctx.author.id, twentyone_plus_three)
                 await self.bot.db.update_balance(ctx.author.id, -tt_amount)
+                tt_deducted = tt_amount
             if insurance is not None:
                 insurance_amount = await resolve_bet(self.bot, ctx.author.id, insurance)
                 if insurance_amount > amount // 2:
                     raise BetError(f"Insurance can be at most half your main bet ({fmt(amount // 2)}).")
         except (BetError, InsufficientFunds):
-            await self.bot.db.update_balance(ctx.author.id, amount + pp_amount + tt_amount)
+            await self.bot.db.update_balance(ctx.author.id, amount + pp_deducted + tt_deducted)
             raise
 
         view = BlackjackView(self, ctx, amount)

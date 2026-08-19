@@ -74,6 +74,15 @@ class Shop(commands.Cog):
     async def use(self, ctx: commands.Context, item: ItemKey):
         now = datetime.datetime.utcnow()
 
+        if item == "shield":
+            current_shield = await self.bot.db.get_protected_until(ctx.author.id)
+            if current_shield and current_shield >= now + SHIELD_DURATION:
+                await ctx.send(
+                    f"⚠️ You're already protected from `rob` until "
+                    f"{current_shield.strftime('%Y-%m-%d %H:%M UTC')} — no need to use another."
+                )
+                return
+
         try:
             await self.bot.db.remove_item(ctx.author.id, item, 1)
         except InsufficientFunds:
@@ -97,7 +106,10 @@ class Shop(commands.Cog):
                 return
 
         if item == "shield":
+            current_shield = await self.bot.db.get_protected_until(ctx.author.id)
             until = datetime.datetime.utcnow() + SHIELD_DURATION
+            if current_shield and current_shield > until:
+                until = current_shield
             await self.bot.db.set_protected_until(ctx.author.id, until)
             text = f"🛡️ You're now protected from `rob` until {until.strftime('%H:%M UTC')}."
         else:
