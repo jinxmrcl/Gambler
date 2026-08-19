@@ -14,6 +14,7 @@ CATEGORIES = [
     ("marriage", "💍 Marriage", ["Marriage"], discord.Color.fuchsia()),
     ("lottery", "🎟️ Lottery", ["Lottery"], discord.Color.purple()),
     ("stats", "📊 Statistics", ["Profile"], discord.Color.blue()),
+    ("levels", "📈 Level System", ["LevelSystem"], discord.Color.dark_blue()),
     ("games", "🎰 Casino Games", [
         "Blackjack", "Mines", "Hilo", "Plinko", "Limbo", "Keno", "Slots", "Roulette", "Dice", "Coinflip",
         "Scratchcard", "HorseRace", "Baccarat", "Crash",
@@ -27,7 +28,7 @@ CATEGORIES = [
 ]
 
 SECTIONS = [
-    ("💵 Economy & Social", ["economy", "earn", "bank", "shop", "trade", "marriage", "lottery", "stats"]),
+    ("💵 Economy & Social", ["economy", "earn", "bank", "shop", "trade", "marriage", "lottery", "stats", "levels"]),
     ("🎰 Casino Games", ["games"]),
     ("⚔️ RPG", ["rpg_character", "rpg_dungeon", "rpg_shop", "rpg_arena"]),
     ("🔧 Server & Admin", ["settings", "admin"]),
