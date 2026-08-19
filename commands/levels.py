@@ -217,6 +217,43 @@ class LevelSystem(commands.Cog):
         body = "\n".join(lines)
         await interaction.response.send_message(view=StaticView("🏆 Level Leaderboard", body))
 
+    @app_commands.command(name="level-givexp", description="[Admin] Give a member XP directly (can be negative to remove).")
+    @app_commands.describe(user="Target member", amount="Amount of XP to grant (negative to remove)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def level_givexp(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        amount: app_commands.Range[int, -1_000_000, 1_000_000],
+    ):
+        if interaction.guild is None:
+            await interaction.response.send_message("This only works in a server.", ephemeral=True)
+            return
+        if user.bot:
+            await interaction.response.send_message("Bots don't earn levels.", ephemeral=True)
+            return
+
+        before_xp = await self.bot.db.get_level_xp(interaction.guild.id, user.id)
+        before_level, _, _ = level_from_total_xp(before_xp)
+
+        after_xp = await self.bot.db.add_level_admin_xp(interaction.guild.id, user.id, amount)
+        after_level, into_level, needed = level_from_total_xp(after_xp)
+
+        if after_level > before_level:
+            await self._handle_level_up(user, after_level, channel=interaction.channel)
+
+        badge = level_badge(after_level)
+        level_line = f"**Level {after_level}**" + (f" {badge}" if badge else "")
+        progress_line = "Max level reached!" if after_level >= MAX_LEVEL else f"{into_level:,}/{needed:,} XP to next level"
+
+        body = (
+            f"Gave {user.mention} **{amount:,}** XP.\n"
+            f"{level_line} ({progress_line})\nTotal XP: {after_xp:,}"
+        )
+        await interaction.response.send_message(
+            view=StaticView("🛠️ XP Granted", body, color=discord.Color.blue())
+        )
+
     @app_commands.command(name="level-boost", description="[Admin] Temporarily multiply XP gains for this server.")
     @app_commands.describe(multiplier="e.g. 1.5 for +50% XP", days="How many days the boost lasts")
     @app_commands.checks.has_permissions(administrator=True)

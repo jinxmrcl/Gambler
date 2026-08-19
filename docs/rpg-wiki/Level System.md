@@ -38,6 +38,15 @@ silently.
 server-wide for a set number of days — useful for events. `/level-boost-clear` ends one
 early. Only one boost is active per server at a time.
 
+## Admin XP grants
+
+`/level-givexp <user> <amount>` (admin) adds (or, with a negative amount, removes) XP for
+one member directly — clamped so total XP never drops below 0. It runs through the same
+level-up path as organic XP gains, so a grant that crosses a level threshold still pays
+the gold reward and posts the level-up announcement in the channel the command was run
+in. Unlike message/voice XP, an admin grant isn't attributed to either breakdown in
+`/stats` — it only touches the total.
+
 ## Commands
 
 | Command | Who | What |
@@ -48,6 +57,7 @@ early. Only one boost is active per server at a time.
 | `/level-badges` | everyone | Preview of the badge progression (every 10th level) |
 | `/level-boost <multiplier> <days>` | admin | Temporary server-wide XP multiplier |
 | `/level-boost-clear` | admin | End the active boost early |
+| `/level-givexp <user> <amount>` | admin | Grant (or remove) XP for one member directly |
 
 ## How it's built
 

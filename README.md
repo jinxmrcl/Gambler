@@ -131,9 +131,11 @@ character leveling:
   balance every casino game uses
 - anyone holding a role in `BLACKLIST_ROLE_IDS` earns nothing from this system at all — the
   same blacklist Payday checks before picking a winner
-- admins can run a temporary server-wide XP multiplier with `/level-boost`
+- admins can run a temporary server-wide XP multiplier with `/level-boost`, or grant/
+  remove XP for a specific member directly with `/level-givexp` (still runs through the
+  normal level-up gold payout and announcement if it crosses a level)
 - `/level`, `/stats`, `/level-leaderboard`, `/level-badges` for everyone;
-  `/level-boost`, `/level-boost-clear` for admins
+  `/level-boost`, `/level-boost-clear`, `/level-givexp` for admins
 
 **Commands** — casino/economy commands are hybrid commands (work as both `/slash` and
 `!prefix`); the RPG is slash-only for simplicity.
@@ -528,7 +530,7 @@ commands/rpg_character.py     rpgstart, rpgswitchclass, classes, character, heal
 commands/rpg_dungeon.py       dungeons, dungeon, dungeonboss (both with a team-fight lobby mode), idle
 commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpgautoupgrade, rpgautobuy, rpgequipprimordial, rpgunequipprimordial, rpginventory
 commands/rpg_arena.py         duel, arena
-commands/levels.py            level, stats, level-leaderboard, level-badges, level-boost, level-boost-clear
+commands/levels.py            level, stats, level-leaderboard, level-badges, level-boost, level-boost-clear, level-givexp
 rpg/classes.py                9 class definitions (stats + active skill)
 rpg/combat.py                 Turn-based solo + team combat simulation, damage mitigation, class skills, boss abilities
 rpg/monsters.py               16 dungeons, boss generation + abilities, level-scaling, party-size scaling
