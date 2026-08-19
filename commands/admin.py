@@ -9,7 +9,7 @@ from discord.ext import commands
 
 from rpg.consumables import CONSUMABLES
 from rpg.equipment import EQUIPMENT
-from rpg.leveling import MAX_LEVEL, xp_for_level
+from rpg.leveling import MAX_LEVEL, apply_xp, xp_for_level
 from rpg.primordial import PRIMORDIAL_BASES, describe_affixes, generate_primordial_drop
 from utils.economy import StaticView, fmt
 from utils.ratelimit import limited_send
@@ -178,6 +178,30 @@ class Admin(commands.Cog):
         view = StaticView(
             "🛠️ Level Set",
             f"Set {user.mention}'s RPG level to **{level}** (XP: {capped_xp}).",
+            color=discord.Color.blue(),
+        )
+        await interaction.response.send_message(view=view)
+
+    @app_commands.command(
+        name="rpggivexp", description="[Admin] Give a player XP directly, applying level-ups automatically."
+    )
+    @app_commands.describe(user="Target user", amount="Amount of XP to grant")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def rpggivexp(self, interaction: discord.Interaction, user: discord.User, amount: app_commands.Range[int, 1]):
+        character = await self.bot.db.get_character(user.id)
+        if not character:
+            await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
+            return
+
+        new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], amount)
+        await self.bot.db.set_character_level(user.id, new_level, new_xp)
+
+        level_note = f" — **{levels_gained}** level-up{'s' if levels_gained != 1 else ''}! 🎉" if levels_gained else ""
+        xp_line = f"XP: {new_xp} / {xp_for_level(new_level)}" if new_level < MAX_LEVEL else "MAX LEVEL"
+
+        view = StaticView(
+            "🛠️ XP Granted",
+            f"Gave {user.mention} **{amount:,}** XP{level_note}\nNow **Level {new_level}** — {xp_line}",
             color=discord.Color.blue(),
         )
         await interaction.response.send_message(view=view)

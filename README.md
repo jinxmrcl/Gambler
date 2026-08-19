@@ -368,6 +368,9 @@ Requires the **Administrator** permission on the server.
 - `resetuser <user>` — reset a user's balance, bank, inventory, marriage, RPG character,
   and statistics
 - `rpgsetlevel <user> <level> [xp=0]` — set a player's RPG level directly
+- `rpggivexp <user> <amount>` — grant a player raw XP, running it through the same
+  level-up math as monster/boss kills (handles multi-level jumps and the level cap)
+  instead of hard-setting level/XP like `rpgsetlevel`
 - `rpggive <user> <item> [quantity=1]` — give a player a piece of equipment or a potion
   for free
 - `rpggiveprimordial <user> <slot>` — spawn a freshly-rolled ✨ Primordial item straight
@@ -505,7 +508,7 @@ commands/marriage.py          marry, divorce, marriage
 commands/lottery.py           lottery, lottery_buy, lottery_setchannel (weekly background task)
 commands/profile.py           profile / stats
 commands/cooldowns.py         cooldowns
-commands/admin.py             addmoney, setbalance, giveall, resetuser, restart, rpgsetlevel, rpggive, rpggiveprimordial
+commands/admin.py             addmoney, setbalance, giveall, resetuser, permcooldown, permshield, restart, rpgsetlevel, rpggivexp, rpggive, rpggiveprimordial
 commands/settings.py          settings, togglegame, togglechannel, set-gamblechannel, set-crashchannel, set-updateschannel
 commands/help.py              help
 commands/blackjack.py         Blackjack
