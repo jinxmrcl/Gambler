@@ -6,6 +6,7 @@ Base price: 20,000 gold per item.
 - **🔴 🌌 Void Reaver** (weapon) — +38% ATK
 - **🔴 🌌 Void Plate** (armor) — +27% DEF, +38% HP
 - **🔴 🌌 Void Sigil** (accessory) — +14% Crit
+- **🔴 🌌 Void Aegis** (shield, [Paladin](../Classes/Paladin.md) only) — +16% Damage Reduction, +12% Block Chance — purchase-only, never drops
 
 ## Dropped by
 

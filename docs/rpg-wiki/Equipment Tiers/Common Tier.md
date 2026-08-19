@@ -6,6 +6,7 @@ Base price: 200 gold per item.
 - **⚪ 🗡️ Wooden Sword** (weapon) — +3% ATK
 - **⚪ 🥋 Leather Armor** (armor) — +2% DEF, +3% HP
 - **⚪ 🍀 Lucky Charm** (accessory) — +2% Crit
+- **⚪ 🪵 Wooden Shield** (shield, [Paladin](../Classes/Paladin.md) only) — +3% Damage Reduction, +2% Block Chance — purchase-only, never drops
 
 ## Dropped by
 

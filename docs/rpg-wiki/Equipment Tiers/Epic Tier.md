@@ -6,6 +6,7 @@ Base price: 2,500 gold per item.
 - **🟣 🔥 Flame Blade** (weapon) — +14% ATK
 - **🟣 🛡️ Plate Armor** (armor) — +10% DEF, +14% HP
 - **🟣 📿 Assassin's Pendant** (accessory) — +7% Crit
+- **🟣 🏰 Tower Shield** (shield, [Paladin](../Classes/Paladin.md) only) — +8% Damage Reduction, +6% Block Chance — purchase-only, never drops
 
 ## Dropped by
 

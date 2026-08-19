@@ -30,6 +30,13 @@ Each class's per-level HP/ATK/DEF growth is individually tuned (not a round numb
 ## Primordial affixes
 [Primordial-tier](Equipment%20Tiers/Primordial%20Tier.md) gear can roll three combat mechanics not reachable through normal gear or class skills: **Lifesteal** (heals the attacker on every hit, not just once), **Crit Damage** (pushes a critical hit's multiplier above the flat 2.0x), and **Damage Reflect** (bounces a slice of damage taken back at the attacker). All three stack with class skills and fire on every relevant hit for the whole fight.
 
+## Shields (Paladin only)
+A [shield](Equipment%20%26%20Upgrades.md) is a 4th gear slot exclusive to [Paladin](Classes/Paladin.md), across the same 6 tiers as weapon/armor/accessory. Every shield grants two effects on every hit the wearer takes, checked in this order:
+1. **Block chance** — a shot at fully negating the hit (0 damage) outright.
+2. **Damage reduction** — if not blocked, a flat percentage taken off the damage that gets through, applied after the normal DEF-based mitigation above.
+
+Both stack with Divine Shield's HP-absorption buffer, so a fully-geared Paladin layers block → damage reduction → HP-absorption as three separate defenses on the same hit.
+
 ## Boss special abilities
 The bosses of the 5 high-end dungeons (Titan's Forge, Chaos Rift, Eternal Throne, World Ender's Lair, Voidscar Expanse) each carry one unique ability on top of their stats, alternating between:
 - **Enrage** — once the boss drops below 25% HP, its damage is permanently boosted 50% for the rest of the fight.
