@@ -990,14 +990,16 @@ class RPGDungeon(commands.Cog):
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 channel = await self.bot.fetch_channel(channel_id)
-            await limited_send(channel, content=f"<@{user_id}>", view=StaticView(title, body, color=color))
+            await limited_send(channel, content=f"<@{user_id}>")
+            await limited_send(channel, view=StaticView(title, body, color=color))
         except Exception:
             log.exception("[idle] failed to send final summary for user %s", user_id)
 
         if IDLE_ANNOUNCE_CHANNEL_ID:
             try:
                 tracker_channel = await self._get_idle_tracker_channel()
-                await limited_send(tracker_channel, content=f"<@{user_id}>", view=StaticView(title, body, color=color))
+                await limited_send(tracker_channel, content=f"<@{user_id}>")
+                await limited_send(tracker_channel, view=StaticView(title, body, color=color))
             except discord.HTTPException:
                 log.exception("[idle] failed to send completion ping for user %s", user_id)
 

@@ -38,12 +38,17 @@ class RateLimiter:
             self._waiters -= 1
 
 
-_EDIT_RATE = 3
+_EDIT_RATE = 2
 _EDIT_PER = 5.0
 _channel_limiters: dict[int, RateLimiter] = defaultdict(lambda: RateLimiter(_EDIT_RATE, _EDIT_PER))
 
-_GLOBAL_EDIT_RATE = 36
-_GLOBAL_SEND_RATE = 9
+_MESSAGE_MIN_INTERVAL = 1.1
+_message_limiters: dict[int, RateLimiter] = defaultdict(
+    lambda: RateLimiter(1, _MESSAGE_MIN_INTERVAL, min_rate_fraction=1.0)
+)
+
+_GLOBAL_EDIT_RATE = 20
+_GLOBAL_SEND_RATE = 8
 _GLOBAL_PER = 1.0
 _global_edit_limiter = RateLimiter(_GLOBAL_EDIT_RATE, _GLOBAL_PER, min_rate_fraction=0.8)
 _global_send_limiter = RateLimiter(_GLOBAL_SEND_RATE, _GLOBAL_PER, min_rate_fraction=0.15)
@@ -52,6 +57,7 @@ _global_send_limiter = RateLimiter(_GLOBAL_SEND_RATE, _GLOBAL_PER, min_rate_frac
 async def limited_edit(message, **kwargs) -> None:
     await _global_edit_limiter.acquire()
     await _channel_limiters[message.channel.id].acquire()
+    await _message_limiters[message.id].acquire()
     await message.edit(**kwargs)
 
 
