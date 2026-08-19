@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+SHIELD_CLASS_KEY = "paladin"
+
 TIERS = [
     ("common", "⚪", 0.03, 200),
     ("rare", "🔵", 0.07, 800),
@@ -16,6 +18,23 @@ ACCESSORY_CRIT = {
     "legendary": 0.10,
     "mythic": 0.14,
     "ancient": 0.20,
+}
+
+SHIELD_DR = {
+    "common": 0.03,
+    "rare": 0.05,
+    "epic": 0.08,
+    "legendary": 0.12,
+    "mythic": 0.16,
+    "ancient": 0.20,
+}
+SHIELD_BLOCK = {
+    "common": 0.02,
+    "rare": 0.04,
+    "epic": 0.06,
+    "legendary": 0.09,
+    "mythic": 0.12,
+    "ancient": 0.15,
 }
 
 TIER_LEVEL_THRESHOLDS = [
@@ -58,6 +77,14 @@ ACCESSORY_NAMES = {
     "mythic": ("void_sigil", "🌌 Void Sigil"),
     "ancient": ("crown_of_fate", "👑 Crown of Fate"),
 }
+SHIELD_NAMES = {
+    "common": ("wooden_shield", "🪵 Wooden Shield"),
+    "rare": ("iron_shield", "🔩 Iron Shield"),
+    "epic": ("tower_shield", "🏰 Tower Shield"),
+    "legendary": ("dragonbone_shield", "🐉 Dragonbone Shield"),
+    "mythic": ("void_aegis", "🌌 Void Aegis"),
+    "ancient": ("worldwarden", "☄️ Worldwarden"),
+}
 
 
 @dataclass(frozen=True)
@@ -71,6 +98,8 @@ class EquipmentDef:
     def_pct: float = 0.0
     hp_pct: float = 0.0
     crit_pct: float = 0.0
+    dr_pct: float = 0.0
+    block_pct: float = 0.0
 
 
 def _build() -> dict[str, EquipmentDef]:
@@ -83,6 +112,11 @@ def _build() -> dict[str, EquipmentDef]:
         acc_key, acc_name = ACCESSORY_NAMES[tier]
         items[acc_key] = EquipmentDef(
             acc_key, f"{badge} {acc_name}", "accessory", tier, price, crit_pct=ACCESSORY_CRIT[tier]
+        )
+        s_key, s_name = SHIELD_NAMES[tier]
+        items[s_key] = EquipmentDef(
+            s_key, f"{badge} {s_name}", "shield", tier, price,
+            dr_pct=SHIELD_DR[tier], block_pct=SHIELD_BLOCK[tier],
         )
     return items
 
@@ -106,12 +140,15 @@ def equipment_multipliers(
     weapon_enchant: int = 0,
     armor_enchant: int = 0,
     accessory_enchant: int = 0,
+    shield_key: str | None = None,
+    shield_enchant: int = 0,
 ) -> dict:
-    atk_pct = def_pct = hp_pct = crit_pct = 0.0
+    atk_pct = def_pct = hp_pct = crit_pct = dr_pct = block_pct = 0.0
     for key, enchant in (
         (weapon_key, weapon_enchant),
         (armor_key, armor_enchant),
         (accessory_key, accessory_enchant),
+        (shield_key, shield_enchant),
     ):
         item = EQUIPMENT.get(key) if key else None
         if not item:
@@ -121,4 +158,9 @@ def equipment_multipliers(
         def_pct += item.def_pct + (bonus_add if item.def_pct else 0)
         hp_pct += item.hp_pct + (bonus_add if item.hp_pct else 0)
         crit_pct += item.crit_pct + (bonus_add if item.crit_pct else 0)
-    return {"atk": 1 + atk_pct, "def": 1 + def_pct, "hp": 1 + hp_pct, "crit_add": crit_pct}
+        dr_pct += item.dr_pct + (bonus_add if item.dr_pct else 0)
+        block_pct += item.block_pct + (bonus_add if item.block_pct else 0)
+    return {
+        "atk": 1 + atk_pct, "def": 1 + def_pct, "hp": 1 + hp_pct, "crit_add": crit_pct,
+        "dr_pct": dr_pct, "block_pct": block_pct,
+    }

@@ -80,6 +80,9 @@ the casino:
   plus a 7th drop-only ✨ Primordial tier with randomly-rolled bonus affixes (lifesteal,
   crit damage, damage reflect, gold find, and more) exclusive to the 5 highest-tier
   bosses — split as a single roll across the party in a team fight rather than per member
+- a 4th slot, shields, exclusive to Paladins across the same 6 tiers — each shield grants
+  both flat damage reduction and a chance to fully block a hit, distinct mechanics from
+  what armor already provides, stacking with Paladin's own Divine Shield skill
 - a gold-sink enchant/upgrade system per item — `/rpgautoupgrade` greedily maxes out
   whatever's equipped until you're out of gold, and `/rpgautobuy` buys/equips the gear
   tier recommended for your level in one click

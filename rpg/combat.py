@@ -19,6 +19,8 @@ class Fighter:
     crit_dmg_bonus: float = 0.0
     reflect_pct: float = 0.0
     shield_hp: int = 0
+    damage_reduction_pct: float = 0.0
+    block_chance: float = 0.0
 
     def __post_init__(self):
         if self.hp is None:
@@ -74,6 +76,12 @@ def _hit(attacker: Fighter, defender: Fighter) -> tuple[int, bool, str]:
     effective_defense = defender.defense * defense_mult * pen_mult
     mitigation = effective_defense / (effective_defense + attacker.atk)
     dmg = max(1, round(raw * (1 - mitigation)))
+
+    if defender.block_chance > 0 and random.random() < defender.block_chance:
+        dmg = 0
+        note += " 🛡️*Blocked!*"
+    elif defender.damage_reduction_pct:
+        dmg = max(1, round(dmg * (1 - defender.damage_reduction_pct)))
 
     if defender.shield_hp > 0:
         absorbed = min(defender.shield_hp, dmg)

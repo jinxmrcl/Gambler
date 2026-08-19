@@ -1,6 +1,8 @@
 # Equipment & Upgrades
 
-Three gear slots: weapon (+ATK), armor (+DEF, +HP), and accessory (+Crit chance). Bonuses are percentage-based so gear stays relevant all the way to level 1500.
+Three gear slots everyone has: weapon (+ATK), armor (+DEF, +HP), and accessory (+Crit chance). Bonuses are percentage-based so gear stays relevant all the way to level 1500.
+
+Paladins get a 4th slot: shield, exclusive to that class. Each shield grants both flat damage reduction and a chance to fully block an incoming hit — distinct mechanics from what armor already provides, and they stack with Paladin's own Divine Shield skill. Buying, equipping, upgrading, selling, and auto-upgrading all work the same way as the other three slots; `/rpgequip`/`/rpgbuy` reject shields for any other class.
 
 ## Tiers
 

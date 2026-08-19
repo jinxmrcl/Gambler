@@ -15,7 +15,7 @@
 
 ## Shop
 - `/rpgshop` — browse [gear](Equipment%20%26%20Upgrades.md) and [potions](Consumables.md)
-- `/rpgbuy`, `/rpgequip`, `/rpguse`, `/rpgsell`, `/rpgupgrade`, `/rpginventory` — inventory paginates into multiple pages with Previous/Next buttons once your gear + Primordial items no longer fit in a single Discord message
+- `/rpgbuy`, `/rpgequip`, `/rpguse`, `/rpgsell`, `/rpgupgrade`, `/rpginventory` — `/rpgequip` also covers the Paladin-only shield slot; `/rpginventory` shows Primordial items as a per-slot count by default with a Show/Hide Details toggle for the full per-item affix list (needed to find an item's ID for `/rpgequipprimordial`), and paginates into multiple pages once your gear no longer fits a single Discord message
 - `/rpgautoupgrade` — repeatedly upgrades your equipped gear (cheapest slot first) until every slot is maxed or you can't afford the next level
 - `/rpgautobuy` — buys and equips the gear tier recommended for your current level in each slot (skipping any slot that's already at or above that tier, or has a Primordial item equipped)
 - `/rpgequipprimordial <item_id>` — equip a [✨ Primordial](Equipment%20Tiers/Primordial%20Tier.md) item you own by its ID (shown in `/rpginventory`)

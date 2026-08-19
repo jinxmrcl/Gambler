@@ -13,6 +13,8 @@ from rpg.equipment import (
     ARMOR_NAMES,
     EQUIPMENT,
     ENCHANT_MAX_LEVEL,
+    SHIELD_CLASS_KEY,
+    SHIELD_NAMES,
     WEAPON_NAMES,
     enchant_cost,
     recommended_tier_for_level,
@@ -25,14 +27,16 @@ EquipmentKey = Literal[
     "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
     "leather_armor", "chainmail", "plate_armor", "dragonscale_armor", "void_plate", "worldguard",
     "lucky_charm", "hawk_eye_ring", "assassins_pendant", "phoenix_feather", "void_sigil", "crown_of_fate",
+    "wooden_shield", "iron_shield", "tower_shield", "dragonbone_shield", "void_aegis", "worldwarden",
 ]
 ItemKey = Literal[
     "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
     "leather_armor", "chainmail", "plate_armor", "dragonscale_armor", "void_plate", "worldguard",
     "lucky_charm", "hawk_eye_ring", "assassins_pendant", "phoenix_feather", "void_sigil", "crown_of_fate",
+    "wooden_shield", "iron_shield", "tower_shield", "dragonbone_shield", "void_aegis", "worldwarden",
     "minor_potion", "greater_potion", "superior_potion",
 ]
-SlotKey = Literal["weapon", "armor", "accessory"]
+SlotKey = Literal["weapon", "armor", "accessory", "shield"]
 
 TIER_ORDER = ["common", "rare", "epic", "legendary", "mythic", "ancient"]
 SELL_FRACTION = 0.4
@@ -64,6 +68,9 @@ def _shop_text() -> str:
     accessories = sorted(
         (i for i in EQUIPMENT.values() if i.slot == "accessory"), key=lambda i: TIER_ORDER.index(i.tier)
     )
+    shields = sorted(
+        (i for i in EQUIPMENT.values() if i.slot == "shield"), key=lambda i: TIER_ORDER.index(i.tier)
+    )
     lines = ["**⚔️ Weapons**"]
     for item in weapons:
         lines.append(f"`{item.key}` — {item.name} — {fmt(item.price)} (+{item.atk_pct:.0%} ATK)")
@@ -75,6 +82,12 @@ def _shop_text() -> str:
     lines.append("\n**💍 Accessories**")
     for item in accessories:
         lines.append(f"`{item.key}` — {item.name} — {fmt(item.price)} (+{item.crit_pct:.0%} Crit)")
+    lines.append("\n**🛡️ Shields** (Paladin only)")
+    for item in shields:
+        lines.append(
+            f"`{item.key}` — {item.name} — {fmt(item.price)} "
+            f"(+{item.dr_pct:.0%} Damage Reduction, +{item.block_pct:.0%} Block Chance)"
+        )
     lines.append("\n**🧪 Potions**")
     for c in CONSUMABLES.values():
         lines.append(f"`{c.key}` — {c.name} — {fmt(c.price)} (restores {c.heal_pct:.0%} HP)")
@@ -110,26 +123,55 @@ class InventoryPageButton(ui.Button):
         await self.view.change_page(interaction, self.delta)
 
 
+class InventoryDetailsButton(ui.Button):
+    def __init__(self, show_details: bool):
+        label = "🙈 Hide Details" if show_details else "🔍 Show Details"
+        super().__init__(style=discord.ButtonStyle.primary, label=label)
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.toggle_details(interaction)
+
+
 class InventoryView(ui.LayoutView):
-    def __init__(self, owner_id: int, pages: list[str]):
+    def __init__(self, owner_id: int, simple_lines: list[str], detailed_lines: list[str], *, has_primordial: bool):
         super().__init__(timeout=120)
         self.owner_id = owner_id
-        self.pages = pages
+        self.simple_pages = _paginate_lines(simple_lines)
+        self.detailed_pages = _paginate_lines(detailed_lines)
+        self.show_details = False
         self.page = 0
         self.container, self.text = game_container("🎒 Inventory", self._page_body())
+
         self.prev_button = InventoryPageButton("◀️ Previous", -1, disabled=True)
-        self.next_button = InventoryPageButton("Next ▶️", 1, disabled=len(pages) <= 1)
-        if len(pages) > 1:
+        self.next_button = InventoryPageButton("Next ▶️", 1, disabled=len(self.pages) <= 1)
+        if len(self.simple_pages) > 1 or len(self.detailed_pages) > 1:
             row = ui.ActionRow()
             row.add_item(self.prev_button)
             row.add_item(self.next_button)
             self.container.add_item(row)
+
+        if has_primordial:
+            self.details_button = InventoryDetailsButton(self.show_details)
+            details_row = ui.ActionRow()
+            details_row.add_item(self.details_button)
+            self.container.add_item(details_row)
+
         self.add_item(self.container)
 
+    @property
+    def pages(self) -> list[str]:
+        return self.detailed_pages if self.show_details else self.simple_pages
+
     def _page_body(self) -> str:
-        if len(self.pages) > 1:
-            return f"{self.pages[self.page]}\n\n-# Page {self.page + 1}/{len(self.pages)}"
-        return self.pages[self.page]
+        pages = self.pages
+        if len(pages) > 1:
+            return f"{pages[self.page]}\n\n-# Page {self.page + 1}/{len(pages)}"
+        return pages[self.page]
+
+    def _sync_page_buttons(self):
+        pages = self.pages
+        self.prev_button.disabled = self.page == 0
+        self.next_button.disabled = self.page == len(pages) - 1
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.owner_id:
@@ -139,8 +181,15 @@ class InventoryView(ui.LayoutView):
 
     async def change_page(self, interaction: discord.Interaction, delta: int):
         self.page = max(0, min(len(self.pages) - 1, self.page + delta))
-        self.prev_button.disabled = self.page == 0
-        self.next_button.disabled = self.page == len(self.pages) - 1
+        self._sync_page_buttons()
+        self.text.content = f"## 🎒 Inventory\n{self._page_body()}"
+        await interaction.response.edit_message(view=self)
+
+    async def toggle_details(self, interaction: discord.Interaction):
+        self.show_details = not self.show_details
+        self.page = 0
+        self._sync_page_buttons()
+        self.details_button.label = "🙈 Hide Details" if self.show_details else "🔍 Show Details"
         self.text.content = f"## 🎒 Inventory\n{self._page_body()}"
         await interaction.response.edit_message(view=self)
 
@@ -164,6 +213,9 @@ class RPGShop(commands.Cog):
             return
 
         is_equipment = item in EQUIPMENT
+        if is_equipment and EQUIPMENT[item].slot == "shield" and character["class_key"] != SHIELD_CLASS_KEY:
+            await interaction.response.send_message("⚠️ Shields can only be equipped by Paladins.")
+            return
         if is_equipment:
             quantity = 1  # equipment is unique-per-slot; only potions stack meaningfully
         price = _item_price(item)
@@ -184,12 +236,17 @@ class RPGShop(commands.Cog):
         )
         await interaction.response.send_message(view=view)
 
-    @app_commands.command(name="rpgequip", description="Equip a weapon, armor, or accessory you own.")
+    @app_commands.command(name="rpgequip", description="Equip a weapon, armor, accessory, or (Paladin-only) shield you own.")
     @app_commands.describe(item="Which item to equip")
     async def rpgequip(self, interaction: discord.Interaction, item: EquipmentKey):
         character = await self.bot.db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
+            return
+
+        info = EQUIPMENT[item]
+        if info.slot == "shield" and character["class_key"] != SHIELD_CLASS_KEY:
+            await interaction.response.send_message("⚠️ Shields can only be equipped by Paladins.")
             return
 
         owned = await self.bot.db.get_rpg_item_quantity(interaction.user.id, item)
@@ -199,7 +256,6 @@ class RPGShop(commands.Cog):
             )
             return
 
-        info = EQUIPMENT[item]
         already_equipped = character.get(f"equipped_{info.slot}") == item
         await self.bot.db.set_equipped(interaction.user.id, info.slot, item)
         if not already_equipped:
@@ -322,7 +378,7 @@ class RPGShop(commands.Cog):
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
 
-        slots: list[SlotKey] = ["weapon", "armor", "accessory"]
+        slots: list[SlotKey] = ["weapon", "armor", "accessory", "shield"]
         has_any_gear = any(
             character.get(f"equipped_{s}") or character.get(f"primordial_{s}") for s in slots
         )
@@ -398,11 +454,15 @@ class RPGShop(commands.Cog):
 
         target_tier = recommended_tier_for_level(character["level"])
         target_rank = TIER_ORDER.index(target_tier)
-        name_maps = {"weapon": WEAPON_NAMES, "armor": ARMOR_NAMES, "accessory": ACCESSORY_NAMES}
+        name_maps = {"weapon": WEAPON_NAMES, "armor": ARMOR_NAMES, "accessory": ACCESSORY_NAMES, "shield": SHIELD_NAMES}
+
+        slots = ["weapon", "armor", "accessory"]
+        if character["class_key"] == SHIELD_CLASS_KEY:
+            slots.append("shield")
 
         bought = []
         skipped = []
-        for slot in ("weapon", "armor", "accessory"):
+        for slot in slots:
             if character.get(f"primordial_{slot}"):
                 skipped.append(f"{slot} — ✨ Primordial item equipped")
                 continue
@@ -448,7 +508,9 @@ class RPGShop(commands.Cog):
             await interaction.response.send_message("🎒 You don't own any items yet. Check out `/rpgshop`!")
             return
 
-        lines = [f"**{_item_name(key)}** x{qty}" for key, qty in rows] if rows else ["*No regular gear or potions.*"]
+        base_lines = [f"**{_item_name(key)}** (x{qty})" for key, qty in rows] if rows else ["*No regular gear or potions.*"]
+        simple_lines = list(base_lines)
+        detailed_lines = list(base_lines)
 
         if primordial_items:
             character = await self.bot.db.get_character(interaction.user.id)
@@ -457,17 +519,30 @@ class RPGShop(commands.Cog):
                 character.get("equipped_primordial_armor_id"),
                 character.get("equipped_primordial_accessory_id"),
             } if character else set()
-            lines.append("")
-            lines.append("**✨ Primordial Items**")
-            for item in primordial_items:
-                mark = " ✅ *equipped*" if item["id"] in equipped_ids else ""
-                base_name = PRIMORDIAL_BASES[item["slot"]].name
-                lines.append(
-                    f"`#{item['id']}` {base_name} ({item['slot']}) — {describe_affixes(item['affixes'])}{mark}"
-                )
 
-        pages = _paginate_lines(lines)
-        view = InventoryView(interaction.user.id, pages)
+            by_slot: dict[str, list[dict]] = {}
+            for item in primordial_items:
+                by_slot.setdefault(item["slot"], []).append(item)
+
+            simple_lines.append("")
+            simple_lines.append(f"**✨ Primordial Items** ({len(primordial_items)})")
+            detailed_lines.append("")
+            detailed_lines.append(f"**✨ Primordial Items** ({len(primordial_items)})")
+
+            for slot in ("weapon", "armor", "accessory"):
+                items = by_slot.get(slot)
+                if not items:
+                    continue
+                simple_lines.append(f"{PRIMORDIAL_BASES[slot].name} (x{len(items)})")
+
+                detailed_lines.append(f"\n**{PRIMORDIAL_BASES[slot].name}** ({slot})")
+                for item in items:
+                    mark = " ✅" if item["id"] in equipped_ids else ""
+                    detailed_lines.append(f"`#{item['id']}` {describe_affixes(item['affixes'])}{mark}")
+
+        view = InventoryView(
+            interaction.user.id, simple_lines, detailed_lines, has_primordial=bool(primordial_items)
+        )
         await interaction.response.send_message(view=view)
 
     @app_commands.command(name="rpgequipprimordial", description="Equip a ✨ Primordial item you own by its ID.")
