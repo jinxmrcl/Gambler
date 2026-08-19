@@ -64,3 +64,14 @@ async def limited_edit(message, **kwargs) -> None:
 async def limited_send(sendable, **kwargs):
     await _global_send_limiter.acquire()
     return await sendable.send(**kwargs)
+
+
+def get_status() -> dict:
+    return {
+        "edit_tokens": round(_global_edit_limiter._tokens, 1),
+        "edit_rate": _GLOBAL_EDIT_RATE,
+        "send_tokens": round(_global_send_limiter._tokens, 1),
+        "send_rate": _GLOBAL_SEND_RATE,
+        "tracked_channels": len(_channel_limiters),
+        "tracked_messages": len(_message_limiters),
+    }
