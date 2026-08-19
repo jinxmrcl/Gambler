@@ -1513,13 +1513,9 @@ class Database:
 
     async def add_level_admin_xp(self, guild_id: int, user_id: int, amount: int) -> int:
         await self._execute(
-            "INSERT INTO level_xp (guild_id, user_id, xp) VALUES (%s, %s, %s) AS new "
-            "ON DUPLICATE KEY UPDATE xp = level_xp.xp + new.xp",
-            (guild_id, user_id, amount),
-        )
-        await self._execute(
-            "UPDATE level_xp SET xp = GREATEST(xp, 0) WHERE guild_id = %s AND user_id = %s",
-            (guild_id, user_id),
+            "INSERT INTO level_xp (guild_id, user_id, xp) VALUES (%s, %s, GREATEST(%s, 0)) AS new "
+            "ON DUPLICATE KEY UPDATE xp = GREATEST(level_xp.xp + %s, 0)",
+            (guild_id, user_id, amount, amount),
         )
         row = await self._fetchone(
             "SELECT xp FROM level_xp WHERE guild_id = %s AND user_id = %s", (guild_id, user_id)

@@ -868,8 +868,9 @@ class RPGDungeon(commands.Cog):
         if stats is None:
             stats = {
                 "dungeon_attempts": 0, "dungeon_wins": 0, "boss_attempts": 0, "boss_wins": 0,
-                "gold": 0, "xp": 0, "levels_gained": 0, "loot": [], "primordial_drops": [],
+                "gold": 0, "xp": 0, "levels_gained": 0, "loot": [], "primordial_drops": [], "kills": {},
             }
+        stats.setdefault("kills", {})
 
         async def _persist():
             try:
@@ -905,6 +906,8 @@ class RPGDungeon(commands.Cog):
                         stats["levels_gained"] += outcome["levels_gained"]
                         if outcome["won"]:
                             stats["dungeon_wins"] += 1
+                            name = outcome["monster_name"]
+                            stats["kills"][name] = stats["kills"].get(name, 0) + 1
                         if outcome["loot_item"]:
                             stats["loot"].append(outcome["loot_item"])
 
@@ -923,6 +926,8 @@ class RPGDungeon(commands.Cog):
                         stats["levels_gained"] += outcome["levels_gained"]
                         if outcome["won"]:
                             stats["boss_wins"] += 1
+                            name = outcome["boss_name"]
+                            stats["kills"][name] = stats["kills"].get(name, 0) + 1
                         if outcome["loot_item"]:
                             stats["loot"].append(outcome["loot_item"])
                         if outcome["bonus_loot_item"]:
@@ -968,6 +973,9 @@ class RPGDungeon(commands.Cog):
         lines = [f"**{stats['dungeon_attempts']}** fight(s), **{stats['dungeon_wins']}** won"]
         if stats["boss_attempts"]:
             lines.append(f"**{stats['boss_attempts']}** boss attempt(s), **{stats['boss_wins']}** won")
+        if stats["kills"]:
+            kill_lines = ", ".join(f"{name} x{count}" for name, count in stats["kills"].items())
+            lines.append(f"⚔️ **Kills:** {kill_lines}")
         lines.append(f"💰 **+{fmt(stats['gold'])}**  •  **+{stats['xp']} XP**")
         if stats["levels_gained"] and final_level is not None:
             lines.append(f"⬆️ Leveled up to **{final_level}**!")

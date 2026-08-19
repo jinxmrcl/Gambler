@@ -1,6 +1,6 @@
 import datetime
 
-SHIELD_DURATION = datetime.timedelta(hours=2)
+SHIELD_DURATION = datetime.timedelta(hours=24)
 
 ITEMS = {
     "shield": {
