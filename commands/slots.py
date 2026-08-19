@@ -23,6 +23,10 @@ SYMBOLS = [
     ("7️⃣", 3, 50),
 ]
 
+WILD_SYMBOL = "🃏"
+WILD_WEIGHT = 2
+WILD_BASE_MULT = 100
+
 _MANIFEST_PATH = Path(__file__).parent.parent / "assets" / "slots" / "manifest.json"
 _SYMBOL_KEYS = {
     "🍒": "cherry",
@@ -62,13 +66,37 @@ PAYLINES = [
 LINE_NAMES = ["Top row", "Middle row", "Bottom row", "Diagonal ↘", "Diagonal ↗"]
 COLUMNS = [(0, 3, 6), (1, 4, 7), (2, 5, 8)]
 
-_total_weight = sum(weight for _, weight, _ in SYMBOLS)
-_expected_raw = sum(((weight / _total_weight) ** 3) * base_mult for _, weight, base_mult in SYMBOLS)
-_target_per_line = RTP / len(PAYLINES)
-_scale = _target_per_line / _expected_raw
-PAYOUTS = {emoji: round(_scale * base_mult, 2) for emoji, _, base_mult in SYMBOLS}
-_POPULATION = [emoji for emoji, _, _ in SYMBOLS]
-_WEIGHTS = [weight for _, weight, _ in SYMBOLS]
+BASE_MULT = {emoji: base_mult for emoji, _, base_mult in SYMBOLS}
+BASE_MULT[WILD_SYMBOL] = WILD_BASE_MULT
+_POPULATION = [emoji for emoji, _, _ in SYMBOLS] + [WILD_SYMBOL]
+_WEIGHTS = [weight for _, weight, _ in SYMBOLS] + [WILD_WEIGHT]
+
+
+def _line_symbol(a: str, b: str, c: str) -> str | None:
+    """Returns the symbol a line pays as (wilds substitute for anything), or None if it doesn't win."""
+    non_wild = [s for s in (a, b, c) if s != WILD_SYMBOL]
+    if not non_wild:
+        return WILD_SYMBOL
+    if all(s == non_wild[0] for s in non_wild):
+        return non_wild[0]
+    return None
+
+
+def _calibrate_scale() -> float:
+    # For 3 independent cells, P(line resolves to symbol i) = (p_i + p_wild)^3 - p_wild^3
+    # (all non-wild cells among the 3 are i, excluding the all-wild case which resolves to WILD instead).
+    total_weight = sum(_WEIGHTS)
+    p_wild = WILD_WEIGHT / total_weight
+    expected_raw = (p_wild**3) * WILD_BASE_MULT
+    for emoji, weight, base_mult in SYMBOLS:
+        p = weight / total_weight
+        expected_raw += ((p + p_wild) ** 3 - p_wild**3) * base_mult
+    target_per_line = RTP / len(PAYLINES)
+    return target_per_line / expected_raw
+
+
+_scale = _calibrate_scale()
+PAYOUTS = {emoji: round(_scale * base_mult, 2) for emoji, base_mult in BASE_MULT.items()}
 
 
 def random_symbol() -> str:
@@ -87,12 +115,14 @@ def evaluate(grid: list[str], bet: int) -> tuple[int, list[str]]:
     total_payout = 0
     winning_lines = []
     for name, (a, b, c) in zip(LINE_NAMES, PAYLINES):
-        if grid[a] == grid[b] == grid[c]:
-            multiplier = PAYOUTS[grid[a]]
+        symbol = _line_symbol(grid[a], grid[b], grid[c])
+        if symbol:
+            multiplier = PAYOUTS[symbol]
             line_payout = int(bet * multiplier)
             total_payout += line_payout
             symbols = f"{display(grid[a])}{display(grid[b])}{display(grid[c])}"
-            winning_lines.append(f"{name}: {symbols} → {multiplier:g}x = {fmt(line_payout)}")
+            wild_note = " (🃏 wild)" if WILD_SYMBOL in (grid[a], grid[b], grid[c]) and symbol != WILD_SYMBOL else ""
+            winning_lines.append(f"{name}: {symbols}{wild_note} → {multiplier:g}x = {fmt(line_payout)}")
     return total_payout, winning_lines
 
 
@@ -118,7 +148,9 @@ class Slots(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="slots", description="Spin the 3x3 slot machine (5 paylines).")
+    @commands.hybrid_command(
+        name="slots", description="Spin the 3x3 slot machine (5 paylines). 🃏 Wilds substitute for any symbol."
+    )
     @game_enabled("slots")
     async def slots(self, ctx: commands.Context, bet: str):
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)

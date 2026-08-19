@@ -73,11 +73,13 @@ class PostgresDatabase:
                     balance BIGINT NOT NULL DEFAULT 0,
                     bank_balance BIGINT NOT NULL DEFAULT 0,
                     last_daily TIMESTAMP NULL,
+                    daily_streak INTEGER NOT NULL DEFAULT 0,
                     protected_until TIMESTAMP NULL,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_streak INTEGER NOT NULL DEFAULT 0")
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS inventory (
@@ -355,21 +357,37 @@ class PostgresDatabase:
         await self._execute("UPDATE users SET balance = $1 WHERE user_id = $2", amount, user_id)
 
     async def claim_daily(
-        self, user_id: int, amount: int, period: datetime.timedelta, now: datetime.datetime
-    ) -> int | None:
+        self,
+        user_id: int,
+        base_amount: int,
+        period: datetime.timedelta,
+        now: datetime.datetime,
+        *,
+        bonus_per_day: float = 0.1,
+        max_bonus_days: int = 10,
+    ) -> tuple[int, int, int] | None:
+        """Returns (new_balance, payout, streak) or None if not yet eligible."""
         cutoff = now - period
+        row = await self._fetchone("SELECT last_daily, daily_streak FROM users WHERE user_id = $1", user_id)
+        last_daily, streak = (row[0], row[1]) if row else (None, 0)
+        continues = last_daily is not None and (now - last_daily) <= period * 2
+        new_streak = streak + 1 if continues else 1
+        multiplier = 1 + bonus_per_day * min(new_streak - 1, max_bonus_days)
+        payout = int(base_amount * multiplier)
+
         rowcount = await self._execute(
-            "UPDATE users SET balance = balance + $1, last_daily = $2 "
-            "WHERE user_id = $3 AND (last_daily IS NULL OR last_daily <= $4)",
-            amount,
+            "UPDATE users SET balance = balance + $1, last_daily = $2, daily_streak = $3 "
+            "WHERE user_id = $4 AND (last_daily IS NULL OR last_daily <= $5)",
+            payout,
             now,
+            new_streak,
             user_id,
             cutoff,
         )
         if rowcount == 0:
             return None
         row = await self._fetchone("SELECT balance FROM users WHERE user_id = $1", user_id)
-        return row[0]
+        return row[0], payout, new_streak
 
     async def get_last_daily(self, user_id: int) -> datetime.datetime | None:
         row = await self._fetchone("SELECT last_daily FROM users WHERE user_id = $1", user_id)
@@ -1226,7 +1244,7 @@ class PostgresDatabase:
             async with conn.transaction():
                 await conn.execute(
                     "UPDATE users SET balance = $1, bank_balance = 0, last_daily = NULL, "
-                    "protected_until = NULL WHERE user_id = $2",
+                    "daily_streak = 0, protected_until = NULL WHERE user_id = $2",
                     starting_balance,
                     user_id,
                 )

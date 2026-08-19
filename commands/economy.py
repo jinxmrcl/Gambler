@@ -38,8 +38,8 @@ class Economy(commands.Cog):
         now = datetime.datetime.utcnow()
         period = datetime.timedelta(hours=24)
 
-        new_balance = await self.bot.db.claim_daily(ctx.author.id, self.bot.daily_amount, period, now)
-        if new_balance is None:
+        result = await self.bot.db.claim_daily(ctx.author.id, self.bot.daily_amount, period, now)
+        if result is None:
             last = await self.bot.db.get_last_daily(ctx.author.id)
             remaining = period - (now - last) if last else datetime.timedelta(0)
             hours, rem = divmod(max(int(remaining.total_seconds()), 0), 3600)
@@ -49,11 +49,16 @@ class Economy(commands.Cog):
             )
             return
 
-        view = StaticView(
-            "🎁 Daily Bonus",
-            f"You received {fmt(self.bot.daily_amount)}!\nNew balance: {fmt(new_balance)}",
-            color=discord.Color.green(),
-        )
+        new_balance, payout, streak = result
+        bonus_pct = round((payout / self.bot.daily_amount - 1) * 100)
+        body = f"You received {fmt(payout)}!\nNew balance: {fmt(new_balance)}"
+        body += f"\n🔥 **Streak:** {streak} day{'s' if streak != 1 else ''}"
+        if bonus_pct:
+            body += f" (+{bonus_pct}% bonus)"
+        else:
+            body += " — come back tomorrow to start a bonus streak!"
+
+        view = StaticView("🎁 Daily Bonus", body, color=discord.Color.green())
         await ctx.send(view=view)
 
     @commands.hybrid_command(name="leaderboard", aliases=["lb"], description="Shows a leaderboard.")

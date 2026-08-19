@@ -98,7 +98,9 @@ the casino:
 - PvP `/duel` with a cooldown, and an `/arena` leaderboard of top duelists
 
 **Economy** — a per-user virtual balance stored in MySQL, with:
-- `daily` bonus, `work`/`crime`/`slut` for risk-based income, and `rob` to steal from others
+- `daily` bonus with a consecutive-day streak: +10% per day claimed on time, up to +100%
+  at a 10-day streak; missing a day resets it back to 1, `work`/`crime`/`slut` for
+  risk-based income, and `rob` to steal from others
 - a passive **Payday**: every 2-4h, one random user gets a random amount (100-10,000 by
   default), announced in a configurable channel (`PAYDAY_CHANNEL_ID`) — no command needed,
   no per-user cooldown or fairness tracking, just a single global timer so payouts land one
@@ -367,7 +369,9 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
   10:1, Perfect 30:1), **21+3** (your two cards + the dealer's up-card make a poker
   hand — Flush 5:1, Straight 10:1, Three of a Kind 30:1, Straight Flush 40:1, Suited
   Trips 100:1), and **Insurance** (max half your main bet, only offered when the
-  dealer's up-card is an Ace — pays 2:1 if the dealer has Blackjack)
+  dealer's up-card is an Ace — pays 2:1 if the dealer has Blackjack). A **Surrender**
+  button is available as your very first decision on the initial two cards — forfeit
+  and get back half your main bet instead of playing out a bad hand
 - `mines <bet> [mines=3] [cols=5] [rows=4] [auto_cashout]` — customizable grid (2-5
   cols, 2-5 rows — the full 5x5 unlocks up to 23 mines), avoid mines, cash out
   anytime; optionally set `auto_cashout` to a number of safe tiles and the game cashes
@@ -378,7 +382,8 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
   must reach it
 - `keno <bet> [picks=5]` — pick numbers and hope for hits in the draw
 - `slots <bet>` — animated 3x3 grid with 5 paylines (rows + both diagonals); reels stop
-  one column at a time before the result is revealed
+  one column at a time before the result is revealed. A 🃏 **Wild** symbol substitutes
+  for any other symbol to complete a line (three wilds pay the game's top jackpot)
 - `roulette <bet> <choice>` — bet on a straight number (0-36), color (`red`/`black`),
   even/odd, a dozen (`1st12`/`2nd12`/`3rd12`, pays 3x), a column (`col1`/`col2`/`col3`,
   pays 3x), or a split between two table-adjacent numbers (e.g. `17/18`, pays 18x)
@@ -386,11 +391,16 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
 - `soloflip <bet> [call=heads]` (alias `cf`) — call heads or tails against the house
 - `scratchcard <bet>` (alias `scratch`) — click each of the 9 tiles yourself to scratch
   it off; match 4 or more of the same symbol to win
-- `horserace <bet>` (alias `horse`) — place your bet, then pick from 6 randomly-named
-  horses in a dropdown (odds shown per horse, individually simulated: ~2.7x favorite up
-  to ~40x longshot) and watch the animated race
-- `baccarat <bet> <choice>` — bet on Player, Banker, or Tie; plays out the real casino
-  drawing rules (natural 8/9, third-card rules for both hands) with an animated reveal
+- `horserace <bet> [bet_type=win]` (alias `horse`) — place your bet, then pick from 6
+  randomly-named horses in a dropdown (odds shown per horse, individually simulated) and
+  watch the animated race. `bet_type` picks **Win** (1st place only, default), **Place**
+  (top 2, lower payout), or **Show** (top 3, lowest payout but easiest to hit) — each with
+  its own independently calibrated odds per horse
+- `baccarat <bet> <choice> [player_pair] [banker_pair]` — bet on Player, Banker, or Tie;
+  plays out the real casino drawing rules (natural 8/9, third-card rules for both hands)
+  with an animated reveal. Two optional side bets settle on the first two cards dealt,
+  independent of the main hand: **Player Pair** and **Banker Pair** (either pays 11:1 if
+  that hand's first two cards are a pair)
 - `crash <bet> [auto_cashout]` — watch the multiplier climb in real time and hit
   **Cash Out** before it crashes; wait too long and you lose the bet entirely.
   Optionally set `auto_cashout` to a target multiplier and the game cashes out for you
