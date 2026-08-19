@@ -9,7 +9,7 @@ from database.db import InsufficientFunds
 from rpg.badges import prestige_badge
 from rpg.character import current_hp, full_stats
 from rpg.classes import CLASSES, base_stats_at_level
-from rpg.equipment import EQUIPMENT
+from rpg.equipment import EQUIPMENT, SHIELD_CLASS_KEY
 from rpg.leveling import prestige_and_level, title_for_level, xp_for_level
 from rpg.primordial import PRIMORDIAL_BASES, describe_affixes
 from utils.economy import StaticView, fmt
@@ -140,6 +140,9 @@ class RPGCharacter(commands.Cog):
         else:
             accessory_text = f"{accessory.name} (+{character['accessory_enchant']})" if accessory else "*None*"
 
+        shield = EQUIPMENT.get(character.get("equipped_shield"))
+        shield_text = f"{shield.name} (+{character['shield_enchant']})" if shield else "*None*"
+
         total_duels = character["wins"] + character["losses"]
         winrate = f"{character['wins'] / total_duels * 100:.0f}%" if total_duels else "—"
         boss_kills = await self.bot.db.total_boss_kills(target.id)
@@ -150,21 +153,34 @@ class RPGCharacter(commands.Cog):
         else:
             level_line = f"**Level {character['level']}**"
 
+        stat_line = (
+            f"**HP:** {hp_now} / {stats['hp']}  •  **ATK:** {stats['atk']}  •  **DEF:** {stats['def']}  •  "
+            f"**Crit:** {stats['crit']:.0%}"
+        )
+        if stats["damage_reduction_pct"] or stats["block_chance"]:
+            stat_line += (
+                f"  •  **DR:** {stats['damage_reduction_pct']:.0%}  •  **Block:** {stats['block_chance']:.0%}"
+            )
+
         lines = [
             f"**{title} {c.name}** {c.emoji}",
             level_line,
             f"XP: {character['xp']} / {needed}",
             "",
-            f"**HP:** {hp_now} / {stats['hp']}  •  **ATK:** {stats['atk']}  •  **DEF:** {stats['def']}  •  **Crit:** {stats['crit']:.0%}",
+            stat_line,
             f"**Skill:** {c.skill_name} — {c.skill_desc}",
             "",
             f"**Weapon:** {weapon_text}",
             f"**Armor:** {armor_text}",
             f"**Accessory:** {accessory_text}",
+        ]
+        if character["class_key"] == SHIELD_CLASS_KEY:
+            lines.append(f"**Shield:** {shield_text}")
+        lines.extend([
             "",
             f"**Duels:** {character['wins']}W / {character['losses']}L ({winrate})",
             f"**Boss Kills:** {boss_kills}",
-        ]
+        ])
         if backup:
             backup_class = CLASSES[backup["class_key"]]
             lines.append(f"**Also playing:** {backup_class.emoji} {backup_class.name} (Level {backup['level']}) — `/rpgswitchclass {backup['class_key']}`")

@@ -22,6 +22,8 @@ def full_stats(character: dict) -> dict:
         character.get("weapon_enchant", 0),
         character.get("armor_enchant", 0),
         character.get("accessory_enchant", 0),
+        character.get("equipped_shield"),
+        character.get("shield_enchant", 0),
     )
     prim = primordial_multipliers(prim_weapon, prim_armor, prim_accessory)
     prestige_mult = prestige_stat_multiplier(character["level"])
@@ -35,6 +37,8 @@ def full_stats(character: dict) -> dict:
         "crit_dmg_bonus": prim["crit_dmg_bonus"],
         "reflect_pct": prim["reflect_pct"],
         "gold_find_pct": prim["gold_find_pct"],
+        "damage_reduction_pct": min(0.75, mult["dr_pct"]),
+        "block_chance": min(0.75, mult["block_pct"]),
     }
 
 
@@ -67,4 +71,6 @@ def to_fighter(character: dict, name: str, *, hp: int | None = None) -> Fighter:
         lifesteal_pct=stats["lifesteal_pct"],
         crit_dmg_bonus=stats["crit_dmg_bonus"],
         reflect_pct=stats["reflect_pct"],
+        damage_reduction_pct=stats["damage_reduction_pct"],
+        block_chance=stats["block_chance"],
     )

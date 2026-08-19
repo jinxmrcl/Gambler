@@ -63,7 +63,7 @@ class Shop(commands.Cog):
             await ctx.send("🎒 Your inventory is empty. Check out `/shop`!")
             return
 
-        lines = [f"{ITEMS.get(key, {'name': key})['name']}  `{key}`  —  **x{qty}**" for key, qty in rows]
+        lines = [f"{ITEMS.get(key, {'name': key})['name']}  `{key}`  —  **(x{qty})**" for key, qty in rows]
         lines.append(DIVIDER)
         lines.append(f"-# {len(rows)} distinct item{'s' if len(rows) != 1 else ''}")
         view = StaticView("🎒 Inventory", "\n".join(lines))

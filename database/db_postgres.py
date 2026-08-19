@@ -265,6 +265,7 @@ class PostgresDatabase:
                     equipped_weapon VARCHAR(32) NULL,
                     equipped_armor VARCHAR(32) NULL,
                     equipped_accessory VARCHAR(32) NULL,
+                    equipped_shield VARCHAR(32) NULL,
                     wins INTEGER NOT NULL DEFAULT 0,
                     losses INTEGER NOT NULL DEFAULT 0,
                     current_hp INTEGER NULL,
@@ -272,6 +273,7 @@ class PostgresDatabase:
                     weapon_enchant INTEGER NOT NULL DEFAULT 0,
                     armor_enchant INTEGER NOT NULL DEFAULT 0,
                     accessory_enchant INTEGER NOT NULL DEFAULT 0,
+                    shield_enchant INTEGER NOT NULL DEFAULT 0,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -279,6 +281,8 @@ class PostgresDatabase:
             await conn.execute("ALTER TABLE characters ADD COLUMN IF NOT EXISTS equipped_primordial_weapon_id INTEGER NULL")
             await conn.execute("ALTER TABLE characters ADD COLUMN IF NOT EXISTS equipped_primordial_armor_id INTEGER NULL")
             await conn.execute("ALTER TABLE characters ADD COLUMN IF NOT EXISTS equipped_primordial_accessory_id INTEGER NULL")
+            await conn.execute("ALTER TABLE characters ADD COLUMN IF NOT EXISTS equipped_shield VARCHAR(32) NULL")
+            await conn.execute("ALTER TABLE characters ADD COLUMN IF NOT EXISTS shield_enchant INTEGER NOT NULL DEFAULT 0")
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS rpg_equipment (
@@ -320,6 +324,7 @@ class PostgresDatabase:
                     equipped_weapon VARCHAR(32) NULL,
                     equipped_armor VARCHAR(32) NULL,
                     equipped_accessory VARCHAR(32) NULL,
+                    equipped_shield VARCHAR(32) NULL,
                     wins INTEGER NOT NULL DEFAULT 0,
                     losses INTEGER NOT NULL DEFAULT 0,
                     current_hp INTEGER NULL,
@@ -327,12 +332,15 @@ class PostgresDatabase:
                     weapon_enchant INTEGER NOT NULL DEFAULT 0,
                     armor_enchant INTEGER NOT NULL DEFAULT 0,
                     accessory_enchant INTEGER NOT NULL DEFAULT 0,
+                    shield_enchant INTEGER NOT NULL DEFAULT 0,
                     equipped_primordial_weapon_id INTEGER NULL,
                     equipped_primordial_armor_id INTEGER NULL,
                     equipped_primordial_accessory_id INTEGER NULL
                 )
                 """
             )
+            await conn.execute("ALTER TABLE character_backup ADD COLUMN IF NOT EXISTS equipped_shield VARCHAR(32) NULL")
+            await conn.execute("ALTER TABLE character_backup ADD COLUMN IF NOT EXISTS shield_enchant INTEGER NOT NULL DEFAULT 0")
             await conn.execute(
                 "INSERT INTO lottery_state (id, pot, next_draw) VALUES (1, 0, $1) "
                 "ON CONFLICT (id) DO NOTHING",
@@ -1060,8 +1068,9 @@ class PostgresDatabase:
     async def get_character(self, user_id: int) -> dict | None:
         row = await self._fetchone(
             "SELECT c.class_key, c.level, c.xp, c.equipped_weapon, c.equipped_armor, c.equipped_accessory, "
+            "c.equipped_shield, "
             "c.wins, c.losses, c.current_hp, c.hp_updated_at, "
-            "c.weapon_enchant, c.armor_enchant, c.accessory_enchant, "
+            "c.weapon_enchant, c.armor_enchant, c.accessory_enchant, c.shield_enchant, "
             "c.equipped_primordial_weapon_id, c.equipped_primordial_armor_id, c.equipped_primordial_accessory_id, "
             "pw.affixes, pa.affixes, pacc.affixes "
             "FROM characters c "
@@ -1080,6 +1089,7 @@ class PostgresDatabase:
             "equipped_weapon",
             "equipped_armor",
             "equipped_accessory",
+            "equipped_shield",
             "wins",
             "losses",
             "current_hp",
@@ -1087,22 +1097,23 @@ class PostgresDatabase:
             "weapon_enchant",
             "armor_enchant",
             "accessory_enchant",
+            "shield_enchant",
             "equipped_primordial_weapon_id",
             "equipped_primordial_armor_id",
             "equipped_primordial_accessory_id",
         )
         values = list(row)
-        character = dict(zip(keys, values[:16]))
-        weapon_affixes, armor_affixes, accessory_affixes = values[16], values[17], values[18]
+        character = dict(zip(keys, values[:18]))
+        weapon_affixes, armor_affixes, accessory_affixes = values[18], values[19], values[20]
         character["primordial_weapon"] = {"affixes": json.loads(weapon_affixes)} if weapon_affixes else None
         character["primordial_armor"] = {"affixes": json.loads(armor_affixes)} if armor_affixes else None
         character["primordial_accessory"] = {"affixes": json.loads(accessory_affixes)} if accessory_affixes else None
         return character
 
     _CHARACTER_SWAP_COLUMNS = (
-        "class_key", "level", "xp", "equipped_weapon", "equipped_armor", "equipped_accessory",
+        "class_key", "level", "xp", "equipped_weapon", "equipped_armor", "equipped_accessory", "equipped_shield",
         "wins", "losses", "current_hp", "hp_updated_at",
-        "weapon_enchant", "armor_enchant", "accessory_enchant",
+        "weapon_enchant", "armor_enchant", "accessory_enchant", "shield_enchant",
         "equipped_primordial_weapon_id", "equipped_primordial_armor_id", "equipped_primordial_accessory_id",
     )
 
@@ -1146,8 +1157,9 @@ class PostgresDatabase:
                     await conn.execute(
                         "UPDATE characters SET class_key = $1, level = 1, xp = 0, "
                         "equipped_weapon = NULL, equipped_armor = NULL, equipped_accessory = NULL, "
+                        "equipped_shield = NULL, "
                         "wins = 0, losses = 0, current_hp = $2, hp_updated_at = $3, "
-                        "weapon_enchant = 0, armor_enchant = 0, accessory_enchant = 0, "
+                        "weapon_enchant = 0, armor_enchant = 0, accessory_enchant = 0, shield_enchant = 0, "
                         "equipped_primordial_weapon_id = NULL, equipped_primordial_armor_id = NULL, "
                         "equipped_primordial_accessory_id = NULL "
                         "WHERE user_id = $4",
@@ -1171,6 +1183,7 @@ class PostgresDatabase:
         "weapon": "equipped_weapon",
         "armor": "equipped_armor",
         "accessory": "equipped_accessory",
+        "shield": "equipped_shield",
     }
 
     async def set_equipped(self, user_id: int, slot: str, item_key: str) -> None:
@@ -1183,6 +1196,7 @@ class PostgresDatabase:
         "weapon": "weapon_enchant",
         "armor": "armor_enchant",
         "accessory": "accessory_enchant",
+        "shield": "shield_enchant",
     }
 
     async def set_enchant_level(self, user_id: int, slot: str, level: int) -> None:

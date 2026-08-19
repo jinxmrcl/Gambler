@@ -20,6 +20,7 @@ RPGItemKey = Literal[
     "wooden_sword", "iron_sword", "flame_blade", "dragon_fang", "void_reaver", "worldbreaker",
     "leather_armor", "chainmail", "plate_armor", "dragonscale_armor", "void_plate", "worldguard",
     "lucky_charm", "hawk_eye_ring", "assassins_pendant", "phoenix_feather", "void_sigil", "crown_of_fate",
+    "wooden_shield", "iron_shield", "tower_shield", "dragonbone_shield", "void_aegis", "worldwarden",
     "minor_potion", "greater_potion", "superior_potion",
 ]
 
