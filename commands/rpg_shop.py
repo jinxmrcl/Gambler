@@ -2,7 +2,7 @@ import datetime
 from typing import Literal
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands
 
 from database.db import InsufficientFunds
@@ -18,7 +18,7 @@ from rpg.equipment import (
     recommended_tier_for_level,
 )
 from rpg.primordial import PRIMORDIAL_BASES, describe_affixes
-from utils.economy import StaticView, fmt
+from utils.economy import StaticView, fmt, game_container
 from utils.ratelimit import limited_edit
 
 EquipmentKey = Literal[
@@ -79,6 +79,70 @@ def _shop_text() -> str:
     for c in CONSUMABLES.values():
         lines.append(f"`{c.key}` — {c.name} — {fmt(c.price)} (restores {c.heal_pct:.0%} HP)")
     return "\n".join(lines)
+
+
+INVENTORY_PAGE_CHAR_BUDGET = 3500
+
+
+def _paginate_lines(lines: list[str], budget: int = INVENTORY_PAGE_CHAR_BUDGET) -> list[str]:
+    pages: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in lines:
+        line_len = len(line) + 1
+        if current and current_len + line_len > budget:
+            pages.append("\n".join(current))
+            current = []
+            current_len = 0
+        current.append(line)
+        current_len += line_len
+    if current:
+        pages.append("\n".join(current))
+    return pages or [""]
+
+
+class InventoryPageButton(ui.Button):
+    def __init__(self, label: str, delta: int, *, disabled: bool = False):
+        super().__init__(style=discord.ButtonStyle.secondary, label=label, disabled=disabled)
+        self.delta = delta
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.change_page(interaction, self.delta)
+
+
+class InventoryView(ui.LayoutView):
+    def __init__(self, owner_id: int, pages: list[str]):
+        super().__init__(timeout=120)
+        self.owner_id = owner_id
+        self.pages = pages
+        self.page = 0
+        self.container, self.text = game_container("🎒 Inventory", self._page_body())
+        self.prev_button = InventoryPageButton("◀️ Previous", -1, disabled=True)
+        self.next_button = InventoryPageButton("Next ▶️", 1, disabled=len(pages) <= 1)
+        if len(pages) > 1:
+            row = ui.ActionRow()
+            row.add_item(self.prev_button)
+            row.add_item(self.next_button)
+            self.container.add_item(row)
+        self.add_item(self.container)
+
+    def _page_body(self) -> str:
+        if len(self.pages) > 1:
+            return f"{self.pages[self.page]}\n\n-# Page {self.page + 1}/{len(self.pages)}"
+        return self.pages[self.page]
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("⚠️ This isn't your inventory.", ephemeral=True)
+            return False
+        return True
+
+    async def change_page(self, interaction: discord.Interaction, delta: int):
+        self.page = max(0, min(len(self.pages) - 1, self.page + delta))
+        self.prev_button.disabled = self.page == 0
+        self.next_button.disabled = self.page == len(self.pages) - 1
+        self.text.content = f"## 🎒 Inventory\n{self._page_body()}"
+        await interaction.response.edit_message(view=self)
 
 
 class RPGShop(commands.Cog):
@@ -385,7 +449,6 @@ class RPGShop(commands.Cog):
             return
 
         lines = [f"**{_item_name(key)}** x{qty}" for key, qty in rows] if rows else ["*No regular gear or potions.*"]
-        body = "\n".join(lines)
 
         if primordial_items:
             character = await self.bot.db.get_character(interaction.user.id)
@@ -394,16 +457,17 @@ class RPGShop(commands.Cog):
                 character.get("equipped_primordial_armor_id"),
                 character.get("equipped_primordial_accessory_id"),
             } if character else set()
-            prim_lines = []
+            lines.append("")
+            lines.append("**✨ Primordial Items**")
             for item in primordial_items:
                 mark = " ✅ *equipped*" if item["id"] in equipped_ids else ""
                 base_name = PRIMORDIAL_BASES[item["slot"]].name
-                prim_lines.append(
+                lines.append(
                     f"`#{item['id']}` {base_name} ({item['slot']}) — {describe_affixes(item['affixes'])}{mark}"
                 )
-            body += "\n\n**✨ Primordial Items**\n" + "\n".join(prim_lines)
 
-        view = StaticView("🎒 Inventory", body)
+        pages = _paginate_lines(lines)
+        view = InventoryView(interaction.user.id, pages)
         await interaction.response.send_message(view=view)
 
     @app_commands.command(name="rpgequipprimordial", description="Equip a ✨ Primordial item you own by its ID.")

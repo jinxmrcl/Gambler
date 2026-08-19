@@ -6,7 +6,7 @@ from utils.achievements import check_and_announce
 # (net worth, total wagered, robs succeeded, games played, daily streak).
 RELEVANT_COGS = {
     "Blackjack", "Mines", "Hilo", "Plinko", "Limbo", "Keno", "Slots", "Roulette", "Dice",
-    "Coinflip", "Scratchcard", "HorseRace", "Baccarat", "Crash", "Hustle", "Economy",
+    "Coinflip", "Scratchcard", "HorseRace", "Baccarat", "Hustle", "Economy",
 }
 
 

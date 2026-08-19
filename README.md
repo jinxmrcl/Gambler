@@ -30,34 +30,19 @@ all backed by MySQL (or Postgres/Supabase).
 
 ## Features
 
-**Casino Games** — 14 games against the house, plus a PvP duel:
+**Casino Games** — 13 games against the house, plus a PvP duel:
 
 - Blackjack (with Split), Mines (customizable grid), Hilo, Plinko, Limbo, Keno, Slots,
-  Roulette, Dice, Baccarat, Horse Race, Scratchcard, Crash, Solo Coinflip (`/soloflip`)
+  Roulette, Dice, Baccarat, Horse Race, Scratchcard, Solo Coinflip (`/soloflip`)
 - PvP `/coinflip` — challenge another player directly instead of the house
 - Every game shares one fixed, transparent house edge (`HOUSE_EDGE` in
   `utils/economy.py`, default 3%) — Horse Race and Baccarat derive their odds by
-  simulating the actual game rules rather than hand-picked numbers, and Crash reuses
-  Limbo's exact crash-point formula
-- Interactive games (Blackjack, Mines, Hilo, Keno, Scratchcard, Horse Race, Crash) use
+  simulating the actual game rules rather than hand-picked numbers
+- Interactive games (Blackjack, Mines, Hilo, Keno, Scratchcard, Horse Race) use
   Discord's native buttons and select menus — Scratchcard is click-to-reveal tile by
-  tile, Horse Race picks your horse from a dropdown after betting, and Crash lets you
-  hit Cash Out live while the multiplier climbs
-- Several (Blackjack, Slots, Horse Race, Baccarat, Crash) play out with a timed animated
+  tile, Horse Race picks your horse from a dropdown after betting
+- Several (Blackjack, Slots, Horse Race, Baccarat) play out with a timed animated
   reveal instead of showing the result instantly
-- Admins can set a Crash autoplay channel (`/set-crashchannel`) — once set, a new
-  shared round starts automatically every minute, self-editing one live message
-  through a countdown, the rocket climb, and the result, forever, with no manual
-  play needed. Anyone can hit **Place Bet** during the countdown to enter an amount
-  and join, the message lists everyone playing live, and each player hits their own
-  **Cash Out** before it crashes
-- Crash renders the climb as a small vertical rocket track (🚀 climbing a column of
-  bars, like Horse Race's track but straight up) instead of just a number, ticks on
-  a fixed real-time schedule so the pace stays steady, survives transient Discord
-  API hiccups without dropping a round, and remembers its message across bot
-  restarts instead of posting a new one
-- The regular `/crash <bet>` command still works everywhere for a private, instant
-  round outside of the autoplay channel
 - Blackjack and Hilo render real playing cards via custom Discord emojis
   (`assets/cards/`, mapped in `utils/cards.py`) instead of plain text
 
@@ -79,12 +64,15 @@ the casino:
   solo-equivalent reward, and anyone in the lobby can spend one potion to heal the whole
   party before the fight starts
 - `/idle` auto-farms a dungeon (monsters + occasional boss attempts) in the background for
-  up to 2 hours, quietly, with a single summary + ping at the end instead of per-fight spam
-  (posted as a new message if the run outlasted Discord's 15-minute reply window) — progress
+  up to 2 hours, quietly, with a single summary + ping (including a per-monster/boss kill
+  breakdown) sent back to the channel `/idle` was called from once the timer's up — progress
   and the remaining time are saved every tick, so a hot-reload or restart just pauses the run
   silently and it resumes on its own next time the bot is up, still counting toward the
-  original end time — a live-updated tracker message in a configurable channel lists everyone
-  currently idle farming and reposts itself if it goes over 12 hours without refreshing
+  original end time — a separate tracker message in a configurable channel lists everyone
+  currently idle farming, refreshes on a 1-minute timer plus whenever someone starts or
+  finishes (debounced so a burst of events — e.g. many sessions resuming at once after a
+  restart — collapses into a single edit), and reposts itself if it goes over 12 hours
+  without refreshing
 - prestige every 50 levels (up to prestige 29) once you hit the level cap, now with a small
   permanent stat bonus per tier (+0.5%, up to +14.5% at max prestige) on top of a smoother
   XP curve
@@ -148,7 +136,7 @@ character leveling:
 - A global + per-channel rate limiter (`utils/ratelimit.py`), both congestion-aware —
   they throttle harder the more callers are waiting simultaneously, then relax back
   down — to avoid Discord API throttling on frequent message edits and sends. Edits
-  (in-progress game state — blackjack draws, crash ticks, idle tracker updates) and new
+  (in-progress game state — blackjack draws, idle tracker updates) and new
   sends (initial command replies) draw from separate budgets, so a burst of new commands
   slows down how fast new replies go out without ever making an already-running game feel
   laggy
@@ -387,8 +375,6 @@ Requires the **Administrator** permission on the server.
 - `togglechannel <add|remove|clear>` — restrict games to specific channels
 - `set-gamblechannel [channel] [clear]` — restrict the whole bot to one channel
   (admins are always exempt)
-- `set-crashchannel [channel] [clear]` — run a shared, bettable Crash round every
-  minute in a channel, self-editing through countdown/climb/result forever
 - `set-updateschannel [channel] [clear]` — announce newly shipped commands/game modes
   here after a restart
 
@@ -441,12 +427,6 @@ All games accept the bet as a number, `all`, `half`, or a percentage (`50%`).
   with an animated reveal. Two optional side bets settle on the first two cards dealt,
   independent of the main hand: **Player Pair** and **Banker Pair** (either pays 11:1 if
   that hand's first two cards are a pair)
-- `crash <bet> [auto_cashout]` — watch the multiplier climb in real time and hit
-  **Cash Out** before it crashes; wait too long and you lose the bet entirely.
-  Optionally set `auto_cashout` to a target multiplier and the game cashes out for you
-  the instant it's reached — works both for the private `/crash` round and when
-  placing a bet in a shared autoplay-channel round (an extra field in the Place Bet
-  modal)
 
 All games share a 3% house edge (`HOUSE_EDGE` in `utils/economy.py`, or the standard
 European single-zero odds for `roulette`), which scales payout multipliers to stay
@@ -510,8 +490,8 @@ commands/marriage.py          marry, divorce, marriage
 commands/lottery.py           lottery, lottery_buy, lottery_setchannel (weekly background task)
 commands/profile.py           profile / stats
 commands/cooldowns.py         cooldowns
-commands/admin.py             addmoney, setbalance, giveall, resetuser, permcooldown, permshield, restart, rpgsetlevel, rpggivexp, rpggive, rpggiveprimordial
-commands/settings.py          settings, togglegame, togglechannel, set-gamblechannel, set-crashchannel, set-updateschannel
+commands/admin.py             addmoney, setbalance, giveall, resetuser, permcooldown, permshield, botstatus, restart, rpgsetlevel, rpggivexp, rpggive, rpggiveprimordial
+commands/settings.py          settings, togglegame, togglechannel, set-gamblechannel, set-updateschannel
 commands/help.py              help
 commands/blackjack.py         Blackjack
 commands/mines.py             Mines
@@ -525,7 +505,6 @@ commands/dice.py              Dice
 commands/scratchcard.py       Scratchcard
 commands/horserace.py         Horse Race
 commands/baccarat.py          Baccarat
-commands/crash.py             Crash (with autonomous, self-editing autoplay channel)
 commands/rpg_character.py     rpgstart, rpgswitchclass, classes, character, heal
 commands/rpg_dungeon.py       dungeons, dungeon, dungeonboss (both with a team-fight lobby mode), idle
 commands/rpg_shop.py          rpgshop, rpgbuy, rpgequip, rpguse, rpgsell, rpgupgrade, rpgautoupgrade, rpgautobuy, rpgequipprimordial, rpgunequipprimordial, rpginventory
