@@ -6,6 +6,7 @@ Base price: 7,000 gold per item.
 - **🟠 🐉 Dragon Fang** (weapon) — +24% ATK
 - **🟠 🐲 Dragonscale Armor** (armor) — +17% DEF, +24% HP
 - **🟠 🪶 Phoenix Feather** (accessory) — +10% Crit
+- **🟠 🐉 Dragonbone Shield** (shield, [Paladin](../Classes/Paladin.md) only) — +12% Damage Reduction, +9% Block Chance — purchase-only, never drops
 
 ## Dropped by
 

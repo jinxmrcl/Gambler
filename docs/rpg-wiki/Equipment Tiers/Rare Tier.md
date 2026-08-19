@@ -6,6 +6,7 @@ Base price: 800 gold per item.
 - **🔵 ⚔️ Iron Sword** (weapon) — +7% ATK
 - **🔵 ⛓️ Chainmail** (armor) — +5% DEF, +7% HP
 - **🔵 💍 Hawk-Eye Ring** (accessory) — +4% Crit
+- **🔵 🔩 Iron Shield** (shield, [Paladin](../Classes/Paladin.md) only) — +5% Damage Reduction, +4% Block Chance — purchase-only, never drops
 
 ## Dropped by
 

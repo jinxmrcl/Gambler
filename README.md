@@ -65,12 +65,16 @@ the casino:
   party before the fight starts
 - `/idle` auto-farms a dungeon (monsters + occasional boss attempts) in the background for
   up to 2 hours, quietly, with a single summary + ping (including a per-monster/boss kill
-  breakdown) sent back to the channel `/idle` was called from once the timer's up — progress
-  and the remaining time are saved every tick, so a hot-reload or restart just pauses the run
-  silently and it resumes on its own next time the bot is up, still counting toward the
-  original end time — a separate tracker message in a configurable channel lists everyone
-  currently idle farming, refreshes on a 1-minute timer plus whenever someone starts or
-  finishes (debounced so a burst of events — e.g. many sessions resuming at once after a
+  breakdown) sent back to the channel `/idle` was called from once the timer's up. An `auto`
+  toggle switches to running indefinitely instead — 60-minute checkpoints (a non-pinging
+  progress summary each hour, counters reset after each one) forever, until `/idle` is run
+  again to stop it and deliver a final pinging summary of whatever accumulated since the
+  last checkpoint — progress and the remaining/checkpoint time are saved every tick, so a
+  hot-reload or restart just pauses the run silently and it resumes on its own next time the
+  bot is up, still counting toward the original end (or next checkpoint) time — a separate
+  tracker message in a configurable channel lists everyone currently idle farming, refreshes
+  on a 1-minute timer plus whenever someone starts or finishes (debounced so a burst of
+  events — e.g. many sessions resuming at once after a
   restart — collapses into a single edit), and reposts itself if it goes over 12 hours
   without refreshing
 - prestige every 50 levels (up to prestige 29) once you hit the level cap, now with a small
@@ -292,7 +296,7 @@ but every note is plain Markdown and browsable directly on GitHub too.
 | Section | Covers |
 |---|---|
 | [RPG Overview](docs/rpg-wiki/RPG%20Overview.md) | Classes, dungeons, bosses, equipment tiers, leveling & prestige (level 1-1500) |
-| [Casino Games](docs/rpg-wiki/Casino%20Games/Casino%20Overview.md) | All 14 games of chance and their odds |
+| [Casino Games](docs/rpg-wiki/Casino%20Games/Casino%20Overview.md) | All 13 games of chance and their odds |
 | [Economy](docs/rpg-wiki/Economy/Economy%20Overview.md) | Balance, daily, bank, hustling (work/crime/slut/rob) |
 | [Social](docs/rpg-wiki/Social/Social%20Overview.md) | Marriage, trading, the weekly lottery |
 | [Admin & Settings](docs/rpg-wiki/Admin%20%26%20Settings/Admin%20Overview.md) | Server configuration, moderation commands |
@@ -449,8 +453,10 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
   cooldown; with `team: True`, opens a public join lobby instead of fighting solo
 - `dungeonboss <name> [team=False]` — challenge a dungeon's boss for bigger rewards, no
   cooldown; `team: True` opens a join lobby, scaling the boss to party size
-- `idle <name> [minutes=30]` — auto-farms that dungeon (monsters + boss) in the
-  background for up to 120 minutes, then posts one summary with a ping — no per-fight spam
+- `idle <name> [minutes=30] [auto=False]` — auto-farms that dungeon (monsters + boss) in
+  the background for up to 120 minutes, then posts one summary with a ping — no per-fight
+  spam. With `auto: True`, runs indefinitely in 60-minute checkpoints instead, until `idle`
+  is run again to stop it
 - `rpgshop` — shows the equipment and potion shop
 - `rpgbuy <item> [quantity=1]` — buy a piece of equipment or a potion
 - `rpgequip <item>` — equip an owned weapon, armor, or accessory

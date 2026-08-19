@@ -36,6 +36,7 @@ BOSS_BONUS_LOOT_CHANCE = 0.15
 IDLE_POLL_SECONDS = 5
 IDLE_MAX_MINUTES = 120
 IDLE_DEFAULT_MINUTES = 30
+AUTO_IDLE_CHECKPOINT_MINUTES = 60
 
 _raw_idle_announce_channel = os.getenv("IDLE_ANNOUNCE_CHANNEL_ID", "1538948163510083605")
 IDLE_ANNOUNCE_CHANNEL_ID = int(_raw_idle_announce_channel) if _raw_idle_announce_channel.isdigit() else None
@@ -558,6 +559,7 @@ class RPGDungeon(commands.Cog):
         self.bot = bot
         self._idle_tasks: dict[int, asyncio.Task] = {}
         self._idle_sessions: dict[int, dict] = {}
+        self._auto_idle_stop: set[int] = set()
         self._idle_tracker_message: discord.Message | None = None
         self._idle_tracker_posted_at: datetime.datetime | None = None
         self._tracker_update_task: asyncio.Task | None = None
@@ -607,7 +609,11 @@ class RPGDungeon(commands.Cog):
             )
             self._idle_tasks[user_id] = task
             task.add_done_callback(lambda _t, uid=user_id: self._idle_tasks.pop(uid, None))
-            self._idle_sessions[user_id] = {"dungeon_name": d.name, "deadline": row["deadline"]}
+            self._idle_sessions[user_id] = {
+                "dungeon_name": d.name,
+                "deadline": row["deadline"],
+                "auto": bool(stats.get("auto")) if stats else False,
+            }
 
         if sessions:
             log.info("[idle] resumed %d idle session(s) after reload", len(sessions))
@@ -650,7 +656,10 @@ class RPGDungeon(commands.Cog):
             for user_id, info in self._idle_sessions.items():
                 remaining = max(datetime.timedelta(0), info["deadline"] - now)
                 remaining_min = int(remaining.total_seconds() // 60)
-                lines.append(f"• <@{user_id}> — {info['dungeon_name']} ({remaining_min}m left)")
+                if info.get("auto"):
+                    lines.append(f"• <@{user_id}> — {info['dungeon_name']} (auto, next checkpoint in {remaining_min}m)")
+                else:
+                    lines.append(f"• <@{user_id}> — {info['dungeon_name']} ({remaining_min}m left)")
             body = "\n".join(lines)
 
         view = StaticView("🏕️ Active Idle Farmers", body)
@@ -839,16 +848,31 @@ class RPGDungeon(commands.Cog):
         view = StaticView(f"👑 {d.name} — Boss", body, color=color)
         await interaction.response.send_message(view=view)
 
-    @app_commands.command(name="idle", description="Auto-farm a dungeon (and its boss) in the background for a set duration.")
-    @app_commands.describe(dungeon="Which dungeon to farm", minutes="How long to farm for (default 30, max 120)")
+    @app_commands.command(name="idle", description="Auto-farm a dungeon (and its boss) in the background.")
+    @app_commands.describe(
+        dungeon="Which dungeon to farm",
+        minutes="How long to farm for (ignored if auto is enabled; default 30, max 120)",
+        auto="Keep farming indefinitely in 60-minute checkpoints — run /idle again anytime to stop",
+    )
     async def idle(
         self,
         interaction: discord.Interaction,
         dungeon: DungeonKey,
         minutes: app_commands.Range[int, 1, IDLE_MAX_MINUTES] = IDLE_DEFAULT_MINUTES,
+        auto: bool = False,
     ):
         if interaction.user.id in self._idle_tasks:
-            await interaction.response.send_message("⚠️ You're already idle farming. Wait for it to finish.")
+            session = self._idle_sessions.get(interaction.user.id)
+            if session and session.get("auto"):
+                self._auto_idle_stop.add(interaction.user.id)
+                await interaction.response.send_message(
+                    view=StaticView(
+                        "🏕️ Stopping Auto Idle",
+                        "Wrapping up your current run — you'll get a final summary shortly.",
+                    )
+                )
+            else:
+                await interaction.response.send_message("⚠️ You're already idle farming. Wait for it to finish.")
             return
         self._idle_tasks[interaction.user.id] = None
         started = False
@@ -865,16 +889,23 @@ class RPGDungeon(commands.Cog):
                 )
                 return
 
-            await interaction.response.send_message(
-                view=StaticView(
-                    f"🏕️ Idle Farming — {d.name}",
-                    f"Farming quietly for {minutes} minute(s). You'll get a summary when it's done.",
+            if auto:
+                confirm_body = (
+                    "Farming indefinitely in 60-minute checkpoints — you'll get a summary after each "
+                    "hour, and a final one whenever you run `/idle` again to stop."
                 )
-            )
-            deadline = datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes)
+                run_minutes = AUTO_IDLE_CHECKPOINT_MINUTES
+            else:
+                confirm_body = f"Farming quietly for {minutes} minute(s). You'll get a summary when it's done."
+                run_minutes = minutes
+
+            await interaction.response.send_message(view=StaticView(f"🏕️ Idle Farming — {d.name}", confirm_body))
+            deadline = datetime.datetime.utcnow() + datetime.timedelta(minutes=run_minutes)
 
             task = asyncio.create_task(
-                self._run_idle(interaction.user.id, interaction.user.display_name, d, interaction.channel_id, deadline)
+                self._run_idle(
+                    interaction.user.id, interaction.user.display_name, d, interaction.channel_id, deadline, auto=auto
+                )
             )
             self._idle_tasks[interaction.user.id] = task
             task.add_done_callback(lambda _t: self._idle_tasks.pop(interaction.user.id, None))
@@ -883,23 +914,31 @@ class RPGDungeon(commands.Cog):
             self._idle_sessions[interaction.user.id] = {
                 "dungeon_name": d.name,
                 "deadline": deadline,
+                "auto": auto,
             }
             self._schedule_tracker_update()
         finally:
             if not started:
                 self._idle_tasks.pop(interaction.user.id, None)
 
+    @staticmethod
+    def _fresh_idle_stats(auto: bool = False) -> dict:
+        return {
+            "dungeon_attempts": 0, "dungeon_wins": 0, "boss_attempts": 0, "boss_wins": 0,
+            "gold": 0, "xp": 0, "levels_gained": 0, "loot": [], "primordial_drops": [], "kills": {},
+            "auto": auto,
+        }
+
     async def _run_idle(
         self,
         user_id: int, display_name: str, d: Dungeon, channel_id: int,
-        deadline: datetime.datetime, stats: dict | None = None,
+        deadline: datetime.datetime, stats: dict | None = None, auto: bool = False,
     ):
         if stats is None:
-            stats = {
-                "dungeon_attempts": 0, "dungeon_wins": 0, "boss_attempts": 0, "boss_wins": 0,
-                "gold": 0, "xp": 0, "levels_gained": 0, "loot": [], "primordial_drops": [], "kills": {},
-            }
+            stats = self._fresh_idle_stats(auto)
         stats.setdefault("kills", {})
+        stats.setdefault("auto", auto)
+        auto = stats["auto"]
 
         async def _persist():
             try:
@@ -913,8 +952,23 @@ class RPGDungeon(commands.Cog):
 
         had_error = False
         try:
-            while datetime.datetime.utcnow() < deadline:
+            while True:
+                if user_id in self._auto_idle_stop:
+                    break
+
                 now = datetime.datetime.utcnow()
+                if now >= deadline:
+                    if not auto:
+                        break
+                    await asyncio.shield(self._send_idle_checkpoint(user_id, d, channel_id, stats))
+                    stats = self._fresh_idle_stats(auto=True)
+                    deadline = now + datetime.timedelta(minutes=AUTO_IDLE_CHECKPOINT_MINUTES)
+                    session = self._idle_sessions.get(user_id)
+                    if session is not None:
+                        session["deadline"] = deadline
+                    await _persist()
+                    continue
+
                 character = await self.bot.db.get_character(user_id)
                 if not character:
                     break
@@ -972,7 +1026,56 @@ class RPGDungeon(commands.Cog):
             had_error = True
             log.exception("[idle] unexpected error during idle farming for user %s", user_id)
 
+        self._auto_idle_stop.discard(user_id)
         await asyncio.shield(self._finish_idle(user_id, d, channel_id, stats, had_error))
+
+    @staticmethod
+    def _build_idle_body(stats: dict, had_error: bool, final_level: int | None) -> str:
+        loot_text = ""
+        if stats["loot"]:
+            counts: dict[str, int] = {}
+            for key in stats["loot"]:
+                counts[key] = counts.get(key, 0) + 1
+            loot_text = "\n🎁 **Loot:** " + ", ".join(f"{EQUIPMENT[k].name} (x{c})" for k, c in counts.items())
+        if stats["primordial_drops"]:
+            drop_lines = [
+                f"{PRIMORDIAL_BASES[pd['slot']].name} ({describe_affixes(pd['affixes'])})"
+                for pd in stats["primordial_drops"]
+            ]
+            loot_text += "\n💫 **Primordial Drops:** " + "; ".join(drop_lines)
+
+        lines = [f"**{stats['dungeon_attempts']}** fight(s), **{stats['dungeon_wins']}** won"]
+        if stats["boss_attempts"]:
+            lines.append(f"**{stats['boss_attempts']}** boss attempt(s), **{stats['boss_wins']}** won")
+        if stats["kills"]:
+            kill_lines = ", ".join(f"{name} (x{count})" for name, count in stats["kills"].items())
+            lines.append(f"⚔️ **Kills:** {kill_lines}")
+        lines.append(f"💰 **+{fmt(stats['gold'])}**  •  **+{stats['xp']} XP**")
+        if stats["levels_gained"] and final_level is not None:
+            lines.append(f"⬆️ Leveled up to **{final_level}**!")
+        if had_error:
+            lines.append("\n⚠️ *Something went wrong partway through — this is partial progress.*")
+
+        return "\n".join(lines) + loot_text
+
+    async def _send_idle_checkpoint(self, user_id: int, d: Dungeon, channel_id: int, stats: dict) -> None:
+        try:
+            character = await self.bot.db.get_character(user_id)
+        except Exception:
+            character = None
+            log.exception("[idle] failed to fetch character state for checkpoint for user %s", user_id)
+        final_level = character["level"] if character else None
+
+        body = self._build_idle_body(stats, False, final_level)
+        title = f"🏕️ Idle Farming Checkpoint — {d.name}"
+
+        try:
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                channel = await self.bot.fetch_channel(channel_id)
+            await limited_send(channel, view=StaticView(title, body, color=discord.Color.blue()))
+        except Exception:
+            log.exception("[idle] failed to send checkpoint summary for user %s", user_id)
 
     async def _finish_idle(
         self,
@@ -986,32 +1089,7 @@ class RPGDungeon(commands.Cog):
             log.exception("[idle] failed to fetch final character state for user %s", user_id)
         final_level = character["level"] if character else None
 
-        loot_text = ""
-        if stats["loot"]:
-            counts: dict[str, int] = {}
-            for key in stats["loot"]:
-                counts[key] = counts.get(key, 0) + 1
-            loot_text = "\n🎁 **Loot:** " + ", ".join(f"{EQUIPMENT[k].name} x{c}" for k, c in counts.items())
-        if stats["primordial_drops"]:
-            drop_lines = [
-                f"{PRIMORDIAL_BASES[pd['slot']].name} ({describe_affixes(pd['affixes'])})"
-                for pd in stats["primordial_drops"]
-            ]
-            loot_text += "\n💫 **Primordial Drops:** " + "; ".join(drop_lines)
-
-        lines = [f"**{stats['dungeon_attempts']}** fight(s), **{stats['dungeon_wins']}** won"]
-        if stats["boss_attempts"]:
-            lines.append(f"**{stats['boss_attempts']}** boss attempt(s), **{stats['boss_wins']}** won")
-        if stats["kills"]:
-            kill_lines = ", ".join(f"{name} x{count}" for name, count in stats["kills"].items())
-            lines.append(f"⚔️ **Kills:** {kill_lines}")
-        lines.append(f"💰 **+{fmt(stats['gold'])}**  •  **+{stats['xp']} XP**")
-        if stats["levels_gained"] and final_level is not None:
-            lines.append(f"⬆️ Leveled up to **{final_level}**!")
-        if had_error:
-            lines.append("\n⚠️ *Something went wrong partway through — this is partial progress.*")
-
-        body = "\n".join(lines) + loot_text
+        body = self._build_idle_body(stats, had_error, final_level)
         title = f"🏕️ Idle Farming {'Interrupted' if had_error else 'Complete'} — {d.name}"
         color = discord.Color.orange() if had_error else discord.Color.green()
 
@@ -1025,6 +1103,7 @@ class RPGDungeon(commands.Cog):
             log.exception("[idle] failed to send final summary for user %s", user_id)
 
         self._idle_sessions.pop(user_id, None)
+        self._auto_idle_stop.discard(user_id)
         try:
             await self.bot.db.delete_idle_session(user_id)
         except Exception:

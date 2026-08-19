@@ -6,6 +6,7 @@ Base price: 60,000 gold per item.
 - **🌈 ☄️ Worldbreaker** (weapon) — +55% ATK
 - **🌈 ☄️ Worldguard Aegis** (armor) — +38% DEF, +55% HP
 - **🌈 👑 Crown of Fate** (accessory) — +20% Crit
+- **🌈 ☄️ Worldwarden** (shield, [Paladin](../Classes/Paladin.md) only) — +20% Damage Reduction, +15% Block Chance — purchase-only, never drops
 
 ## Dropped by
 
