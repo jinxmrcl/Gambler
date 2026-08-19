@@ -75,11 +75,15 @@ class PostgresDatabase:
                     last_daily TIMESTAMP NULL,
                     daily_streak INTEGER NOT NULL DEFAULT 0,
                     protected_until TIMESTAMP NULL,
+                    cooldown_bypass BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_streak INTEGER NOT NULL DEFAULT 0")
+            await conn.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS cooldown_bypass BOOLEAN NOT NULL DEFAULT FALSE"
+            )
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS inventory (
@@ -212,6 +216,16 @@ class PostgresDatabase:
                     use_count INTEGER NOT NULL DEFAULT 0,
                     window_started_at TIMESTAMP NOT NULL,
                     PRIMARY KEY (user_id, item_key)
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS achievements (
+                    user_id BIGINT NOT NULL,
+                    achievement_key VARCHAR(64) NOT NULL,
+                    unlocked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, achievement_key)
                 )
                 """
             )
@@ -397,6 +411,22 @@ class PostgresDatabase:
         row = await self._fetchone("SELECT daily_streak FROM users WHERE user_id = $1", user_id)
         return row[0] if row else 0
 
+    async def get_unlocked_achievements(self, user_id: int) -> set[str]:
+        rows = await self._fetchall(
+            "SELECT achievement_key FROM achievements WHERE user_id = $1", user_id
+        )
+        return {row[0] for row in rows}
+
+    async def unlock_achievement(self, user_id: int, key: str, now: datetime.datetime) -> bool:
+        rowcount = await self._execute(
+            "INSERT INTO achievements (user_id, achievement_key, unlocked_at) VALUES ($1, $2, $3) "
+            "ON CONFLICT (user_id, achievement_key) DO NOTHING",
+            user_id,
+            key,
+            now,
+        )
+        return rowcount > 0
+
     async def top_balances(self, limit: int = 10) -> list[tuple[int, int]]:
         rows = await self._fetchall(
             "SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT $1", limit
@@ -453,8 +483,15 @@ class PostgresDatabase:
         row = await self._fetchone("SELECT protected_until FROM users WHERE user_id = $1", user_id)
         return row[0] if row else None
 
-    async def set_protected_until(self, user_id: int, when: datetime.datetime) -> None:
+    async def set_protected_until(self, user_id: int, when: datetime.datetime | None) -> None:
         await self._execute("UPDATE users SET protected_until = $1 WHERE user_id = $2", when, user_id)
+
+    async def has_cooldown_bypass(self, user_id: int) -> bool:
+        row = await self._fetchone("SELECT cooldown_bypass FROM users WHERE user_id = $1", user_id)
+        return bool(row[0]) if row else False
+
+    async def set_cooldown_bypass(self, user_id: int, enabled: bool) -> None:
+        await self._execute("UPDATE users SET cooldown_bypass = $1 WHERE user_id = $2", enabled, user_id)
 
 
     async def get_cooldown(self, user_id: int, action: str) -> datetime.datetime | None:
@@ -475,6 +512,8 @@ class PostgresDatabase:
     async def try_consume_cooldown(
         self, user_id: int, action: str, period: datetime.timedelta, now: datetime.datetime
     ) -> bool:
+        if await self.has_cooldown_bypass(user_id):
+            return True
         new_expiry = now + period
         row = await self._fetchone(
             "INSERT INTO cooldowns (user_id, action, expires_at) VALUES ($1, $2, $3) "
@@ -1248,7 +1287,8 @@ class PostgresDatabase:
             async with conn.transaction():
                 await conn.execute(
                     "UPDATE users SET balance = $1, bank_balance = 0, last_daily = NULL, "
-                    "daily_streak = 0, protected_until = NULL WHERE user_id = $2",
+                    "daily_streak = 0, protected_until = NULL, cooldown_bypass = FALSE "
+                    "WHERE user_id = $2",
                     starting_balance,
                     user_id,
                 )
@@ -1261,6 +1301,7 @@ class PostgresDatabase:
                 await conn.execute("DELETE FROM boss_kills WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM primordial_items WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM item_use_limits WHERE user_id = $1", user_id)
+                await conn.execute("DELETE FROM achievements WHERE user_id = $1", user_id)
         await self.divorce(user_id)
 
     async def dump_all_tables(self) -> dict[str, list[dict]]:

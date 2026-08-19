@@ -2,22 +2,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from utils.achievements import check_and_announce
 from utils.economy import StaticView, fmt
 
 DIVIDER = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
-
-NET_WORTH_TIERS = [(2_000_000, "🐋 Whale"), (500_000, "💰 Wealthy"), (100_000, "🪙 Comfortable")]
-WAGERED_TIERS = [(5_000_000, "💎 Legend"), (500_000, "🎰 High Roller"), (50_000, "🎲 Regular")]
-ROBBERY_TIERS = [(25, "🥷 Master Thief"), (5, "🦹 Thief")]
-GAMES_TIERS = [(1000, "🎯 Veteran"), (100, "🃏 Regular Player")]
-STREAK_TIERS = [(30, "⚡ Unstoppable"), (7, "🔥 On Fire")]
-
-
-def _tier_badge(value: int, tiers: list[tuple[int, str]]) -> str | None:
-    for threshold, label in tiers:
-        if value >= threshold:
-            return label
-    return None
 
 
 class Profile(commands.Cog):
@@ -43,17 +31,15 @@ class Profile(commands.Cog):
             else "—"
         )
 
-        badges = [
-            b
-            for b in (
-                _tier_badge(net_worth, NET_WORTH_TIERS),
-                _tier_badge(stats["total_wagered"], WAGERED_TIERS),
-                _tier_badge(stats["robs_succeeded"], ROBBERY_TIERS),
-                _tier_badge(stats["games_played"], GAMES_TIERS),
-                _tier_badge(streak, STREAK_TIERS),
-            )
-            if b
-        ]
+        metrics = {
+            "net_worth": net_worth,
+            "total_wagered": stats["total_wagered"],
+            "robs_succeeded": stats["robs_succeeded"],
+            "games_played": stats["games_played"],
+            "daily_streak": streak,
+        }
+        all_unlocked, _ = await check_and_announce(self.bot, target, ctx.channel, metrics)
+        badges = [a.label for a in all_unlocked]
 
         lines = [
             f"**Net worth:** {fmt(net_worth)}  (Cash: {fmt(wallet)} • Bank: {fmt(bank_balance)})",

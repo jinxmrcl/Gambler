@@ -110,6 +110,11 @@ the casino:
 - `marry`/`divorce` and a weekly `lottery` with an automatic prize draw
 - `profile`/`stats` and multiple `leaderboard` variants (balance, games played, biggest
   win, most successful robberies)
+- a persistent **achievement system** (`utils/achievements.py`) — 12 one-time unlocks
+  across net worth, total wagered, successful robs, games played, and daily streak
+  tiers, checked automatically after every casino/economy command (`events/
+  achievements.py`) and announced in the channel the moment one is earned, not just
+  recomputed live each time you check `/profile`
 - `cooldowns` to check your remaining cooldowns without triggering them
 - admin commands to add, set, give-to-everyone, or reset a user's balance, grant RPG
   levels/items directly, and per-server `settings` to disable individual games or
@@ -332,8 +337,8 @@ Money in the bank can't be stolen with `rob`.
 ### Statistics
 - `profile [user]` (alias `stats`) — net worth, total wagered/won, biggest win, rob
   success rate, and how often you've been robbed, grouped into sections with a divider;
-  shows earned badges (net worth, wagering, robbery, games played, daily streak tiers)
-  and an accent color reflecting overall profit/loss
+  shows your permanently unlocked achievement badges and an accent color reflecting
+  overall profit/loss
 
 ### Admin
 Requires the **Administrator** permission on the server.
@@ -347,6 +352,10 @@ Requires the **Administrator** permission on the server.
   for free
 - `rpggiveprimordial <user> <slot>` — spawn a freshly-rolled ✨ Primordial item straight
   to a player
+- `permcooldown <user> <enabled>` — toggle a permanent bypass of `work`/`crime`/`slut`/
+  `rob`/`duel` cooldowns for a player
+- `permshield <user> <enabled>` — toggle permanent `rob` immunity for a player (reuses
+  the same shield mechanism as the `shield` item, just set far in the future)
 - `restart` — restart the bot process
 - `settings` — shows this server's disabled games and channel restrictions
 - `togglegame <game> <enabled>` — enable or disable a specific game on this server
@@ -460,6 +469,7 @@ utils/economy.py             Bet parsing, formatting, house edge constant, UI bu
 utils/cards.py                Card deck + custom card emoji mapping for Blackjack & Hilo
 assets/cards/                 Downloaded card emoji images (reference copies, not loaded at runtime)
 utils/items.py                Shop catalog (item keys, prices, effects)
+utils/achievements.py         Achievement catalog + unlock/announce logic, shared by /profile and the listener
 utils/checks.py               Per-server game enable/channel checks
 utils/ratelimit.py            Global + per-channel, congestion-aware token-bucket limiters for edits/sends
 commands/economy.py           balance, daily, leaderboard, pay
@@ -505,6 +515,7 @@ rpg/events.py                 Random in-dungeon events
 events/on_ready.py            Startup logging & presence
 events/error_handler.py       Centralized error handling for text & slash commands, and every interactive view's buttons
 events/payday.py              Background loop: one random user gets a passive payday every 2-4h, announced in a channel
+events/achievements.py        Listens for command completions and checks/announces newly unlocked achievements
 database/db_postgres.py       Postgres/Supabase implementation of the same DB interface (automatic fallback)
 deploy/ecosystem.config.js    pm2 process config (autorestart, daily 4am cron_restart)
 deploy/install_pm2.sh         Starts the bot under pm2, posts a startup status message
