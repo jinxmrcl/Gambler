@@ -1394,6 +1394,21 @@ class PostgresDatabase:
         )
         return row[0]
 
+    async def add_level_admin_xp(self, guild_id: int, user_id: int, amount: int) -> int:
+        await self._execute(
+            "INSERT INTO level_xp (guild_id, user_id, xp) VALUES ($1, $2, $3) "
+            "ON CONFLICT (guild_id, user_id) DO UPDATE SET xp = level_xp.xp + EXCLUDED.xp",
+            guild_id, user_id, amount,
+        )
+        await self._execute(
+            "UPDATE level_xp SET xp = GREATEST(xp, 0) WHERE guild_id = $1 AND user_id = $2",
+            guild_id, user_id,
+        )
+        row = await self._fetchone(
+            "SELECT xp FROM level_xp WHERE guild_id = $1 AND user_id = $2", guild_id, user_id
+        )
+        return row[0]
+
     async def add_level_voice(self, guild_id: int, user_id: int, amount: int, seconds: int) -> int:
         await self._execute(
             "INSERT INTO level_xp (guild_id, user_id, xp, voice_xp, vc_seconds) VALUES ($1, $2, $3, $3, $4) "
