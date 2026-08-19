@@ -17,7 +17,7 @@ CATEGORIES = [
     ("levels", "📈 Level System", ["LevelSystem"], discord.Color.dark_blue()),
     ("games", "🎰 Casino Games", [
         "Blackjack", "Mines", "Hilo", "Plinko", "Limbo", "Keno", "Slots", "Roulette", "Dice", "Coinflip",
-        "Scratchcard", "HorseRace", "Baccarat", "Crash",
+        "Scratchcard", "HorseRace", "Baccarat",
     ], discord.Color.red()),
     ("rpg_character", "⚔️ RPG: Character", ["RPGCharacter"], discord.Color.dark_green()),
     ("rpg_dungeon", "🗺️ RPG: Dungeons", ["RPGDungeon"], discord.Color.dark_gold()),

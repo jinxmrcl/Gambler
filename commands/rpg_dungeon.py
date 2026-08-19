@@ -8,7 +8,7 @@ from typing import Literal
 
 import discord
 from discord import app_commands, ui
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from database.db import InsufficientFunds
 from rpg.character import current_hp, full_stats, to_fighter
@@ -561,12 +561,27 @@ class RPGDungeon(commands.Cog):
         self._idle_tracker_message: discord.Message | None = None
         self._idle_tracker_posted_at: datetime.datetime | None = None
         self._tracker_update_task: asyncio.Task | None = None
+        self.tracker_refresh_loop.start()
 
     def cog_unload(self):
         for task in self._idle_tasks.values():
             task.cancel()
         if self._tracker_update_task is not None:
             self._tracker_update_task.cancel()
+        self.tracker_refresh_loop.cancel()
+
+    @tasks.loop(minutes=1)
+    async def tracker_refresh_loop(self):
+        if not self._idle_sessions:
+            return
+        try:
+            await self._update_idle_tracker()
+        except Exception:
+            log.exception("[idle] failed to refresh the idle-tracker message")
+
+    @tracker_refresh_loop.before_loop
+    async def before_tracker_refresh_loop(self):
+        await self.bot.wait_until_ready()
 
     async def cog_load(self):
         try:
@@ -1008,14 +1023,6 @@ class RPGDungeon(commands.Cog):
             await limited_send(channel, view=StaticView(title, body, color=color))
         except Exception:
             log.exception("[idle] failed to send final summary for user %s", user_id)
-
-        if IDLE_ANNOUNCE_CHANNEL_ID:
-            try:
-                tracker_channel = await self._get_idle_tracker_channel()
-                await limited_send(tracker_channel, content=f"<@{user_id}>")
-                await limited_send(tracker_channel, view=StaticView(title, body, color=color))
-            except discord.HTTPException:
-                log.exception("[idle] failed to send completion ping for user %s", user_id)
 
         self._idle_sessions.pop(user_id, None)
         try:

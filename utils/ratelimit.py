@@ -38,7 +38,7 @@ class RateLimiter:
             self._waiters -= 1
 
 
-_EDIT_RATE = 2
+_EDIT_RATE = 3
 _EDIT_PER = 5.0
 _channel_limiters: dict[int, RateLimiter] = defaultdict(lambda: RateLimiter(_EDIT_RATE, _EDIT_PER))
 
