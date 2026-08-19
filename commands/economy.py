@@ -15,7 +15,15 @@ BOARD_TITLES = {
     "biggest_win": "🎉 Leaderboard — Biggest Wins",
     "robs_succeeded": "🥷 Leaderboard — Most Successful Robberies",
 }
+BOARD_COLORS = {
+    "balance": discord.Color.gold(),
+    "games_played": discord.Color.blue(),
+    "total_wagered": discord.Color.orange(),
+    "biggest_win": discord.Color.green(),
+    "robs_succeeded": discord.Color.dark_red(),
+}
 MONEY_BOARDS = {"balance", "total_wagered", "biggest_win"}
+MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
 
 
 class Economy(commands.Cog):
@@ -82,21 +90,31 @@ class Economy(commands.Cog):
             await ctx.send("There's no data for this leaderboard yet.")
             return
 
-        lines = []
+        entries = []
         for user_id, value in rows:
             name = await resolve_display_name(self.bot, ctx.guild, user_id)
             if name is None:
                 continue
-            value_text = fmt(value) if board in MONEY_BOARDS else str(value)
-            lines.append(f"**{len(lines) + 1}.** {name} — {value_text}")
-            if len(lines) == limit:
+
+            rank = len(entries) + 1
+            value_text = fmt(value) if board in MONEY_BOARDS else f"{value:,}"
+            marker = MEDALS.get(rank, f"`#{rank}`")
+            you_tag = " `(you)`" if user_id == ctx.author.id else ""
+            entries.append(f"{marker} **{name}** — {value_text}{you_tag}")
+            if rank == limit:
                 break
 
-        if not lines:
+        if not entries:
             await ctx.send("There's no data for this leaderboard yet.")
             return
 
-        view = StaticView(BOARD_TITLES[board], "\n".join(lines))
+        lines = entries[:3]
+        if len(entries) > 3:
+            lines.append("▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬")
+            lines.extend(entries[3:])
+        lines.append(f"-# Showing top {len(entries)}")
+
+        view = StaticView(BOARD_TITLES[board], "\n".join(lines), color=BOARD_COLORS.get(board))
         await ctx.send(view=view)
 
     @commands.hybrid_command(name="pay", description="Transfer balance to another player.")
