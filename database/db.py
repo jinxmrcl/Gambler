@@ -463,6 +463,10 @@ class Database:
         row = await self._fetchone("SELECT last_daily FROM users WHERE user_id = %s", (user_id,))
         return row[0] if row else None
 
+    async def get_daily_streak(self, user_id: int) -> int:
+        row = await self._fetchone("SELECT daily_streak FROM users WHERE user_id = %s", (user_id,))
+        return row[0] if row else 0
+
     async def top_balances(self, limit: int = 10) -> list[tuple[int, int]]:
         return await self._fetchall(
             "SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT %s",
