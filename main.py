@@ -367,7 +367,7 @@ class GamblerBot(commands.Bot):
 
     async def _run_db_backup(self) -> None:
         data = await self.db.dump_all_tables()
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         path = BACKUPS_DIR / f"backup_{timestamp}.json"
         await asyncio.to_thread(path.write_text, json.dumps(data, default=str), encoding="utf-8")
         log.info("[db-backup] wrote %s (%d tables)", path.name, len(data))
