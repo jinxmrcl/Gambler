@@ -565,12 +565,16 @@ class RPGDungeon(commands.Cog):
         self._tracker_update_task: asyncio.Task | None = None
         self.tracker_refresh_loop.start()
 
-    def cog_unload(self):
-        for task in self._idle_tasks.values():
+    async def cog_unload(self):
+        tasks = list(self._idle_tasks.values())
+        for task in tasks:
             task.cancel()
         if self._tracker_update_task is not None:
+            tasks.append(self._tracker_update_task)
             self._tracker_update_task.cancel()
         self.tracker_refresh_loop.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     @tasks.loop(minutes=1)
     async def tracker_refresh_loop(self):
