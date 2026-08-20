@@ -484,6 +484,11 @@ class GamblerBot(commands.Bot):
             task = getattr(self, attr, None)
             if task:
                 task.cancel()
+        for name in list(self.cogs.keys()):
+            try:
+                await self.remove_cog(name)
+            except Exception:
+                log.exception("[shutdown] failed to unload cog %s", name)
         await self.db.close()
         await super().close()
 
