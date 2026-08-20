@@ -53,8 +53,28 @@ _GLOBAL_PER = 1.0
 _global_edit_limiter = RateLimiter(_GLOBAL_EDIT_RATE, _GLOBAL_PER, min_rate_fraction=0.8)
 _global_send_limiter = RateLimiter(_GLOBAL_SEND_RATE, _GLOBAL_PER, min_rate_fraction=0.15)
 
+_STALE_ENTRY_SECONDS = 1800.0
+_SWEEP_INTERVAL_SECONDS = 600.0
+_last_sweep = 0.0
+
+
+def _sweep_stale_entries() -> None:
+    """Drops per-channel/per-message limiters untouched for a while, so these dicts
+    don't grow forever as new messages/channels get edited over the bot's uptime."""
+    global _last_sweep
+    now = time.monotonic()
+    if now - _last_sweep < _SWEEP_INTERVAL_SECONDS:
+        return
+    _last_sweep = now
+    cutoff = now - _STALE_ENTRY_SECONDS
+    for store in (_message_limiters, _channel_limiters):
+        for key, limiter in list(store.items()):
+            if limiter._waiters == 0 and limiter._updated_at < cutoff:
+                del store[key]
+
 
 async def limited_edit(message, **kwargs) -> None:
+    _sweep_stale_entries()
     await _global_edit_limiter.acquire()
     await _channel_limiters[message.channel.id].acquire()
     await _message_limiters[message.id].acquire()
