@@ -3,7 +3,7 @@
 All require the Administrator permission.
 
 - `/addmoney`, `/setbalance`, `/giveall` (bulk-adjusts every player's balance), `/resetuser`
-  (fully wipes a player's economy + RPG data)
+  (clears a player's bank savings in the current server only)
 - `/permcooldown <user> <enabled>` — toggle a permanent bypass of `work`/`crime`/`slut`/`rob`/`duel` cooldowns for one player
 - `/permshield <user> <enabled>` — toggle permanent `rob` immunity, reusing the same `protected_until` mechanism as the shop-bought [Rob Shield](../Economy/Shop%20%26%20Inventory.md) (never shrinks a longer shop-bought shield the player already has; toggling off only clears it if it's still the permanent marker)
 - `/botstatus` — gateway latency, gateway rate-limit state, and the current [rate limiter](../Infrastructure/Rate%20Limiting.md)'s live edit/send token levels

@@ -107,6 +107,20 @@ class Database:
                     """
                 )
                 await cur.execute(
+                    "UPDATE users SET balance = balance + bank_balance, bank_balance = 0 "
+                    "WHERE bank_balance > 0"
+                )
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS guild_banks (
+                        guild_id BIGINT UNSIGNED NOT NULL,
+                        user_id BIGINT UNSIGNED NOT NULL,
+                        balance BIGINT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (guild_id, user_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
+                await cur.execute(
                     "SELECT COUNT(*) FROM information_schema.columns "
                     "WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'daily_streak'"
                 )
@@ -550,11 +564,14 @@ class Database:
         )
 
 
-    async def get_bank_balance(self, user_id: int) -> int:
-        row = await self._fetchone("SELECT bank_balance FROM users WHERE user_id = %s", (user_id,))
+    async def get_bank_balance(self, guild_id: int, user_id: int) -> int:
+        row = await self._fetchone(
+            "SELECT balance FROM guild_banks WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
         return row[0] if row else 0
 
-    async def deposit_to_bank(self, user_id: int, amount: int) -> tuple[int, int]:
+    async def deposit_to_bank(self, guild_id: int, user_id: int, amount: int) -> tuple[int, int]:
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await conn.begin()
@@ -568,27 +585,31 @@ class Database:
                         await conn.rollback()
                         raise InsufficientFunds(f"User {user_id} cannot deposit {amount}")
                     await cur.execute(
-                        "UPDATE users SET bank_balance = bank_balance + %s WHERE user_id = %s",
-                        (amount, user_id),
+                        "INSERT INTO guild_banks (guild_id, user_id, balance) VALUES (%s, %s, %s) "
+                        "ON DUPLICATE KEY UPDATE balance = balance + VALUES(balance)",
+                        (guild_id, user_id, amount),
                     )
                     await conn.commit()
                 except Exception:
                     await conn.rollback()
                     raise
                 await cur.execute(
-                    "SELECT balance, bank_balance FROM users WHERE user_id = %s", (user_id,)
+                    "SELECT u.balance, COALESCE(b.balance, 0) FROM users u "
+                    "LEFT JOIN guild_banks b ON b.guild_id = %s AND b.user_id = u.user_id "
+                    "WHERE u.user_id = %s",
+                    (guild_id, user_id),
                 )
                 return await cur.fetchone()
 
-    async def withdraw_from_bank(self, user_id: int, amount: int) -> tuple[int, int]:
+    async def withdraw_from_bank(self, guild_id: int, user_id: int, amount: int) -> tuple[int, int]:
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await conn.begin()
                 try:
                     await cur.execute(
-                        "UPDATE users SET bank_balance = bank_balance - %s "
-                        "WHERE user_id = %s AND bank_balance >= %s",
-                        (amount, user_id, amount),
+                        "UPDATE guild_banks SET balance = balance - %s "
+                        "WHERE guild_id = %s AND user_id = %s AND balance >= %s",
+                        (amount, guild_id, user_id, amount),
                     )
                     if cur.rowcount == 0:
                         await conn.rollback()
@@ -602,9 +623,18 @@ class Database:
                     await conn.rollback()
                     raise
                 await cur.execute(
-                    "SELECT balance, bank_balance FROM users WHERE user_id = %s", (user_id,)
+                    "SELECT u.balance, COALESCE(b.balance, 0) FROM users u "
+                    "LEFT JOIN guild_banks b ON b.guild_id = %s AND b.user_id = u.user_id "
+                    "WHERE u.user_id = %s",
+                    (guild_id, user_id),
                 )
                 return await cur.fetchone()
+
+    async def reset_guild_bank(self, guild_id: int, user_id: int) -> None:
+        await self._execute(
+            "DELETE FROM guild_banks WHERE guild_id = %s AND user_id = %s",
+            (guild_id, user_id),
+        )
 
 
     async def get_protected_until(self, user_id: int) -> datetime.datetime | None:
@@ -1448,6 +1478,7 @@ class Database:
                         "WHERE user_id = %s",
                         (starting_balance, user_id),
                     )
+                    await cur.execute("DELETE FROM guild_banks WHERE user_id = %s", (user_id,))
                     await cur.execute("DELETE FROM inventory WHERE user_id = %s", (user_id,))
                     await cur.execute("DELETE FROM stats WHERE user_id = %s", (user_id,))
                     await cur.execute("DELETE FROM lottery_tickets WHERE user_id = %s", (user_id,))

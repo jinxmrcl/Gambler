@@ -12,9 +12,13 @@ class Bank(commands.Cog):
 
     @commands.hybrid_command(name="bank", description="Shows your bank balance. Money there is safe from rob.")
     async def bank(self, ctx: commands.Context):
+        if ctx.guild is None:
+            await ctx.send("⚠️ The bank is available only in a server.")
+            return
+
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         wallet = await self.bot.db.get_balance(ctx.author.id)
-        bank_balance = await self.bot.db.get_bank_balance(ctx.author.id)
+        bank_balance = await self.bot.db.get_bank_balance(ctx.guild.id, ctx.author.id)
 
         view = StaticView(
             "🏦 Bank",
@@ -26,11 +30,15 @@ class Bank(commands.Cog):
     @commands.hybrid_command(name="deposit", description="Move cash safely into the bank.")
     @app_commands.describe(amount="Amount (number, 'half', or 'all')")
     async def deposit(self, ctx: commands.Context, amount: str):
+        if ctx.guild is None:
+            await ctx.send("⚠️ The bank is available only in a server.")
+            return
+
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
         value = await resolve_bet(self.bot, ctx.author.id, amount)
 
         try:
-            wallet, bank_balance = await self.bot.db.deposit_to_bank(ctx.author.id, value)
+            wallet, bank_balance = await self.bot.db.deposit_to_bank(ctx.guild.id, ctx.author.id, value)
         except InsufficientFunds:
             await ctx.send("⚠️ You don't have enough cash for that.")
             return
@@ -45,10 +53,14 @@ class Bank(commands.Cog):
     @commands.hybrid_command(name="withdraw", description="Move money from the bank back to cash.")
     @app_commands.describe(amount="Amount (number, 'half', or 'all')")
     async def withdraw(self, ctx: commands.Context, amount: str):
+        if ctx.guild is None:
+            await ctx.send("⚠️ The bank is available only in a server.")
+            return
+
         await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
 
         raw = amount.strip().lower()
-        bank_balance = await self.bot.db.get_bank_balance(ctx.author.id)
+        bank_balance = await self.bot.db.get_bank_balance(ctx.guild.id, ctx.author.id)
         if raw in ("all", "max"):
             value = bank_balance
         elif raw == "half":
@@ -65,7 +77,7 @@ class Bank(commands.Cog):
             return
 
         try:
-            wallet, bank_balance = await self.bot.db.withdraw_from_bank(ctx.author.id, value)
+            wallet, bank_balance = await self.bot.db.withdraw_from_bank(ctx.guild.id, ctx.author.id, value)
         except InsufficientFunds:
             await ctx.send("⚠️ You don't have enough balance in the bank.")
             return

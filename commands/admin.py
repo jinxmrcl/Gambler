@@ -84,17 +84,19 @@ class Admin(commands.Cog):
         )
         await ctx.send(view=view)
 
-    @commands.hybrid_command(name="resetuser", description="[Admin] Fully reset a user.")
+    @commands.hybrid_command(name="resetuser", description="[Admin] Clear a user's bank savings in this server.")
     @app_commands.describe(user="Target user")
     @commands.has_permissions(administrator=True)
     async def resetuser(self, ctx: commands.Context, user: discord.User):
-        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
-        await self.bot.db.reset_user(user.id, self.bot.starting_balance)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is available only in a server.")
+            return
+
+        await self.bot.db.reset_guild_bank(ctx.guild.id, user.id)
 
         view = StaticView(
-            "🛠️ User Reset",
-            f"{user.mention} was reset to {fmt(self.bot.starting_balance)} "
-            f"(bank, inventory, and statistics cleared).",
+            "🛠️ Server Bank Reset",
+            f"{user.mention}'s bank savings were cleared for this server only.",
             color=discord.Color.blue(),
         )
         await ctx.send(view=view)
