@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from database.db import InsufficientFunds
+from utils.checks import admin_only
 from utils.economy import HOUSE_EDGE, StaticView, fmt
 
 log = logging.getLogger("gambler")
@@ -107,7 +108,7 @@ class Lottery(commands.Cog):
         await ctx.send(view=view)
 
     @commands.hybrid_command(name="lottery_setchannel", description="[Admin] Set this channel for lottery draw announcements.")
-    @commands.has_permissions(administrator=True)
+    @admin_only()
     async def lottery_setchannel(self, ctx: commands.Context):
         await self.bot.db.set_lottery_channel(ctx.channel.id)
         view = StaticView(

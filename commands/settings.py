@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from utils.economy import StaticView
+from utils.checks import admin_only
 
 GAMES = (
     "blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip",
@@ -21,7 +22,7 @@ class Settings(commands.Cog):
         self.bot = bot
 
     @commands.hybrid_command(name="settings", description="[Admin] Shows the current server settings.")
-    @commands.has_permissions(administrator=True)
+    @admin_only()
     @commands.guild_only()
     async def settings(self, ctx: commands.Context):
         disabled, allowed_channels = await self.bot.db.get_guild_settings(ctx.guild.id)
@@ -46,7 +47,7 @@ class Settings(commands.Cog):
 
     @commands.hybrid_command(name="togglegame", description="[Admin] Enable or disable a game on this server.")
     @app_commands.describe(game="Which game", enabled="Whether the game should be enabled")
-    @commands.has_permissions(administrator=True)
+    @admin_only()
     @commands.guild_only()
     async def togglegame(self, ctx: commands.Context, game: GameName, enabled: bool):
         await self.bot.db.set_game_disabled(ctx.guild.id, game, not enabled)
@@ -59,7 +60,7 @@ class Settings(commands.Cog):
         name="togglechannel", description="[Admin] Restrict or unrestrict games to this channel."
     )
     @app_commands.describe(action="Add this channel to the allow-list, remove it, or clear the whole list")
-    @commands.has_permissions(administrator=True)
+    @admin_only()
     @commands.guild_only()
     async def togglechannel(self, ctx: commands.Context, action: Literal["add", "remove", "clear"]):
         _, allowed_channels = await self.bot.db.get_guild_settings(ctx.guild.id)
@@ -87,7 +88,7 @@ class Settings(commands.Cog):
         channel="Channel to restrict the bot to (defaults to this channel)",
         clear="Remove the restriction so the bot works everywhere again",
     )
-    @commands.has_permissions(administrator=True)
+    @admin_only()
     @commands.guild_only()
     async def set_gamblechannel(
         self, ctx: commands.Context, channel: discord.TextChannel | None = None, clear: bool = False
@@ -120,7 +121,7 @@ class Settings(commands.Cog):
         channel="Channel for feature announcements (defaults to this channel)",
         clear="Remove the updates channel so announcements stop",
     )
-    @commands.has_permissions(administrator=True)
+    @admin_only()
     @commands.guild_only()
     async def set_updateschannel(
         self, ctx: commands.Context, channel: discord.TextChannel | None = None, clear: bool = False

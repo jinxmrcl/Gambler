@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from utils.economy import StaticView, fmt
+from utils.checks import app_admin_only
 from utils.level_badges import level_badge
 from utils.level_math import level_from_total_xp, MAX_LEVEL
 from utils.role_blacklist import is_blacklisted
@@ -219,7 +220,7 @@ class LevelSystem(commands.Cog):
 
     @app_commands.command(name="level-givexp", description="[Admin] Give a member XP directly (can be negative to remove).")
     @app_commands.describe(user="Target member", amount="Amount of XP to grant (negative to remove)")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_admin_only()
     async def level_givexp(
         self,
         interaction: discord.Interaction,
@@ -256,7 +257,7 @@ class LevelSystem(commands.Cog):
 
     @app_commands.command(name="level-boost", description="[Admin] Temporarily multiply XP gains for this server.")
     @app_commands.describe(multiplier="e.g. 1.5 for +50% XP", days="How many days the boost lasts")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_admin_only()
     async def level_boost(
         self, interaction: discord.Interaction,
         multiplier: app_commands.Range[float, 0.1, 10.0], days: app_commands.Range[float, 0.05, 30.0],
@@ -272,7 +273,7 @@ class LevelSystem(commands.Cog):
         )
 
     @app_commands.command(name="level-boost-clear", description="[Admin] End this server's active XP boost early.")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_admin_only()
     async def level_boost_clear(self, interaction: discord.Interaction):
         if interaction.guild is None:
             await interaction.response.send_message("This only works in a server.", ephemeral=True)

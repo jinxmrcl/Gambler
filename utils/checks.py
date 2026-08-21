@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 
@@ -19,6 +20,28 @@ class WrongGambleChannel(commands.CheckFailure):
         super().__init__(f"This bot can only be used in <#{channel_id}>.")
 
 
+def admin_only():
+    async def predicate(ctx: commands.Context) -> bool:
+        if await ctx.bot.is_owner(ctx.author):
+            return True
+        if isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.administrator:
+            return True
+        raise commands.MissingPermissions(["administrator"])
+
+    return commands.check(predicate)
+
+
+def app_admin_only():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if await interaction.client.is_owner(interaction.user):
+            return True
+        if interaction.permissions.administrator:
+            return True
+        raise app_commands.MissingPermissions(["administrator"])
+
+    return app_commands.check(predicate)
+
+
 def game_enabled(game: str):
     async def predicate(ctx: commands.Context) -> bool:
         if ctx.guild is None:
@@ -35,6 +58,8 @@ def game_enabled(game: str):
 
 async def gamble_channel_check(ctx: commands.Context) -> bool:
     if ctx.guild is None:
+        return True
+    if await ctx.bot.is_owner(ctx.author):
         return True
     if isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.administrator:
         return True
