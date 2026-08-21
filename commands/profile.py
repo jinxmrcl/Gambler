@@ -19,7 +19,11 @@ class Profile(commands.Cog):
         await self.bot.db.ensure_user(target.id, self.bot.starting_balance)
 
         wallet = await self.bot.db.get_balance(target.id)
-        bank_balance = await self.bot.db.get_bank_balance(target.id)
+        bank_balance = (
+            await self.bot.db.get_bank_balance(ctx.guild.id, target.id)
+            if ctx.guild is not None
+            else 0
+        )
         stats = await self.bot.db.get_stats(target.id)
         streak = await self.bot.db.get_daily_streak(target.id)
 
@@ -46,7 +50,11 @@ class Profile(commands.Cog):
         badges = [a.label for a in all_unlocked]
 
         lines = [
-            f"**Net worth:** {fmt(net_worth)}  (Cash: {fmt(wallet)} • Bank: {fmt(bank_balance)})",
+            (
+                f"**Net worth:** {fmt(net_worth)}  (Cash: {fmt(wallet)} • Bank: {fmt(bank_balance)})"
+                if ctx.guild is not None
+                else f"**Net worth:** {fmt(net_worth)}  (Cash only; bank is server-specific)"
+            ),
             f"🏅 **Badges:** {' · '.join(badges)}" if badges else "🏅 **Badges:** *none yet*",
             DIVIDER,
             "**🎮 Gaming**",

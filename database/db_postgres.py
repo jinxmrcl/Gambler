@@ -80,6 +80,20 @@ class PostgresDatabase:
                 )
                 """
             )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS guild_banks (
+                    guild_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    balance BIGINT NOT NULL DEFAULT 0,
+                    PRIMARY KEY (guild_id, user_id)
+                )
+                """
+            )
+            await conn.execute(
+                "UPDATE users SET balance = balance + bank_balance, bank_balance = 0 "
+                "WHERE bank_balance > 0"
+            )
             await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_streak INTEGER NOT NULL DEFAULT 0")
             await conn.execute(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS cooldown_bypass BOOLEAN NOT NULL DEFAULT FALSE"
@@ -470,11 +484,13 @@ class PostgresDatabase:
     async def give_all_users(self, amount: int) -> int:
         return await self._execute("UPDATE users SET balance = GREATEST(balance + $1, 0)", amount)
 
-    async def get_bank_balance(self, user_id: int) -> int:
-        row = await self._fetchone("SELECT bank_balance FROM users WHERE user_id = $1", user_id)
+    async def get_bank_balance(self, guild_id: int, user_id: int) -> int:
+        row = await self._fetchone(
+            "SELECT balance FROM guild_banks WHERE guild_id = $1 AND user_id = $2", guild_id, user_id
+        )
         return row[0] if row else 0
 
-    async def deposit_to_bank(self, user_id: int, amount: int) -> tuple[int, int]:
+    async def deposit_to_bank(self, guild_id: int, user_id: int, amount: int) -> tuple[int, int]:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 status = await conn.execute(
@@ -485,22 +501,29 @@ class PostgresDatabase:
                 if _rowcount(status) == 0:
                     raise InsufficientFunds(f"User {user_id} cannot deposit {amount}")
                 await conn.execute(
-                    "UPDATE users SET bank_balance = bank_balance + $1 WHERE user_id = $2",
-                    amount,
+                    "INSERT INTO guild_banks (guild_id, user_id, balance) VALUES ($1, $2, $3) "
+                    "ON CONFLICT (guild_id, user_id) DO UPDATE SET balance = guild_banks.balance + EXCLUDED.balance",
+                    guild_id,
                     user_id,
+                    amount,
                 )
                 row = await conn.fetchrow(
-                    "SELECT balance, bank_balance FROM users WHERE user_id = $1", user_id
+                    "SELECT u.balance, COALESCE(b.balance, 0) FROM users u "
+                    "LEFT JOIN guild_banks b ON b.guild_id = $1 AND b.user_id = u.user_id "
+                    "WHERE u.user_id = $2",
+                    guild_id,
+                    user_id,
                 )
                 return row[0], row[1]
 
-    async def withdraw_from_bank(self, user_id: int, amount: int) -> tuple[int, int]:
+    async def withdraw_from_bank(self, guild_id: int, user_id: int, amount: int) -> tuple[int, int]:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 status = await conn.execute(
-                    "UPDATE users SET bank_balance = bank_balance - $1 "
-                    "WHERE user_id = $2 AND bank_balance >= $1",
+                    "UPDATE guild_banks SET balance = balance - $1 "
+                    "WHERE guild_id = $2 AND user_id = $3 AND balance >= $1",
                     amount,
+                    guild_id,
                     user_id,
                 )
                 if _rowcount(status) == 0:
@@ -509,9 +532,20 @@ class PostgresDatabase:
                     "UPDATE users SET balance = balance + $1 WHERE user_id = $2", amount, user_id
                 )
                 row = await conn.fetchrow(
-                    "SELECT balance, bank_balance FROM users WHERE user_id = $1", user_id
+                    "SELECT u.balance, COALESCE(b.balance, 0) FROM users u "
+                    "LEFT JOIN guild_banks b ON b.guild_id = $1 AND b.user_id = u.user_id "
+                    "WHERE u.user_id = $2",
+                    guild_id,
+                    user_id,
                 )
                 return row[0], row[1]
+
+    async def reset_guild_bank(self, guild_id: int, user_id: int) -> None:
+        await self._execute(
+            "DELETE FROM guild_banks WHERE guild_id = $1 AND user_id = $2",
+            guild_id,
+            user_id,
+        )
 
     async def get_protected_until(self, user_id: int) -> datetime.datetime | None:
         row = await self._fetchone("SELECT protected_until FROM users WHERE user_id = $1", user_id)
@@ -1330,6 +1364,7 @@ class PostgresDatabase:
                     starting_balance,
                     user_id,
                 )
+                await conn.execute("DELETE FROM guild_banks WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM inventory WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM stats WHERE user_id = $1", user_id)
                 await conn.execute("DELETE FROM lottery_tickets WHERE user_id = $1", user_id)
