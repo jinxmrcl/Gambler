@@ -83,6 +83,11 @@ def _resolve_supabase_dsn() -> str | None:
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = os.getenv("PREFIX", "!")
+OWNER_IDS = {
+    int(owner_id)
+    for owner_id in os.getenv("OWNER_IDS", "1305579806557208657,921005898846064711").split(",")
+    if owner_id.strip().isdigit()
+}
 _raw_restart_channel = os.getenv("RESTART_LOG_CHANNEL_ID", "")
 RESTART_LOG_CHANNEL_ID = int(_raw_restart_channel) if _raw_restart_channel.isdigit() else None
 
@@ -205,7 +210,10 @@ class GamblerBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(
-            command_prefix=commands.when_mentioned_or(PREFIX), intents=intents, help_command=None
+            command_prefix=commands.when_mentioned_or(PREFIX),
+            intents=intents,
+            help_command=None,
+            owner_ids=OWNER_IDS,
         )
         self.add_check(gamble_channel_check)
 
