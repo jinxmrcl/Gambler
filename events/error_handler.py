@@ -46,7 +46,7 @@ def _friendly_message(error: Exception, ctx: commands.Context | None = None) -> 
         )
     elif isinstance(error, commands.BadArgument):
         text = "One of the provided values is invalid."
-    elif isinstance(error, commands.CommandOnCooldown):
+    elif isinstance(error, (commands.CommandOnCooldown, app_commands.CommandOnCooldown)):
         return f"That's on cooldown. Try again in {error.retry_after:.1f}s."
     elif isinstance(error, (commands.MissingPermissions, app_commands.MissingPermissions)):
         return "You're missing the required permission (Administrator)."
