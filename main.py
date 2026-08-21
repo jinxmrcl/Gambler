@@ -61,6 +61,7 @@ from dotenv import load_dotenv
 from database import Database, PostgresDatabase
 from utils.checks import gamble_channel_check
 from utils.economy import StaticView
+from utils.owners import OWNER_IDS
 
 load_dotenv()
 
@@ -83,11 +84,6 @@ def _resolve_supabase_dsn() -> str | None:
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = os.getenv("PREFIX", "!")
-OWNER_IDS = {
-    int(owner_id)
-    for owner_id in os.getenv("OWNER_IDS", "1305579806557208657,921005898846064711").split(",")
-    if owner_id.strip().isdigit()
-}
 _raw_restart_channel = os.getenv("RESTART_LOG_CHANNEL_ID", "")
 RESTART_LOG_CHANNEL_ID = int(_raw_restart_channel) if _raw_restart_channel.isdigit() else None
 
