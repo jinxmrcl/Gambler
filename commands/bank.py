@@ -29,6 +29,8 @@ class Bank(commands.Cog):
 
     @commands.hybrid_command(name="deposit", description="Move cash safely into the bank.")
     @app_commands.describe(amount="Amount (number, 'half', or 'all')")
+    @app_commands.checks.cooldown(1, 2.0, key=lambda interaction: interaction.user.id)
+    @commands.cooldown(1, 2.0, commands.BucketType.user)
     async def deposit(self, ctx: commands.Context, amount: str):
         if ctx.guild is None:
             await ctx.send("⚠️ The bank is available only in a server.")
@@ -52,6 +54,8 @@ class Bank(commands.Cog):
 
     @commands.hybrid_command(name="withdraw", description="Move money from the bank back to cash.")
     @app_commands.describe(amount="Amount (number, 'half', or 'all')")
+    @app_commands.checks.cooldown(1, 2.0, key=lambda interaction: interaction.user.id)
+    @commands.cooldown(1, 2.0, commands.BucketType.user)
     async def withdraw(self, ctx: commands.Context, amount: str):
         if ctx.guild is None:
             await ctx.send("⚠️ The bank is available only in a server.")
