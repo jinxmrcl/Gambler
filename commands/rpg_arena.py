@@ -33,9 +33,10 @@ class DeclineButton(ui.Button):
 
 
 class DuelView(ui.LayoutView):
-    def __init__(self, cog: "RPGArena", challenger: discord.abc.User, opponent: discord.abc.User):
+    def __init__(self, cog: "RPGArena", guild_id: int, challenger: discord.abc.User, opponent: discord.abc.User):
         super().__init__(timeout=60)
         self.cog = cog
+        self.guild_id = guild_id
         self.challenger = challenger
         self.opponent = opponent
         self.finished = False
@@ -69,8 +70,9 @@ class DuelView(ui.LayoutView):
         self.finished = True
         self._disable_buttons()
 
-        challenger_char = await self.cog.bot.db.get_character(self.challenger.id)
-        opponent_char = await self.cog.bot.db.get_character(self.opponent.id)
+        db = await self.cog.bot.db.get(self.guild_id)
+        challenger_char = await db.get_character(self.challenger.id)
+        opponent_char = await db.get_character(self.opponent.id)
         if challenger_char is None or opponent_char is None:
             self.text.content = "## ⚔️ Duel Challenge\n⚠️ One of you no longer has a character."
             self.container.accent_colour = discord.Color.red()
@@ -97,13 +99,13 @@ class DuelView(ui.LayoutView):
             (self.challenger, self.opponent) if result["winner"] is fighter_a else (self.opponent, self.challenger)
         )
 
-        await self.cog.bot.db.record_duel_result(winner_user.id, loser_user.id)
+        await db.record_duel_result(winner_user.id, loser_user.id)
         gold = random.randint(*DUEL_GOLD_REWARD)
-        await self.cog.bot.db.update_balance(winner_user.id, gold)
+        await db.update_balance(winner_user.id, gold)
 
         winner_char = challenger_char if winner_user is self.challenger else opponent_char
         new_level, new_xp, levels_gained = apply_xp(winner_char["level"], winner_char["xp"], DUEL_XP_REWARD)
-        await self.cog.bot.db.set_character_level(winner_user.id, new_level, new_xp)
+        await db.set_character_level(winner_user.id, new_level, new_xp)
 
         log_tail = "\n".join(result["log"][-8:])
         footer = f"🏆 **{winner_user.display_name} wins!** +{fmt(gold)}  •  +{DUEL_XP_REWARD} XP"
@@ -146,37 +148,46 @@ class RPGArena(commands.Cog):
         if user.bot or user.id == interaction.user.id:
             await interaction.response.send_message("⚠️ Invalid duel target.")
             return
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
 
-        challenger_char = await self.bot.db.get_character(interaction.user.id)
+        db = await self.bot.db.get(interaction.guild.id)
+        challenger_char = await db.get_character(interaction.user.id)
         if not challenger_char:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
 
-        opponent_char = await self.bot.db.get_character(user.id)
+        opponent_char = await db.get_character(user.id)
         if not opponent_char:
             await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
             return
 
         now = datetime.datetime.utcnow()
-        ok = await self.bot.db.try_consume_cooldown(
+        ok = await db.try_consume_cooldown(
             interaction.user.id, "duel", datetime.timedelta(seconds=DUEL_COOLDOWN), now
         )
         if not ok:
-            until = await self.bot.db.get_cooldown(interaction.user.id, "duel")
+            until = await db.get_cooldown(interaction.user.id, "duel")
             remaining = int((until - now).total_seconds())
             await interaction.response.send_message(
                 f"⏳ You're still cooling down from your last duel. Try again in {remaining}s."
             )
             return
 
-        view = DuelView(self, interaction.user, user)
+        view = DuelView(self, interaction.guild.id, interaction.user, user)
         await interaction.response.send_message(view=view)
         view.message = await interaction.original_response()
 
     @app_commands.command(name="arena", description="Shows the top duelists.")
     @app_commands.describe(limit="Number of players (default: 10)")
     async def arena(self, interaction: discord.Interaction, limit: app_commands.Range[int, 1, 25] = 10):
-        rows = await self.bot.db.top_arena(limit * 3)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(interaction.guild.id)
+        rows = await db.top_arena(limit * 3)
         if not rows:
             await interaction.response.send_message("There are no duelists yet.")
             return

@@ -58,21 +58,15 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-from database import Database, PostgresDatabase
+from database import GuildDatabaseManager, SupabaseBackup
 from utils.checks import gamble_channel_check
 from utils.economy import StaticView
 from utils.owners import OWNER_IDS
+from utils.ratelimit import limited_send
 
 load_dotenv()
 
 log = logging.getLogger("gambler")
-
-
-def _resolve_db_password() -> str:
-    password_file = os.getenv("DB_PASSWORD_FILE")
-    if password_file:
-        return Path(password_file).read_text(encoding="utf-8").strip()
-    return os.getenv("DB_PASSWORD", "")
 
 
 def _resolve_supabase_dsn() -> str | None:
@@ -217,13 +211,8 @@ class GamblerBot(commands.Bot):
         self.starting_balance = int(os.getenv("STARTING_BALANCE", "100000"))
         self.daily_amount = int(os.getenv("DAILY_AMOUNT", "500"))
 
-        self.db = Database(
-            host=os.getenv("DB_HOST", "localhost"),
-            port=int(os.getenv("DB_PORT", "3306")),
-            user=os.getenv("DB_USER", "root"),
-            password=_resolve_db_password(),
-            db=os.getenv("DB_NAME", "gambler"),
-        )
+        self.db = GuildDatabaseManager(DATA_DIR / "guilds")
+        self.backup: SupabaseBackup | None = None
 
         self._startup_reported = False
         self._git_watch_last_failed_sha: str | None = None
@@ -284,19 +273,19 @@ class GamblerBot(commands.Bot):
         if not new_names:
             return
 
-        try:
-            channels = await self.db.all_updates_channels()
-        except Exception:
-            log.exception("[updates] failed to load configured updates channels")
-            return
-
-        if not channels:
-            return
-
         lines = [f"`/{name}` — {descriptions.get(name) or '—'}" for name in new_names]
         body = f"This bot was just updated with {len(new_names)} new command(s):\n\n" + "\n".join(lines)
 
-        for guild_id, channel_id in channels:
+        for guild in self.guilds:
+            try:
+                guild_db = await self.db.get(guild.id)
+                channel_id = await guild_db.get_updates_channel()
+            except Exception:
+                log.exception("[updates] failed to load updates channel for guild %s", guild.id)
+                continue
+            if not channel_id:
+                continue
+
             channel = self.get_channel(channel_id)
             if not channel:
                 try:
@@ -305,9 +294,9 @@ class GamblerBot(commands.Bot):
                     continue
             try:
                 view = StaticView("🆕 New Features Added", body, color=discord.Color.gold())
-                await channel.send(view=view)
+                await limited_send(channel, view=view)
             except Exception:
-                log.exception("[updates] failed to announce new features in guild %s", guild_id)
+                log.exception("[updates] failed to announce new features in guild %s", guild.id)
 
     async def graceful_shutdown(self) -> None:
         if self.is_ready():
@@ -320,20 +309,17 @@ class GamblerBot(commands.Bot):
         await self.close()
 
     async def setup_hook(self) -> None:
-        try:
-            await self.db.connect()
-            log.info("Connected to MySQL database.")
-        except Exception:
-            dsn = _resolve_supabase_dsn()
-            if not dsn:
-                raise
-            log.warning(
-                "MySQL is unreachable and SUPABASE_DB_URL(_FILE) is set — falling back to "
-                "Supabase/Postgres for this run."
-            )
-            self.db = PostgresDatabase(dsn)
-            await self.db.connect()
-            log.info("Connected to Supabase/Postgres fallback database.")
+        log.info("Per-guild SQLite databases will be created under %s as guilds are seen.", DATA_DIR / "guilds")
+
+        dsn = _resolve_supabase_dsn()
+        if dsn:
+            try:
+                backup = SupabaseBackup(dsn)
+                await backup.connect()
+                self.backup = backup
+                log.info("Connected to Supabase — guild data will be backed up there periodically.")
+            except Exception:
+                log.exception("[supabase-backup] could not connect; continuing without off-site backup.")
 
         for folder in ("events", "commands"):
             folder_path = BASE_DIR / folder
@@ -370,11 +356,21 @@ class GamblerBot(commands.Bot):
                 log.exception("[db-backup] backup failed")
 
     async def _run_db_backup(self) -> None:
-        data = await self.db.dump_all_tables()
+        data: dict[str, dict] = {}
+        for guild_id in self.db.loaded_guild_ids():
+            guild_db = await self.db.get(guild_id)
+            dump = await guild_db.dump_all_tables()
+            data[str(guild_id)] = dump
+            if self.backup is not None:
+                try:
+                    await self.backup.push_guild_snapshot(guild_id, dump)
+                except Exception:
+                    log.exception("[supabase-backup] failed to push snapshot for guild %s", guild_id)
+
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         path = BACKUPS_DIR / f"backup_{timestamp}.json"
         await asyncio.to_thread(path.write_text, json.dumps(data, default=str), encoding="utf-8")
-        log.info("[db-backup] wrote %s (%d tables)", path.name, len(data))
+        log.info("[db-backup] wrote %s (%d guild(s))", path.name, len(data))
 
         backups = sorted(BACKUPS_DIR.glob("backup_*.json"))
         for old in backups[: max(0, len(backups) - DB_BACKUP_RETENTION)]:
@@ -493,7 +489,9 @@ class GamblerBot(commands.Bot):
                 await self.remove_cog(name)
             except Exception:
                 log.exception("[shutdown] failed to unload cog %s", name)
-        await self.db.close()
+        await self.db.close_all()
+        if self.backup is not None:
+            await self.backup.close()
         await super().close()
 
 

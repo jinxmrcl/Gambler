@@ -16,8 +16,8 @@ class BetError(commands.CheckFailure):
         super().__init__(message)
 
 
-async def resolve_bet(bot: commands.Bot, user_id: int, raw: str, *, min_bet: int = 1) -> int:
-    balance = await bot.db.get_balance(user_id)
+async def resolve_bet(db, user_id: int, raw: str, *, min_bet: int = 1) -> int:
+    balance = await db.get_balance(user_id)
     raw = raw.strip().lower()
 
     if raw in ("all", "max"):

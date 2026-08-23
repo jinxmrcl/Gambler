@@ -87,13 +87,14 @@ class KenoView(ui.LayoutView):
         self.finished = True
         self.select.disabled = True
 
+        db = await self.cog.bot.db.get(self.ctx.guild.id)
         drawn = set(random.sample(range(1, POOL_SIZE + 1), DRAWN_COUNT))
         hits = len(chosen & drawn)
         multiplier = self.paytable.get(hits, 0.0)
         payout = int(self.bet * multiplier)
         if payout:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
-        await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
+            await db.update_balance(self.ctx.author.id, payout)
+        await db.record_game_result(self.ctx.author.id, self.bet, payout)
 
         won = payout > 0
         lines = [
@@ -112,7 +113,8 @@ class KenoView(ui.LayoutView):
         self.finished = True
         self.select.disabled = True
         if self.message:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, self.bet)
+            db = await self.cog.bot.db.get(self.ctx.guild.id)
+            await db.update_balance(self.ctx.author.id, self.bet)
             self.text.content = "## 🔢 Keno\n⏱️ No selection made — bet was refunded."
             self.container.accent_colour = discord.Color.greyple()
             await limited_edit(self.message, view=self)
@@ -129,9 +131,10 @@ class Keno(commands.Cog):
     )
     @game_enabled("keno")
     async def keno(self, ctx: commands.Context, bet: str, picks: commands.Range[int, 1, 10] = 5):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         view = KenoView(self, ctx, amount, picks)
         message = await ctx.send(view=view)

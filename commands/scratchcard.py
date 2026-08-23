@@ -5,7 +5,7 @@ import discord
 from discord import ui
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, fmt, game_container, resolve_bet
 from utils.ratelimit import limited_edit
@@ -143,10 +143,11 @@ class ScratchcardView(ui.LayoutView):
 
     async def _finish(self, interaction: discord.Interaction):
         self.finished = True
+        db = await self.cog.bot.db.get(self.ctx.guild.id)
         payout, winner = evaluate(self.grid, self.bet)
         if payout:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
-        await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
+            await db.update_balance(self.ctx.author.id, payout)
+        await db.record_game_result(self.ctx.author.id, self.bet, payout)
 
         won = payout > 0
         if won:
@@ -170,10 +171,11 @@ class ScratchcardView(ui.LayoutView):
                 button.disabled = True
                 self.revealed.add(button.index)
 
+        db = await self.cog.bot.db.get(self.ctx.guild.id)
         payout, winner = evaluate(self.grid, self.bet)
         if payout:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
-        await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
+            await db.update_balance(self.ctx.author.id, payout)
+        await db.record_game_result(self.ctx.author.id, self.bet, payout)
 
         won = payout > 0
         if won:
@@ -196,9 +198,10 @@ class Scratchcard(commands.Cog):
     )
     @game_enabled("scratchcard")
     async def scratchcard(self, ctx: commands.Context, bet: str):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         grid = draw_grid()
         view = ScratchcardView(self, ctx, amount, grid)

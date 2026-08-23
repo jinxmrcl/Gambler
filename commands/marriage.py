@@ -2,7 +2,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from utils.economy import StaticView, fmt, game_container, resolve_bet
 from utils.ratelimit import limited_edit
 
@@ -24,9 +24,10 @@ class DeclineButton(ui.Button):
 
 
 class ProposalView(ui.LayoutView):
-    def __init__(self, cog: "Marriage", proposer: discord.abc.User, target: discord.abc.User):
+    def __init__(self, cog: "Marriage", guild_id: int, proposer: discord.abc.User, target: discord.abc.User):
         super().__init__(timeout=120)
         self.cog = cog
+        self.guild_id = guild_id
         self.proposer = proposer
         self.target = target
         self.finished = False
@@ -60,14 +61,16 @@ class ProposalView(ui.LayoutView):
         self.finished = True
         self._disable_buttons()
 
-        if await self.cog.bot.db.get_marriage(self.proposer.id) is not None:
+        db = await self.cog.bot.db.get(self.guild_id)
+
+        if await db.get_marriage(self.proposer.id) is not None:
             self.text.content = f"## 💍 Marriage Proposal\n⚠️ {self.proposer.mention} is already married."
             self.container.accent_colour = discord.Color.red()
             await interaction.response.edit_message(view=self)
             self.stop()
             return
 
-        if await self.cog.bot.db.get_marriage(self.target.id) is not None:
+        if await db.get_marriage(self.target.id) is not None:
             self.text.content = "## 💍 Marriage Proposal\n⚠️ You're already married."
             self.container.accent_colour = discord.Color.red()
             await interaction.response.edit_message(view=self)
@@ -75,7 +78,7 @@ class ProposalView(ui.LayoutView):
             return
 
         try:
-            await self.cog.bot.db.marry(self.proposer.id, self.target.id)
+            await db.marry(self.proposer.id, self.target.id)
         except Exception:
             self.text.content = (
                 "## 💍 Marriage Proposal\n⚠️ One of you got married to someone else just now — "
@@ -123,24 +126,33 @@ class Marriage(commands.Cog):
         if user.id == ctx.author.id:
             await ctx.send("⚠️ You can't propose to yourself.")
             return
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        await db.ensure_user(user.id, self.bot.starting_balance)
 
-        if await self.bot.db.get_marriage(ctx.author.id) is not None:
+        if await db.get_marriage(ctx.author.id) is not None:
             await ctx.send("⚠️ You're already married. Use `/divorce` first.")
             return
-        if await self.bot.db.get_marriage(user.id) is not None:
+        if await db.get_marriage(user.id) is not None:
             await ctx.send(f"⚠️ {user.mention} is already married.")
             return
 
-        view = ProposalView(self, ctx.author, user)
+        view = ProposalView(self, ctx.guild.id, ctx.author, user)
         message = await ctx.send(view=view)
         view.message = message
 
     @commands.hybrid_command(name="divorce", description="End your marriage.")
     async def divorce(self, ctx: commands.Context):
-        partner_id = await self.bot.db.divorce(ctx.author.id)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(ctx.guild.id)
+        partner_id = await db.divorce(ctx.author.id)
         if partner_id is None:
             await ctx.send("⚠️ You're not married.")
             return
@@ -151,8 +163,13 @@ class Marriage(commands.Cog):
     @commands.hybrid_command(name="marriage", description="Shows a player's marriage status.")
     @app_commands.describe(user="Optional: check another user's marriage status")
     async def marriage(self, ctx: commands.Context, user: discord.User | None = None):
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+
         target = user or ctx.author
-        partner_id = await self.bot.db.get_marriage(target.id)
+        db = await self.bot.db.get(ctx.guild.id)
+        partner_id = await db.get_marriage(target.id)
 
         if partner_id is None:
             text = f"{target.mention} is not married."
@@ -164,12 +181,17 @@ class Marriage(commands.Cog):
 
     @commands.hybrid_command(name="spousebank", description="Shows your shared marriage bank balance.")
     async def spousebank(self, ctx: commands.Context):
-        bank = await self.bot.db.get_marriage_bank(ctx.author.id)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(ctx.guild.id)
+        bank = await db.get_marriage_bank(ctx.author.id)
         if bank is None:
             await ctx.send("⚠️ You're not married.")
             return
 
-        partner_id = await self.bot.db.get_marriage(ctx.author.id)
+        partner_id = await db.get_marriage(ctx.author.id)
         view = StaticView(
             "💍 Marriage Bank",
             f"**Shared balance:** {fmt(bank)}\n"
@@ -180,13 +202,18 @@ class Marriage(commands.Cog):
     @commands.hybrid_command(name="spousedeposit", description="Deposit cash into your shared marriage bank.")
     @app_commands.describe(amount="Amount (number, 'half', or 'all')")
     async def spousedeposit(self, ctx: commands.Context, amount: str):
-        if await self.bot.db.get_marriage(ctx.author.id) is None:
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(ctx.guild.id)
+        if await db.get_marriage(ctx.author.id) is None:
             await ctx.send("⚠️ You're not married.")
             return
 
-        value = await resolve_bet(self.bot, ctx.author.id, amount)
+        value = await resolve_bet(db, ctx.author.id, amount)
         try:
-            wallet, bank = await self.bot.db.deposit_marriage_bank(ctx.author.id, value)
+            wallet, bank = await db.deposit_marriage_bank(ctx.author.id, value)
         except InsufficientFunds:
             await ctx.send("⚠️ You don't have enough cash for that.")
             return
@@ -201,7 +228,12 @@ class Marriage(commands.Cog):
     @commands.hybrid_command(name="spousewithdraw", description="Withdraw cash from your shared marriage bank.")
     @app_commands.describe(amount="Amount (number, 'half', or 'all')")
     async def spousewithdraw(self, ctx: commands.Context, amount: str):
-        bank = await self.bot.db.get_marriage_bank(ctx.author.id)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(ctx.guild.id)
+        bank = await db.get_marriage_bank(ctx.author.id)
         if bank is None:
             await ctx.send("⚠️ You're not married.")
             return
@@ -223,7 +255,7 @@ class Marriage(commands.Cog):
             return
 
         try:
-            wallet, bank = await self.bot.db.withdraw_marriage_bank(ctx.author.id, value)
+            wallet, bank = await db.withdraw_marriage_bank(ctx.author.id, value)
         except InsufficientFunds:
             await ctx.send("⚠️ The shared bank doesn't have enough balance for that.")
             return

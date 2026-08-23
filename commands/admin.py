@@ -48,8 +48,12 @@ class Admin(commands.Cog):
     @app_commands.describe(user="Target user", amount="Amount (negative to remove)")
     @admin_only()
     async def addmoney(self, ctx: commands.Context, user: discord.User, amount: int):
-        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
-        new_balance = await self.bot.db.update_balance(user.id, amount)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(user.id, self.bot.starting_balance)
+        new_balance = await db.update_balance(user.id, amount)
 
         view = StaticView(
             "🛠️ Balance Changed",
@@ -62,8 +66,12 @@ class Admin(commands.Cog):
     @app_commands.describe(user="Target user", amount="New balance")
     @admin_only()
     async def setbalance(self, ctx: commands.Context, user: discord.User, amount: commands.Range[int, 0]):
-        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
-        await self.bot.db.set_balance(user.id, amount)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(user.id, self.bot.starting_balance)
+        await db.set_balance(user.id, amount)
 
         view = StaticView(
             "🛠️ Balance Set",
@@ -76,7 +84,11 @@ class Admin(commands.Cog):
     @app_commands.describe(amount="Amount to give every player (negative to remove, floored at 0)")
     @admin_only()
     async def giveall(self, ctx: commands.Context, amount: int):
-        count = await self.bot.db.give_all_users(amount)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(ctx.guild.id)
+        count = await db.give_all_users(amount)
 
         view = StaticView(
             "🛠️ Balance Given to Everyone",
@@ -85,7 +97,7 @@ class Admin(commands.Cog):
         )
         await ctx.send(view=view)
 
-    @commands.hybrid_command(name="resetuser", description="[Admin] Clear a user's bank savings in this server.")
+    @commands.hybrid_command(name="resetuser", description="[Admin] Fully reset a user's data in this server.")
     @app_commands.describe(user="Target user")
     @admin_only()
     async def resetuser(self, ctx: commands.Context, user: discord.User):
@@ -93,11 +105,14 @@ class Admin(commands.Cog):
             await ctx.send("⚠️ This command is available only in a server.")
             return
 
-        await self.bot.db.reset_guild_bank(ctx.guild.id, user.id)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(user.id, self.bot.starting_balance)
+        await db.reset_user(user.id, self.bot.starting_balance)
 
         view = StaticView(
-            "🛠️ Server Bank Reset",
-            f"{user.mention}'s bank savings were cleared for this server only.",
+            "🛠️ User Reset",
+            f"{user.mention} was reset to {fmt(self.bot.starting_balance)} in this server "
+            f"(bank, inventory, and statistics cleared).",
             color=discord.Color.blue(),
         )
         await ctx.send(view=view)
@@ -108,10 +123,14 @@ class Admin(commands.Cog):
     @app_commands.describe(user="Target user", enabled="Enable or disable the bypass")
     @admin_only()
     async def permcooldown(self, ctx: commands.Context, user: discord.User, enabled: bool):
-        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
-        await self.bot.db.set_cooldown_bypass(user.id, enabled)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(user.id, self.bot.starting_balance)
+        await db.set_cooldown_bypass(user.id, enabled)
         if enabled:
-            await self.bot.db.clear_cooldowns(user.id, ("work", "crime", "slut", "rob", "duel"))
+            await db.clear_cooldowns(user.id, ("work", "crime", "slut", "rob", "duel"))
 
         state = "enabled" if enabled else "disabled"
         view = StaticView(
@@ -127,14 +146,18 @@ class Admin(commands.Cog):
     @app_commands.describe(user="Target user", enabled="Enable or disable the shield")
     @admin_only()
     async def permshield(self, ctx: commands.Context, user: discord.User, enabled: bool):
-        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(user.id, self.bot.starting_balance)
 
         if enabled:
-            await self.bot.db.set_protected_until(user.id, PERMANENT_SHIELD_UNTIL)
+            await db.set_protected_until(user.id, PERMANENT_SHIELD_UNTIL)
         else:
-            current = await self.bot.db.get_protected_until(user.id)
+            current = await db.get_protected_until(user.id)
             if current == PERMANENT_SHIELD_UNTIL:
-                await self.bot.db.set_protected_until(user.id, None)
+                await db.set_protected_until(user.id, None)
 
         state = "enabled" if enabled else "disabled"
         view = StaticView(
@@ -200,13 +223,17 @@ class Admin(commands.Cog):
         level: app_commands.Range[int, 1, MAX_LEVEL],
         xp: app_commands.Range[int, 0] = 0,
     ):
-        character = await self.bot.db.get_character(user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(user.id)
         if not character:
             await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
             return
 
         capped_xp = min(xp, max(xp_for_level(level) - 1, 0)) if level < MAX_LEVEL else 0
-        await self.bot.db.set_character_level(user.id, level, capped_xp)
+        await db.set_character_level(user.id, level, capped_xp)
 
         view = StaticView(
             "🛠️ Level Set",
@@ -221,13 +248,17 @@ class Admin(commands.Cog):
     @app_commands.describe(user="Target user", amount="Amount of XP to grant")
     @app_admin_only()
     async def rpggivexp(self, interaction: discord.Interaction, user: discord.User, amount: app_commands.Range[int, 1]):
-        character = await self.bot.db.get_character(user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(user.id)
         if not character:
             await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
             return
 
         new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], amount)
-        await self.bot.db.set_character_level(user.id, new_level, new_xp)
+        await db.set_character_level(user.id, new_level, new_xp)
 
         level_note = f" — **{levels_gained}** level-up{'s' if levels_gained != 1 else ''}! 🎉" if levels_gained else ""
         xp_line = f"XP: {new_xp} / {xp_for_level(new_level)}" if new_level < MAX_LEVEL else "MAX LEVEL"
@@ -253,13 +284,17 @@ class Admin(commands.Cog):
         if item not in EQUIPMENT and item not in CONSUMABLES:
             await interaction.response.send_message(f"⚠️ Unknown item `{item}`.")
             return
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
 
-        character = await self.bot.db.get_character(user.id)
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(user.id)
         if not character:
             await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
             return
 
-        await self.bot.db.add_rpg_item(user.id, item, quantity)
+        await db.add_rpg_item(user.id, item, quantity)
         info = EQUIPMENT.get(item) or CONSUMABLES[item]
         followup = f"They can equip it with `/rpgequip {item}`." if item in EQUIPMENT else f"They can use it with `/rpguse {item}`."
 
@@ -274,13 +309,17 @@ class Admin(commands.Cog):
     @app_commands.describe(user="Target user", slot="Which slot to spawn a Primordial item for")
     @app_admin_only()
     async def rpggiveprimordial(self, interaction: discord.Interaction, user: discord.User, slot: PrimordialSlotKey):
-        character = await self.bot.db.get_character(user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(user.id)
         if not character:
             await interaction.response.send_message(f"⚠️ {user.mention} doesn't have a character yet.")
             return
 
         affixes = generate_primordial_drop(slot)
-        item_id = await self.bot.db.add_primordial_item(user.id, slot, json.dumps(affixes))
+        item_id = await db.add_primordial_item(user.id, slot, json.dumps(affixes))
         base_name = PRIMORDIAL_BASES[slot].name
 
         view = StaticView(

@@ -34,16 +34,17 @@ class Limbo(commands.Cog):
         bet: str,
         target: commands.Range[float, MIN_TARGET, MAX_TARGET],
     ):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         crash_point = roll_crash_point()
         won = crash_point >= target
         payout = int(amount * target) if won else 0
         if payout:
-            await self.bot.db.update_balance(ctx.author.id, payout)
-        await self.bot.db.record_game_result(ctx.author.id, amount, payout)
+            await db.update_balance(ctx.author.id, payout)
+        await db.record_game_result(ctx.author.id, amount, payout)
 
         lines = [
             f"**Bet:** {fmt(amount)}  •  **Target:** {target:g}x  •  **Result:** {crash_point:.2f}x",

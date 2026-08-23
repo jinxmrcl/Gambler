@@ -4,7 +4,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from utils.economy import fmt, game_container
 from utils.items import ITEMS
 from utils.ratelimit import limited_edit
@@ -38,6 +38,7 @@ class TradeView(ui.LayoutView):
     def __init__(
         self,
         cog: "Trade",
+        guild_id: int,
         proposer: discord.abc.User,
         target: discord.abc.User,
         give_asset: str,
@@ -47,6 +48,7 @@ class TradeView(ui.LayoutView):
     ):
         super().__init__(timeout=120)
         self.cog = cog
+        self.guild_id = guild_id
         self.proposer = proposer
         self.target = target
         self.give_asset = give_asset
@@ -87,7 +89,8 @@ class TradeView(ui.LayoutView):
         self._disable_buttons()
 
         try:
-            await self.cog.bot.db.execute_trade(
+            db = await self.cog.bot.db.get(self.guild_id)
+            await db.execute_trade(
                 self.proposer.id, self.give_asset, self.give_qty,
                 self.target.id, self.want_asset, self.want_qty,
             )
@@ -156,19 +159,23 @@ class Trade(commands.Cog):
         if user.id == ctx.author.id:
             await ctx.send("⚠️ You can't trade with yourself.")
             return
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        await db.ensure_user(user.id, self.bot.starting_balance)
 
         if give == "money":
-            owned = await self.bot.db.get_balance(ctx.author.id)
+            owned = await db.get_balance(ctx.author.id)
         else:
-            owned = await self.bot.db.get_item_quantity(ctx.author.id, give)
+            owned = await db.get_item_quantity(ctx.author.id, give)
         if owned < give_quantity:
             await ctx.send(f"⚠️ You don't have {asset_label(give, give_quantity)}.")
             return
 
-        view = TradeView(self, ctx.author, user, give, give_quantity, want, want_quantity)
+        view = TradeView(self, ctx.guild.id, ctx.author, user, give, give_quantity, want, want_quantity)
         message = await ctx.send(view=view)
         view.message = message
 

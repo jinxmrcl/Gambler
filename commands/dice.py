@@ -31,9 +31,10 @@ class Dice(commands.Cog):
     )
     @game_enabled("dice")
     async def dice(self, ctx: commands.Context, bet: str, prediction: commands.Range[int, 2, 12]):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         d1, d2 = random.randint(1, 6), random.randint(1, 6)
         total = d1 + d2
@@ -41,8 +42,8 @@ class Dice(commands.Cog):
         multiplier = multiplier_for(prediction)
         payout = int(amount * multiplier) if won else 0
         if payout:
-            await self.bot.db.update_balance(ctx.author.id, payout)
-        await self.bot.db.record_game_result(ctx.author.id, amount, payout)
+            await db.update_balance(ctx.author.id, payout)
+        await db.record_game_result(ctx.author.id, amount, payout)
 
         lines = [
             f"## 🎲 {d1} + 🎲 {d2} = {total}",

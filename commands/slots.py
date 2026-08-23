@@ -153,9 +153,10 @@ class Slots(commands.Cog):
     )
     @game_enabled("slots")
     async def slots(self, ctx: commands.Context, bet: str):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         final_grid = spin_grid()
         view = SlotsView(amount)
@@ -179,8 +180,8 @@ class Slots(commands.Cog):
 
         payout, winning_lines = evaluate(final_grid, amount)
         if payout:
-            await self.bot.db.update_balance(ctx.author.id, payout)
-        await self.bot.db.record_game_result(ctx.author.id, amount, payout)
+            await db.update_balance(ctx.author.id, payout)
+        await db.record_game_result(ctx.author.id, amount, payout)
 
         won = payout > 0
         if won:

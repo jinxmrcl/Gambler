@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from rpg.badges import prestige_badge
 from rpg.character import current_hp, full_stats
 from rpg.classes import CLASSES, base_stats_at_level
@@ -36,7 +36,12 @@ class RPGCharacter(commands.Cog):
     @app_commands.command(name="rpgstart", description="Create your RPG character.")
     @app_commands.describe(character_class="Which class to play")
     async def rpgstart(self, interaction: discord.Interaction, character_class: ClassKey):
-        existing = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(interaction.guild.id)
+        existing = await db.get_character(interaction.user.id)
         if existing:
             c = CLASSES[existing["class_key"]]
             await interaction.response.send_message(
@@ -44,9 +49,9 @@ class RPGCharacter(commands.Cog):
             )
             return
 
-        await self.bot.db.ensure_user(interaction.user.id, self.bot.starting_balance)
+        await db.ensure_user(interaction.user.id, self.bot.starting_balance)
         starting_hp = base_stats_at_level(character_class, 1)["hp"]
-        await self.bot.db.create_character(interaction.user.id, character_class, starting_hp)
+        await db.create_character(interaction.user.id, character_class, starting_hp)
         c = CLASSES[character_class]
         view = StaticView(
             "⚔️ Character Created",
@@ -60,7 +65,12 @@ class RPGCharacter(commands.Cog):
     @app_commands.command(name="rpgswitchclass", description="Switch to your other class, or unlock a second one. Both classes' progress is kept.")
     @app_commands.describe(character_class="Which class to switch to")
     async def rpgswitchclass(self, interaction: discord.Interaction, character_class: ClassKey):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -69,7 +79,7 @@ class RPGCharacter(commands.Cog):
             await interaction.response.send_message(f"⚠️ You're already playing {CLASSES[character_class].name}.")
             return
 
-        backup = await self.bot.db.get_character_backup(interaction.user.id)
+        backup = await db.get_character_backup(interaction.user.id)
         if backup and character_class != backup["class_key"]:
             active_name = CLASSES[character["class_key"]].name
             backup_name = CLASSES[backup["class_key"]].name
@@ -81,7 +91,7 @@ class RPGCharacter(commands.Cog):
 
         is_new = not (backup and backup["class_key"] == character_class)
         starting_hp = base_stats_at_level(character_class, 1)["hp"]
-        await self.bot.db.swap_character_slot(interaction.user.id, character_class, starting_hp)
+        await db.swap_character_slot(interaction.user.id, character_class, starting_hp)
 
         c = CLASSES[character_class]
         if is_new:
@@ -105,8 +115,13 @@ class RPGCharacter(commands.Cog):
     @app_commands.command(name="character", description="Shows your (or another player's) character sheet.")
     @app_commands.describe(user="Optional: view another player's character")
     async def character(self, interaction: discord.Interaction, user: discord.User | None = None):
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(interaction.guild.id)
         target = user or interaction.user
-        character = await self.bot.db.get_character(target.id)
+        character = await db.get_character(target.id)
         if not character:
             if target == interaction.user:
                 await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
@@ -145,8 +160,8 @@ class RPGCharacter(commands.Cog):
 
         total_duels = character["wins"] + character["losses"]
         winrate = f"{character['wins'] / total_duels * 100:.0f}%" if total_duels else "—"
-        boss_kills = await self.bot.db.total_boss_kills(target.id)
-        backup = await self.bot.db.get_character_backup(target.id)
+        boss_kills = await db.total_boss_kills(target.id)
+        backup = await db.get_character_backup(target.id)
 
         if prestige > 0:
             level_line = f"{prestige_badge(prestige)} **Prestige {prestige}, Level {level_in_prestige}** (total level {character['level']})"
@@ -190,7 +205,12 @@ class RPGCharacter(commands.Cog):
 
     @app_commands.command(name="heal", description="Pay gold to restore HP instantly (also revives you from 0 HP).")
     async def heal(self, interaction: discord.Interaction):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -206,14 +226,14 @@ class RPGCharacter(commands.Cog):
 
         cost = missing * HEAL_COST_PER_HP
         try:
-            await self.bot.db.update_balance(interaction.user.id, -cost)
+            await db.update_balance(interaction.user.id, -cost)
         except InsufficientFunds:
             await interaction.response.send_message(
                 f"⚠️ Healing {missing} HP costs {fmt(cost)}, and you don't have enough balance."
             )
             return
 
-        await self.bot.db.set_character_hp(interaction.user.id, stats["hp"], now)
+        await db.set_character_hp(interaction.user.id, stats["hp"], now)
         revived = hp_now <= 0
         view = StaticView(
             "💚 Healed" + (" & Revived" if revived else ""),

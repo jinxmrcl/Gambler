@@ -24,11 +24,16 @@ class Cooldowns(commands.Cog):
 
     @commands.hybrid_command(name="cooldowns", description="Shows your remaining cooldowns.")
     async def cooldowns(self, ctx: commands.Context):
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(ctx.guild.id)
         now = datetime.datetime.utcnow()
         lines = []
 
         for cmd_name in TRACKED_COMMANDS:
-            until = await self.bot.db.get_cooldown(ctx.author.id, cmd_name)
+            until = await db.get_cooldown(ctx.author.id, cmd_name)
             if until and until > now:
                 lines.append(f"`{cmd_name}` — ready in {format_duration((until - now).total_seconds())}")
             else:

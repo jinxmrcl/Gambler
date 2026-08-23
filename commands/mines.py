@@ -142,10 +142,11 @@ class MinesView(ui.LayoutView):
                 button.label = "·"
         self.cash_out_button.disabled = True
 
+        db = await self.cog.bot.db.get(self.ctx.guild.id)
         payout = int(self.bet * self.current_multiplier()) if won else 0
         if payout:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
-        await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
+            await db.update_balance(self.ctx.author.id, payout)
+        await db.record_game_result(self.ctx.author.id, self.bet, payout)
 
         self.render(footer=footer)
         self.container.accent_colour = discord.Color.green() if won else discord.Color.red()
@@ -201,10 +202,11 @@ class MinesView(ui.LayoutView):
             button.disabled = True
         self.cash_out_button.disabled = True
         if self.message:
+            db = await self.cog.bot.db.get(self.ctx.guild.id)
             payout = int(self.bet * self.current_multiplier()) if self.revealed else 0
             if payout:
-                await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
-            await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
+                await db.update_balance(self.ctx.author.id, payout)
+            await db.record_game_result(self.ctx.author.id, self.bet, payout)
             self.render(footer="⏱️ Time's up — cashed out automatically.")
             await limited_edit(self.message, view=self)
 
@@ -247,9 +249,10 @@ class Mines(commands.Cog):
             )
             return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         view = MinesView(self, ctx, amount, mines, rows, cols, auto_cashout)
         message = await ctx.send(view=view)

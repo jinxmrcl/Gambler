@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.checks import ChannelNotAllowed, GameDisabled, WrongGambleChannel
+from utils.checks import ChannelNotAllowed, GameDisabled, GuildOnly, WrongGambleChannel
 from utils.economy import BetError
 
 log = logging.getLogger("gambler")
@@ -29,7 +29,7 @@ def _usage_hint(ctx: commands.Context) -> str | None:
 
 
 def _friendly_message(error: Exception, ctx: commands.Context | None = None) -> str | None:
-    if isinstance(error, (BetError, GameDisabled, ChannelNotAllowed, WrongGambleChannel)):
+    if isinstance(error, (BetError, GameDisabled, ChannelNotAllowed, WrongGambleChannel, GuildOnly)):
         return error.args[0] if error.args else str(error)
     if isinstance(error, commands.MissingRequiredArgument):
         text = f"Missing argument: `{error.param.name}`."

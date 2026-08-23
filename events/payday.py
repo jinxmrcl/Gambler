@@ -47,26 +47,31 @@ class Payday(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def _check(self):
+        guild = await self._get_guild()
+        if guild is None:
+            return
+        db = await self.bot.db.get(guild.id)
+
         now = datetime.datetime.utcnow()
 
-        next_at = await self.bot.db.get_payday_next()
+        next_at = await db.get_payday_next()
         if next_at is None:
-            await self.bot.db.set_payday_next(now + _random_gap())
+            await db.set_payday_next(now + _random_gap())
             return
         if now < next_at:
             return
 
-        await self.bot.db.set_payday_next(now + _random_gap())
+        await db.set_payday_next(now + _random_gap())
 
-        user_id = await self.bot.db.get_random_user_id()
+        user_id = await db.get_random_user_id()
         if user_id is None:
             return
-        if not await self._should_pay(user_id):
+        if not await self._should_pay(guild, user_id):
             return
 
         amount = random.randint(PAYDAY_MIN_AMOUNT, PAYDAY_MAX_AMOUNT)
         try:
-            await self.bot.db.update_balance(user_id, amount)
+            await db.update_balance(user_id, amount)
         except Exception:
             log.exception("[payday] failed to credit user %s", user_id)
             return
@@ -87,10 +92,7 @@ class Payday(commands.Cog):
         self._guild = getattr(channel, "guild", None)
         return self._guild
 
-    async def _should_pay(self, user_id: int) -> bool:
-        guild = await self._get_guild()
-        if guild is None:
-            return True
+    async def _should_pay(self, guild: discord.Guild, user_id: int) -> bool:
         member = guild.get_member(user_id)
         if member is None:
             try:

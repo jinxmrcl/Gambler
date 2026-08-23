@@ -18,7 +18,10 @@ class AchievementListener(commands.Cog):
     async def on_command_completion(self, ctx: commands.Context):
         if not ctx.cog or ctx.cog.qualified_name not in RELEVANT_COGS:
             return
-        await check_and_announce(self.bot, ctx.author, ctx.channel)
+        if ctx.guild is None:
+            return
+        db = await self.bot.db.get(ctx.guild.id)
+        await check_and_announce(db, ctx.author, ctx.channel)
 
 
 async def setup(bot: commands.Bot):

@@ -6,7 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from utils.checks import admin_only
 from utils.economy import HOUSE_EDGE, StaticView, fmt
 
@@ -34,15 +34,23 @@ class Lottery(commands.Cog):
             log.exception("[lottery] draw check failed")
 
     async def _draw(self):
-        state = await self.bot.db.get_lottery_state()
+        for guild in self.bot.guilds:
+            try:
+                await self._draw_guild(guild)
+            except Exception:
+                log.exception("[lottery] draw check failed for guild %s", guild.id)
+
+    async def _draw_guild(self, guild: discord.Guild):
+        db = await self.bot.db.get(guild.id)
+        state = await db.get_lottery_state()
         if datetime.datetime.utcnow() < state["next_draw"]:
             return
 
-        tickets = await self.bot.db.all_lottery_tickets()
+        tickets = await db.all_lottery_tickets()
         next_draw = datetime.datetime.utcnow() + DRAW_INTERVAL
 
         if not tickets:
-            await self.bot.db.reset_lottery(next_draw)
+            await db.reset_lottery(next_draw)
             return
 
         winner_id = random.choices(
@@ -50,9 +58,9 @@ class Lottery(commands.Cog):
         )[0]
         payout = int(state["pot"] * (1 - HOUSE_EDGE))
 
-        await self.bot.db.ensure_user(winner_id, self.bot.starting_balance)
-        await self.bot.db.update_balance(winner_id, payout)
-        await self.bot.db.reset_lottery(next_draw)
+        await db.ensure_user(winner_id, self.bot.starting_balance)
+        await db.update_balance(winner_id, payout)
+        await db.reset_lottery(next_draw)
 
         if state["channel_id"]:
             channel = self.bot.get_channel(state["channel_id"])
@@ -70,8 +78,12 @@ class Lottery(commands.Cog):
 
     @commands.hybrid_command(name="lottery", description="Shows the current lottery pot and your tickets.")
     async def lottery(self, ctx: commands.Context):
-        state = await self.bot.db.get_lottery_state()
-        my_tickets = await self.bot.db.get_lottery_tickets(ctx.author.id)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(ctx.guild.id)
+        state = await db.get_lottery_state()
+        my_tickets = await db.get_lottery_tickets(ctx.author.id)
         remaining = state["next_draw"] - datetime.datetime.utcnow()
         days, hours = divmod(int(max(remaining.total_seconds(), 0)) // 3600, 24)
 
@@ -86,19 +98,23 @@ class Lottery(commands.Cog):
     @commands.hybrid_command(name="lottery_buy", description="Buy lottery tickets.")
     @app_commands.describe(quantity="How many tickets to buy")
     async def lottery_buy(self, ctx: commands.Context, quantity: commands.Range[int, 1, 1000] = 1):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
         cost = TICKET_PRICE * quantity
-        balance = await self.bot.db.get_balance(ctx.author.id)
+        balance = await db.get_balance(ctx.author.id)
         if balance < cost:
             await ctx.send(f"⚠️ You need {fmt(cost)} for {quantity} ticket(s).")
             return
 
         try:
-            await self.bot.db.buy_lottery_tickets(ctx.author.id, quantity, cost)
+            await db.buy_lottery_tickets(ctx.author.id, quantity, cost)
         except InsufficientFunds:
             await ctx.send(f"⚠️ You need {fmt(cost)} for {quantity} ticket(s).")
             return
-        my_tickets = await self.bot.db.get_lottery_tickets(ctx.author.id)
+        my_tickets = await db.get_lottery_tickets(ctx.author.id)
 
         view = StaticView(
             "🎟️ Tickets Bought",
@@ -110,7 +126,11 @@ class Lottery(commands.Cog):
     @commands.hybrid_command(name="lottery_setchannel", description="[Admin] Set this channel for lottery draw announcements.")
     @admin_only()
     async def lottery_setchannel(self, ctx: commands.Context):
-        await self.bot.db.set_lottery_channel(ctx.channel.id)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.set_lottery_channel(ctx.channel.id)
         view = StaticView(
             "🎟️ Lottery Channel Set",
             f"Draw results will be announced in {ctx.channel.mention}.",

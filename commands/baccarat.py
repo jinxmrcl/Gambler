@@ -6,7 +6,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from utils.cards import BACK_EMOJI, RANKS, SUITS, Deck
 from utils.checks import game_enabled
 from utils.economy import BetError, HOUSE_EDGE, fmt, game_container, resolve_bet
@@ -157,9 +157,10 @@ class Baccarat(commands.Cog):
         player_pair: str | None = None,
         banker_pair: str | None = None,
     ):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         pp_amount = 0
         bp_amount = 0
@@ -167,15 +168,15 @@ class Baccarat(commands.Cog):
         bp_deducted = 0
         try:
             if player_pair is not None:
-                pp_amount = await resolve_bet(self.bot, ctx.author.id, player_pair)
-                await self.bot.db.update_balance(ctx.author.id, -pp_amount)
+                pp_amount = await resolve_bet(db, ctx.author.id, player_pair)
+                await db.update_balance(ctx.author.id, -pp_amount)
                 pp_deducted = pp_amount
             if banker_pair is not None:
-                bp_amount = await resolve_bet(self.bot, ctx.author.id, banker_pair)
-                await self.bot.db.update_balance(ctx.author.id, -bp_amount)
+                bp_amount = await resolve_bet(db, ctx.author.id, banker_pair)
+                await db.update_balance(ctx.author.id, -bp_amount)
                 bp_deducted = bp_amount
         except (BetError, InsufficientFunds):
-            await self.bot.db.update_balance(ctx.author.id, amount + pp_deducted + bp_deducted)
+            await db.update_balance(ctx.author.id, amount + pp_deducted + bp_deducted)
             raise
 
         deck = Deck()
@@ -201,7 +202,7 @@ class Baccarat(commands.Cog):
             else:
                 side_lines.append(f"🏦 Banker Pair: 😢 lost {fmt(bp_amount)}")
         if side_payout:
-            await self.bot.db.update_balance(ctx.author.id, side_payout)
+            await db.update_balance(ctx.author.id, side_payout)
 
         view = BaccaratView(amount, choice, side_lines)
         message = await ctx.send(view=view)
@@ -229,8 +230,8 @@ class Baccarat(commands.Cog):
             payout = 0
 
         if payout:
-            await self.bot.db.update_balance(ctx.author.id, payout)
-        await self.bot.db.record_game_result(
+            await db.update_balance(ctx.author.id, payout)
+        await db.record_game_result(
             ctx.author.id, amount + side_wagered, payout + side_payout
         )
 

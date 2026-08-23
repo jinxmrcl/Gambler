@@ -95,9 +95,10 @@ class Roulette(commands.Cog):
             )
             return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         result = random.randint(0, 36)
         color = color_of(result)
@@ -123,8 +124,8 @@ class Roulette(commands.Cog):
 
         payout = int(amount * multiplier) if won else 0
         if payout:
-            await self.bot.db.update_balance(ctx.author.id, payout)
-        await self.bot.db.record_game_result(ctx.author.id, amount, payout)
+            await db.update_balance(ctx.author.id, payout)
+        await db.record_game_result(ctx.author.id, amount, payout)
 
         emoji = {"red": "🔴", "black": "⚫", "green": "🟢"}[color]
         lines = [

@@ -5,7 +5,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from utils.checks import game_enabled
 from utils.economy import HOUSE_EDGE, StaticView, fmt, game_container, resolve_bet
 from utils.ratelimit import limited_edit
@@ -31,9 +31,10 @@ class DeclineButton(ui.Button):
 
 
 class CoinflipView(ui.LayoutView):
-    def __init__(self, cog: "Coinflip", challenger: discord.abc.User, opponent: discord.abc.User, amount: int):
+    def __init__(self, cog: "Coinflip", guild_id: int, challenger: discord.abc.User, opponent: discord.abc.User, amount: int):
         super().__init__(timeout=60)
         self.cog = cog
+        self.guild_id = guild_id
         self.challenger = challenger
         self.opponent = opponent
         self.amount = amount
@@ -69,8 +70,9 @@ class CoinflipView(ui.LayoutView):
         self.finished = True
         self._disable_buttons()
 
+        db = await self.cog.bot.db.get(self.guild_id)
         try:
-            await self.cog.bot.db.debit_both(self.challenger.id, self.opponent.id, self.amount)
+            await db.debit_both(self.challenger.id, self.opponent.id, self.amount)
         except InsufficientFunds as exc:
             if getattr(exc, "user_id", None) == self.opponent.id:
                 text = f"⚠️ {self.opponent.mention} doesn't have enough balance."
@@ -87,9 +89,9 @@ class CoinflipView(ui.LayoutView):
         winner = random.choice([self.challenger, self.opponent])
         loser = self.opponent if winner is self.challenger else self.challenger
 
-        await self.cog.bot.db.update_balance(winner.id, payout)
-        await self.cog.bot.db.record_game_result(winner.id, self.amount, payout)
-        await self.cog.bot.db.record_game_result(loser.id, self.amount, 0)
+        await db.update_balance(winner.id, payout)
+        await db.record_game_result(winner.id, self.amount, payout)
+        await db.record_game_result(loser.id, self.amount, 0)
 
         self.text.content = (
             f"## 🪙 Coinflip Challenge\n"
@@ -134,16 +136,20 @@ class Coinflip(commands.Cog):
         if user.id == ctx.author.id:
             await ctx.send("⚠️ You can't challenge yourself.")
             return
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        await db.ensure_user(user.id, self.bot.starting_balance)
 
-        challenger_balance = await self.bot.db.get_balance(ctx.author.id)
+        challenger_balance = await db.get_balance(ctx.author.id)
         if challenger_balance < amount:
             await ctx.send(f"⚠️ You don't have {fmt(amount)}.")
             return
 
-        view = CoinflipView(self, ctx.author, user, amount)
+        view = CoinflipView(self, ctx.guild.id, ctx.author, user, amount)
         message = await ctx.send(view=view)
         view.message = message
 
@@ -154,17 +160,18 @@ class Coinflip(commands.Cog):
     )
     @game_enabled("soloflip")
     async def soloflip(self, ctx: commands.Context, bet: str, call: Literal["heads", "tails"] = "heads"):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         win_chance = random.uniform(BASE_WIN_CHANCE - WIN_CHANCE_JITTER, BASE_WIN_CHANCE + WIN_CHANCE_JITTER)
         won = random.random() < win_chance
         result = call if won else ("tails" if call == "heads" else "heads")
         payout = amount * 2 if won else 0
         if payout:
-            await self.bot.db.update_balance(ctx.author.id, payout)
-        await self.bot.db.record_game_result(ctx.author.id, amount, payout)
+            await db.update_balance(ctx.author.id, payout)
+        await db.record_game_result(ctx.author.id, amount, payout)
 
         emoji = "🪙" if result == "heads" else "🥈"
         lines = [

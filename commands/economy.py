@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from utils.economy import StaticView, fmt, resolve_display_name
 
 BOARD_TITLES = {
@@ -33,22 +33,32 @@ class Economy(commands.Cog):
     @commands.hybrid_command(name="balance", aliases=["bal"], description="Shows your balance.")
     @app_commands.describe(user="Optional: view another user's balance")
     async def balance(self, ctx: commands.Context, user: discord.User | None = None):
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+
         target = user or ctx.author
-        await self.bot.db.ensure_user(target.id, self.bot.starting_balance)
-        bal = await self.bot.db.get_balance(target.id)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(target.id, self.bot.starting_balance)
+        bal = await db.get_balance(target.id)
 
         view = StaticView("💰 Balance", f"**{target.display_name}** has {fmt(bal)}.")
         await ctx.send(view=view)
 
     @commands.hybrid_command(name="daily", description="Claim your daily bonus.")
     async def daily(self, ctx: commands.Context):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
         now = datetime.datetime.utcnow()
         period = datetime.timedelta(hours=24)
 
-        result = await self.bot.db.claim_daily(ctx.author.id, self.bot.daily_amount, period, now)
+        result = await db.claim_daily(ctx.author.id, self.bot.daily_amount, period, now)
         if result is None:
-            last = await self.bot.db.get_last_daily(ctx.author.id)
+            last = await db.get_last_daily(ctx.author.id)
             remaining = period - (now - last) if last else datetime.timedelta(0)
             hours, rem = divmod(max(int(remaining.total_seconds()), 0), 3600)
             minutes = rem // 60
@@ -80,11 +90,16 @@ class Economy(commands.Cog):
         board: Literal["balance", "games_played", "total_wagered", "biggest_win", "robs_succeeded"] = "balance",
         limit: commands.Range[int, 1, 25] = 10,
     ):
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
+
+        db = await self.bot.db.get(ctx.guild.id)
         fetch_limit = limit * 3
         rows = (
-            await self.bot.db.top_balances(fetch_limit)
+            await db.top_balances(fetch_limit)
             if board == "balance"
-            else await self.bot.db.top_stat(board, fetch_limit)
+            else await db.top_stat(board, fetch_limit)
         )
         if not rows:
             await ctx.send("There's no data for this leaderboard yet.")
@@ -126,12 +141,16 @@ class Economy(commands.Cog):
         if user.id == ctx.author.id:
             await ctx.send("⚠️ You can't send money to yourself.")
             return
+        if ctx.guild is None:
+            await ctx.send("⚠️ This command is only available in a server.")
+            return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        await self.bot.db.ensure_user(user.id, self.bot.starting_balance)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        await db.ensure_user(user.id, self.bot.starting_balance)
 
         try:
-            await self.bot.db.transfer_balance(ctx.author.id, user.id, amount)
+            await db.transfer_balance(ctx.author.id, user.id, amount)
         except InsufficientFunds:
             await ctx.send("⚠️ You don't have enough balance for this transfer.")
             return

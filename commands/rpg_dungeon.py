@@ -10,7 +10,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands, tasks
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from rpg.character import current_hp, full_stats, to_fighter
 from rpg.combat import Fighter, simulate, simulate_team
 from rpg.consumables import CONSUMABLES
@@ -52,7 +52,7 @@ def _dungeon_list_text() -> str:
 
 
 async def _resolve_dungeon_fight(
-    bot, user_id: int, display_name: str, character: dict, hp_now: int, d: Dungeon, now: datetime.datetime
+    db, user_id: int, display_name: str, character: dict, hp_now: int, d: Dungeon, now: datetime.datetime
 ) -> dict:
     event = roll_event()
     gold_find_pct = full_stats(character).get("gold_find_pct", 0.0)
@@ -64,13 +64,13 @@ async def _resolve_dungeon_fight(
 
     if event == TREASURE:
         gold = int((random.randint(50, 150) + character["level"] * 5) * (1 + gold_find_pct))
-        await bot.db.update_balance(user_id, gold)
+        await db.update_balance(user_id, gold)
         outcome["gold"] = gold
         return outcome
 
     if event == MERCHANT:
         gold = int(random.randint(30, 80) * (1 + gold_find_pct))
-        await bot.db.update_balance(user_id, gold)
+        await db.update_balance(user_id, gold)
         outcome["gold"] = gold
         return outcome
 
@@ -94,7 +94,7 @@ async def _resolve_dungeon_fight(
 
     result = simulate(player_fighter, monster_fighter)
     won = result["winner"] is player_fighter
-    await bot.db.set_character_hp(user_id, player_fighter.hp, now)
+    await db.set_character_hp(user_id, player_fighter.hp, now)
 
     outcome.update(
         won=won, elite=elite, monster_name=monster_name, log=result["log"],
@@ -103,22 +103,22 @@ async def _resolve_dungeon_fight(
 
     if won:
         gold = int(random.randint(*stats["gold"]) * (1 + gold_find_pct))
-        await bot.db.update_balance(user_id, gold)
+        await db.update_balance(user_id, gold)
         new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], stats["xp"])
-        await bot.db.set_character_level(user_id, new_level, new_xp)
-        await bot.db.record_game_result(user_id, 0, gold)
+        await db.set_character_level(user_id, new_level, new_xp)
+        await db.record_game_result(user_id, 0, gold)
         outcome.update(gold=gold, xp=stats["xp"], levels_gained=levels_gained, new_level=new_level)
 
         if monster.loot_pool and random.random() < monster.loot_chance:
             item_key = random.choice(monster.loot_pool)
-            await bot.db.add_rpg_item(user_id, item_key, 1)
+            await db.add_rpg_item(user_id, item_key, 1)
             outcome["loot_item"] = item_key
 
     return outcome
 
 
 async def _resolve_boss_fight(
-    bot, user_id: int, display_name: str, character: dict, hp_now: int, d: Dungeon, now: datetime.datetime
+    db, user_id: int, display_name: str, character: dict, hp_now: int, d: Dungeon, now: datetime.datetime
 ) -> dict:
     stats = scaled_monster(d.boss, character["level"], d.min_level, d.key, is_boss=True)
     player_fighter = to_fighter(character, display_name, hp=hp_now)
@@ -130,7 +130,7 @@ async def _resolve_boss_fight(
 
     result = simulate(player_fighter, boss_fighter)
     won = result["winner"] is player_fighter
-    await bot.db.set_character_hp(user_id, player_fighter.hp, now)
+    await db.set_character_hp(user_id, player_fighter.hp, now)
 
     outcome = {
         "won": won, "boss_name": boss_name, "log": result["log"],
@@ -142,28 +142,28 @@ async def _resolve_boss_fight(
     if won:
         gold_find_pct = full_stats(character).get("gold_find_pct", 0.0)
         gold = int(random.randint(*stats["gold"]) * (1 + gold_find_pct))
-        await bot.db.update_balance(user_id, gold)
+        await db.update_balance(user_id, gold)
         new_level, new_xp, levels_gained = apply_xp(character["level"], character["xp"], stats["xp"])
-        await bot.db.set_character_level(user_id, new_level, new_xp)
-        await bot.db.record_game_result(user_id, 0, gold)
-        await bot.db.record_boss_kill(user_id, d.key)
-        kills = await bot.db.get_boss_kills(user_id, d.key)
+        await db.set_character_level(user_id, new_level, new_xp)
+        await db.record_game_result(user_id, 0, gold)
+        await db.record_boss_kill(user_id, d.key)
+        kills = await db.get_boss_kills(user_id, d.key)
         outcome.update(gold=gold, xp=stats["xp"], levels_gained=levels_gained, new_level=new_level, kills=kills)
 
         if d.boss.loot_pool and random.random() < d.boss.loot_chance:
             item_key = random.choice(d.boss.loot_pool)
-            await bot.db.add_rpg_item(user_id, item_key, 1)
+            await db.add_rpg_item(user_id, item_key, 1)
             outcome["loot_item"] = item_key
 
         if d.boss.loot_pool and random.random() < BOSS_BONUS_LOOT_CHANCE:
             bonus_key = random.choice(d.boss.loot_pool)
-            await bot.db.add_rpg_item(user_id, bonus_key, 1)
+            await db.add_rpg_item(user_id, bonus_key, 1)
             outcome["bonus_loot_item"] = bonus_key
 
         if d.key in HIGH_END_DUNGEONS and random.random() < PRIMORDIAL_DROP_CHANCE:
             slot = random.choice(("weapon", "armor", "accessory"))
             affixes = generate_primordial_drop(slot)
-            await bot.db.add_primordial_item(user_id, slot, json.dumps(affixes))
+            await db.add_primordial_item(user_id, slot, json.dumps(affixes))
             outcome["primordial_drop"] = {"slot": slot, "affixes": affixes}
 
     return outcome
@@ -194,9 +194,10 @@ class UsePotionButton(ui.Button):
 
 
 class TeamLobbyView(ui.LayoutView):
-    def __init__(self, cog: "RPGDungeon", starter: discord.abc.User, dungeon: Dungeon, is_boss: bool):
+    def __init__(self, cog: "RPGDungeon", guild_id: int, starter: discord.abc.User, dungeon: Dungeon, is_boss: bool):
         super().__init__(timeout=TEAM_LOBBY_SECONDS)
         self.cog = cog
+        self.guild_id = guild_id
         self.starter = starter
         self.dungeon = dungeon
         self.is_boss = is_boss
@@ -257,7 +258,8 @@ class TeamLobbyView(ui.LayoutView):
                 await interaction.response.send_message("This party is full.", ephemeral=True)
                 return
 
-            character = await self.cog.bot.db.get_character(interaction.user.id)
+            db = await self.cog.bot.db.get(self.guild_id)
+            character = await db.get_character(interaction.user.id)
             if not character:
                 await interaction.response.send_message(
                     "⚠️ You don't have a character yet. Use `/rpgstart` to create one.", ephemeral=True
@@ -286,7 +288,7 @@ class TeamLobbyView(ui.LayoutView):
                 )
                 return
 
-            db = self.cog.bot.db
+            db = await self.cog.bot.db.get(self.guild_id)
             potion_key = None
             for key in ("minor_potion", "greater_potion", "superior_potion"):
                 if await db.get_rpg_item_quantity(interaction.user.id, key) > 0:
@@ -348,7 +350,7 @@ class TeamLobbyView(ui.LayoutView):
             self._disable_buttons()
 
         now = datetime.datetime.utcnow()
-        db = self.cog.bot.db
+        db = await self.cog.bot.db.get(self.guild_id)
         d = self.dungeon
 
         roster: list[tuple[discord.abc.User, dict]] = []
@@ -590,37 +592,42 @@ class RPGDungeon(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def cog_load(self):
-        try:
-            sessions = await self.bot.db.get_all_idle_sessions()
-        except Exception:
-            log.exception("[idle] failed to load persisted idle sessions")
-            return
-
-        for row in sessions:
-            user_id = row["user_id"]
-            d = DUNGEONS.get(row["dungeon_key"])
-            if d is None:
-                await self.bot.db.delete_idle_session(user_id)
+        total_resumed = 0
+        for guild_id in self.bot.db.known_guild_ids():
+            try:
+                db = await self.bot.db.get(guild_id)
+                sessions = await db.get_all_idle_sessions()
+            except Exception:
+                log.exception("[idle] failed to load persisted idle sessions for guild %s", guild_id)
                 continue
 
-            try:
-                stats = json.loads(row["stats_json"])
-            except (TypeError, ValueError):
-                stats = None
+            for row in sessions:
+                user_id = row["user_id"]
+                d = DUNGEONS.get(row["dungeon_key"])
+                if d is None:
+                    await db.delete_idle_session(user_id)
+                    continue
 
-            task = asyncio.create_task(
-                self._run_idle(user_id, row["display_name"], d, row["channel_id"], row["deadline"], stats)
-            )
-            self._idle_tasks[user_id] = task
-            task.add_done_callback(lambda _t, uid=user_id: self._idle_tasks.pop(uid, None))
-            self._idle_sessions[user_id] = {
-                "dungeon_name": d.name,
-                "deadline": row["deadline"],
-                "auto": bool(stats.get("auto")) if stats else False,
-            }
+                try:
+                    stats = json.loads(row["stats_json"])
+                except (TypeError, ValueError):
+                    stats = None
 
-        if sessions:
-            log.info("[idle] resumed %d idle session(s) after reload", len(sessions))
+                key = (guild_id, user_id)
+                task = asyncio.create_task(
+                    self._run_idle(guild_id, user_id, row["display_name"], d, row["channel_id"], row["deadline"], stats)
+                )
+                self._idle_tasks[key] = task
+                task.add_done_callback(lambda _t, k=key: self._idle_tasks.pop(k, None))
+                self._idle_sessions[key] = {
+                    "dungeon_name": d.name,
+                    "deadline": row["deadline"],
+                    "auto": bool(stats.get("auto")) if stats else False,
+                }
+                total_resumed += 1
+
+        if total_resumed:
+            log.info("[idle] resumed %d idle session(s) after reload", total_resumed)
             self._schedule_tracker_update()
 
     async def _get_idle_tracker_channel(self) -> discord.abc.Messageable | None:
@@ -642,11 +649,23 @@ class RPGDungeon(commands.Cog):
         except Exception:
             log.exception("[idle] failed to update the idle-tracker message")
 
+    async def _tracker_guild_db(self):
+        """The idle tracker posts to one fixed channel, so its persisted state lives in
+        whichever single guild owns that channel — this is a bot-wide status board, not
+        per-guild economy data."""
+        channel = await self._get_idle_tracker_channel()
+        guild = getattr(channel, "guild", None)
+        if guild is None:
+            return None
+        return await self.bot.db.get(guild.id)
+
     async def _post_new_idle_tracker(self, view: StaticView) -> None:
         channel = await self._get_idle_tracker_channel()
         self._idle_tracker_message = await limited_send(channel, view=view)
         self._idle_tracker_posted_at = datetime.datetime.utcnow()
-        await self.bot.db.set_idle_tracker_message(self._idle_tracker_message.id, self._idle_tracker_posted_at)
+        db = await self._tracker_guild_db()
+        if db is not None:
+            await db.set_idle_tracker_message(self._idle_tracker_message.id, self._idle_tracker_posted_at)
 
     async def _update_idle_tracker(self):
         if not IDLE_ANNOUNCE_CHANNEL_ID:
@@ -657,7 +676,7 @@ class RPGDungeon(commands.Cog):
         else:
             now = datetime.datetime.utcnow()
             lines = []
-            for user_id, info in self._idle_sessions.items():
+            for (_guild_id, user_id), info in self._idle_sessions.items():
                 remaining = max(datetime.timedelta(0), info["deadline"] - now)
                 remaining_min = int(remaining.total_seconds() // 60)
                 if info.get("auto"):
@@ -671,7 +690,8 @@ class RPGDungeon(commands.Cog):
 
         try:
             if self._idle_tracker_message is None:
-                saved = await self.bot.db.get_idle_tracker_message()
+                tracker_db = await self._tracker_guild_db()
+                saved = await tracker_db.get_idle_tracker_message() if tracker_db is not None else None
                 if saved:
                     saved_id, saved_posted_at = saved
                     if saved_posted_at and now - saved_posted_at >= IDLE_TRACKER_REPOST_AFTER:
@@ -704,7 +724,11 @@ class RPGDungeon(commands.Cog):
     @app_commands.command(name="dungeon", description="Fight your way through a dungeon.")
     @app_commands.describe(dungeon="Which dungeon to enter", team="Start an open team-fight lobby instead of fighting solo")
     async def dungeon(self, interaction: discord.Interaction, dungeon: DungeonKey, team: bool = False):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -717,7 +741,7 @@ class RPGDungeon(commands.Cog):
             return
 
         if team:
-            view = TeamLobbyView(self, interaction.user, d, is_boss=False)
+            view = TeamLobbyView(self, interaction.guild.id, interaction.user, d, is_boss=False)
             await interaction.response.send_message(view=view)
             view.message = await interaction.original_response()
             return
@@ -732,7 +756,7 @@ class RPGDungeon(commands.Cog):
             return
 
         outcome = await _resolve_dungeon_fight(
-            self.bot, interaction.user.id, interaction.user.display_name, character, hp_now, d, now
+            db, interaction.user.id, interaction.user.display_name, character, hp_now, d, now
         )
 
         if outcome["event"] == TREASURE:
@@ -789,7 +813,11 @@ class RPGDungeon(commands.Cog):
     @app_commands.command(name="dungeonboss", description="Challenge a dungeon's boss for big rewards.")
     @app_commands.describe(dungeon="Which dungeon's boss to fight", team="Start an open team-fight lobby instead of fighting solo")
     async def dungeonboss(self, interaction: discord.Interaction, dungeon: DungeonKey, team: bool = False):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -802,7 +830,7 @@ class RPGDungeon(commands.Cog):
             return
 
         if team:
-            view = TeamLobbyView(self, interaction.user, d, is_boss=True)
+            view = TeamLobbyView(self, interaction.guild.id, interaction.user, d, is_boss=True)
             await interaction.response.send_message(view=view)
             view.message = await interaction.original_response()
             return
@@ -817,7 +845,7 @@ class RPGDungeon(commands.Cog):
             return
 
         outcome = await _resolve_boss_fight(
-            self.bot, interaction.user.id, interaction.user.display_name, character, hp_now, d, now
+            db, interaction.user.id, interaction.user.display_name, character, hp_now, d, now
         )
 
         hp_line = f"\n**HP:** {outcome['hp']} / {outcome['max_hp']}"
@@ -865,10 +893,15 @@ class RPGDungeon(commands.Cog):
         minutes: app_commands.Range[int, 1, IDLE_MAX_MINUTES] = IDLE_DEFAULT_MINUTES,
         auto: bool = False,
     ):
-        if interaction.user.id in self._idle_tasks:
-            session = self._idle_sessions.get(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        key = (interaction.guild.id, interaction.user.id)
+
+        if key in self._idle_tasks:
+            session = self._idle_sessions.get(key)
             if session and session.get("auto"):
-                self._auto_idle_stop.add(interaction.user.id)
+                self._auto_idle_stop.add(key)
                 await interaction.response.send_message(
                     view=StaticView(
                         "🏕️ Stopping Auto Idle",
@@ -878,10 +911,11 @@ class RPGDungeon(commands.Cog):
             else:
                 await interaction.response.send_message("⚠️ You're already idle farming. Wait for it to finish.")
             return
-        self._idle_tasks[interaction.user.id] = None
+        self._idle_tasks[key] = None
         started = False
         try:
-            character = await self.bot.db.get_character(interaction.user.id)
+            db = await self.bot.db.get(interaction.guild.id)
+            character = await db.get_character(interaction.user.id)
             if not character:
                 await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
                 return
@@ -908,14 +942,15 @@ class RPGDungeon(commands.Cog):
 
             task = asyncio.create_task(
                 self._run_idle(
-                    interaction.user.id, interaction.user.display_name, d, interaction.channel_id, deadline, auto=auto
+                    interaction.guild.id, interaction.user.id, interaction.user.display_name, d,
+                    interaction.channel_id, deadline, auto=auto,
                 )
             )
-            self._idle_tasks[interaction.user.id] = task
-            task.add_done_callback(lambda _t: self._idle_tasks.pop(interaction.user.id, None))
+            self._idle_tasks[key] = task
+            task.add_done_callback(lambda _t: self._idle_tasks.pop(key, None))
             started = True
 
-            self._idle_sessions[interaction.user.id] = {
+            self._idle_sessions[key] = {
                 "dungeon_name": d.name,
                 "deadline": deadline,
                 "auto": auto,
@@ -923,7 +958,7 @@ class RPGDungeon(commands.Cog):
             self._schedule_tracker_update()
         finally:
             if not started:
-                self._idle_tasks.pop(interaction.user.id, None)
+                self._idle_tasks.pop(key, None)
 
     @staticmethod
     def _fresh_idle_stats(auto: bool = False) -> dict:
@@ -935,9 +970,11 @@ class RPGDungeon(commands.Cog):
 
     async def _run_idle(
         self,
-        user_id: int, display_name: str, d: Dungeon, channel_id: int,
+        guild_id: int, user_id: int, display_name: str, d: Dungeon, channel_id: int,
         deadline: datetime.datetime, stats: dict | None = None, auto: bool = False,
     ):
+        key = (guild_id, user_id)
+        db = await self.bot.db.get(guild_id)
         if stats is None:
             stats = self._fresh_idle_stats(auto)
         stats.setdefault("kills", {})
@@ -946,7 +983,7 @@ class RPGDungeon(commands.Cog):
 
         async def _persist():
             try:
-                await self.bot.db.save_idle_session(
+                await db.save_idle_session(
                     user_id, d.key, display_name, deadline, channel_id, 0, json.dumps(stats)
                 )
             except Exception:
@@ -957,23 +994,23 @@ class RPGDungeon(commands.Cog):
         had_error = False
         try:
             while True:
-                if user_id in self._auto_idle_stop:
+                if key in self._auto_idle_stop:
                     break
 
                 now = datetime.datetime.utcnow()
                 if now >= deadline:
                     if not auto:
                         break
-                    await asyncio.shield(self._send_idle_checkpoint(user_id, d, channel_id, stats))
+                    await asyncio.shield(self._send_idle_checkpoint(guild_id, user_id, d, channel_id, stats))
                     stats = self._fresh_idle_stats(auto=True)
                     deadline = now + datetime.timedelta(minutes=AUTO_IDLE_CHECKPOINT_MINUTES)
-                    session = self._idle_sessions.get(user_id)
+                    session = self._idle_sessions.get(key)
                     if session is not None:
                         session["deadline"] = deadline
                     await _persist()
                     continue
 
-                character = await self.bot.db.get_character(user_id)
+                character = await db.get_character(user_id)
                 if not character:
                     break
 
@@ -982,7 +1019,7 @@ class RPGDungeon(commands.Cog):
 
                 if hp_now > 0:
                     outcome = await _resolve_dungeon_fight(
-                        self.bot, user_id, display_name, character, hp_now, d, now
+                        db, user_id, display_name, character, hp_now, d, now
                     )
                     if outcome["event"] in (TREASURE, MERCHANT):
                         stats["gold"] += outcome["gold"]
@@ -999,13 +1036,13 @@ class RPGDungeon(commands.Cog):
                             stats["loot"].append(outcome["loot_item"])
 
                 now = datetime.datetime.utcnow()
-                character = await self.bot.db.get_character(user_id)
+                character = await db.get_character(user_id)
                 if character:
                     player_stats = full_stats(character)
                     hp_now = current_hp(character, player_stats["hp"], now)
                     if hp_now > 0:
                         outcome = await _resolve_boss_fight(
-                            self.bot, user_id, display_name, character, hp_now, d, now
+                            db, user_id, display_name, character, hp_now, d, now
                         )
                         stats["boss_attempts"] += 1
                         stats["gold"] += outcome["gold"]
@@ -1030,8 +1067,8 @@ class RPGDungeon(commands.Cog):
             had_error = True
             log.exception("[idle] unexpected error during idle farming for user %s", user_id)
 
-        self._auto_idle_stop.discard(user_id)
-        await asyncio.shield(self._finish_idle(user_id, d, channel_id, stats, had_error))
+        self._auto_idle_stop.discard(key)
+        await asyncio.shield(self._finish_idle(guild_id, user_id, d, channel_id, stats, had_error))
 
     @staticmethod
     def _build_idle_body(stats: dict, had_error: bool, final_level: int | None) -> str:
@@ -1062,9 +1099,10 @@ class RPGDungeon(commands.Cog):
 
         return "\n".join(lines) + loot_text
 
-    async def _send_idle_checkpoint(self, user_id: int, d: Dungeon, channel_id: int, stats: dict) -> None:
+    async def _send_idle_checkpoint(self, guild_id: int, user_id: int, d: Dungeon, channel_id: int, stats: dict) -> None:
         try:
-            character = await self.bot.db.get_character(user_id)
+            db = await self.bot.db.get(guild_id)
+            character = await db.get_character(user_id)
         except Exception:
             character = None
             log.exception("[idle] failed to fetch character state for checkpoint for user %s", user_id)
@@ -1083,11 +1121,12 @@ class RPGDungeon(commands.Cog):
 
     async def _finish_idle(
         self,
-        user_id: int, d: Dungeon, channel_id: int,
+        guild_id: int, user_id: int, d: Dungeon, channel_id: int,
         stats: dict, had_error: bool,
     ):
+        db = await self.bot.db.get(guild_id)
         try:
-            character = await self.bot.db.get_character(user_id)
+            character = await db.get_character(user_id)
         except Exception:
             character = None
             log.exception("[idle] failed to fetch final character state for user %s", user_id)
@@ -1106,10 +1145,10 @@ class RPGDungeon(commands.Cog):
         except Exception:
             log.exception("[idle] failed to send final summary for user %s", user_id)
 
-        self._idle_sessions.pop(user_id, None)
-        self._auto_idle_stop.discard(user_id)
+        self._idle_sessions.pop((guild_id, user_id), None)
+        self._auto_idle_stop.discard((guild_id, user_id))
         try:
-            await self.bot.db.delete_idle_session(user_id)
+            await db.delete_idle_session(user_id)
         except Exception:
             log.exception("[idle] failed to delete persisted session for user %s", user_id)
         self._schedule_tracker_update()

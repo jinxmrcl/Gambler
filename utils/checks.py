@@ -20,6 +20,13 @@ class WrongGambleChannel(commands.CheckFailure):
         super().__init__(f"This bot can only be used in <#{channel_id}>.")
 
 
+class GuildOnly(commands.CheckFailure):
+    def __init__(self):
+        super().__init__(
+            "Games can only be played in a server — each server keeps its own separate economy."
+        )
+
+
 def admin_only():
     async def predicate(ctx: commands.Context) -> bool:
         if await ctx.bot.is_owner(ctx.author):
@@ -45,8 +52,9 @@ def app_admin_only():
 def game_enabled(game: str):
     async def predicate(ctx: commands.Context) -> bool:
         if ctx.guild is None:
-            return True
-        disabled, allowed_channels = await ctx.bot.db.get_guild_settings(ctx.guild.id)
+            raise GuildOnly()
+        db = await ctx.bot.db.get(ctx.guild.id)
+        disabled, allowed_channels = await db.get_guild_settings()
         if game in disabled:
             raise GameDisabled(game)
         if allowed_channels and ctx.channel.id not in allowed_channels:
@@ -64,7 +72,8 @@ async def gamble_channel_check(ctx: commands.Context) -> bool:
     if isinstance(ctx.author, discord.Member) and ctx.author.guild_permissions.administrator:
         return True
 
-    channel_id = await ctx.bot.db.get_gamble_channel(ctx.guild.id)
+    db = await ctx.bot.db.get(ctx.guild.id)
+    channel_id = await db.get_gamble_channel()
     if channel_id is None or ctx.channel.id == channel_id:
         return True
 

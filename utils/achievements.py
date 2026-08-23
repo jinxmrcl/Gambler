@@ -32,11 +32,11 @@ ACHIEVEMENTS: list[Achievement] = [
 ]
 
 
-async def gather_metrics(bot: commands.Bot, user_id: int, guild_id: int | None = None) -> dict[str, int]:
-    wallet = await bot.db.get_balance(user_id)
-    bank_balance = await bot.db.get_bank_balance(guild_id, user_id) if guild_id is not None else 0
-    stats = await bot.db.get_stats(user_id)
-    streak = await bot.db.get_daily_streak(user_id)
+async def gather_metrics(db, user_id: int) -> dict[str, int]:
+    wallet = await db.get_balance(user_id)
+    bank_balance = await db.get_bank_balance(user_id)
+    stats = await db.get_stats(user_id)
+    streak = await db.get_daily_streak(user_id)
     return {
         "net_worth": wallet + bank_balance,
         "total_wagered": stats["total_wagered"],
@@ -47,20 +47,19 @@ async def gather_metrics(bot: commands.Bot, user_id: int, guild_id: int | None =
 
 
 async def check_and_announce(
-    bot: commands.Bot,
+    db,
     user: discord.abc.User,
     channel: discord.abc.Messageable | None,
     metrics: dict[str, int] | None = None,
-    guild_id: int | None = None,
 ) -> tuple[list[Achievement], list[Achievement]]:
     """Unlocks any newly-earned achievements for `user` and announces them in `channel`.
 
     Returns (all_unlocked, newly_unlocked).
     """
     if metrics is None:
-        metrics = await gather_metrics(bot, user.id, guild_id)
+        metrics = await gather_metrics(db, user.id)
 
-    unlocked_keys = await bot.db.get_unlocked_achievements(user.id)
+    unlocked_keys = await db.get_unlocked_achievements(user.id)
     now = datetime.datetime.utcnow()
 
     newly_unlocked = []
@@ -68,7 +67,7 @@ async def check_and_announce(
         if achievement.key in unlocked_keys:
             continue
         if metrics[achievement.metric] >= achievement.threshold:
-            if await bot.db.unlock_achievement(user.id, achievement.key, now):
+            if await db.unlock_achievement(user.id, achievement.key, now):
                 newly_unlocked.append(achievement)
                 unlocked_keys.add(achievement.key)
 

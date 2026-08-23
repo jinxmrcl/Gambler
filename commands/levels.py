@@ -68,7 +68,8 @@ class LevelSystem(commands.Cog):
         self.voice_tick_loop.cancel()
 
     async def _get_multiplier(self, guild_id: int, now: datetime.datetime) -> float:
-        boost = await self.bot.db.get_level_boost(guild_id)
+        db = await self.bot.db.get(guild_id)
+        boost = await db.get_level_boost()
         if boost is None:
             return 1.0
         multiplier, expires_at = boost
@@ -91,10 +92,11 @@ class LevelSystem(commands.Cog):
         seconds = VOICE_TICK_MINUTES * 60
         now = datetime.datetime.utcnow()
         for guild in self.bot.guilds:
+            db = await self.bot.db.get(guild.id)
             multiplier = await self._get_multiplier(guild.id, now)
             for member in _eligible_voice_members(guild):
                 gained = round(random.randint(VOICE_XP_MIN_PER_TICK, VOICE_XP_MAX_PER_TICK) * multiplier)
-                after_xp = await self.bot.db.add_level_voice(guild.id, member.id, gained, seconds)
+                after_xp = await db.add_level_voice(member.id, gained, seconds)
                 before_level, _, _ = level_from_total_xp(after_xp - gained)
                 after_level, _, _ = level_from_total_xp(after_xp)
 
@@ -111,14 +113,15 @@ class LevelSystem(commands.Cog):
         guild_id = message.guild.id
         user_id = message.author.id
         now = datetime.datetime.utcnow()
+        db = await self.bot.db.get(guild_id)
 
-        last_at = await self.bot.db.get_level_last_xp_at(guild_id, user_id)
+        last_at = await db.get_level_last_xp_at(user_id)
         if last_at is not None and now - last_at < XP_MESSAGE_COOLDOWN:
             return
 
         multiplier = await self._get_multiplier(guild_id, now)
         gained = round(random.randint(XP_MIN_PER_MESSAGE, XP_MAX_PER_MESSAGE) * multiplier)
-        after_xp = await self.bot.db.add_level_xp(guild_id, user_id, gained, now)
+        after_xp = await db.add_level_xp(user_id, gained, now)
         before_level, _, _ = level_from_total_xp(after_xp - gained)
         after_level, _, _ = level_from_total_xp(after_xp)
 
@@ -132,10 +135,11 @@ class LevelSystem(commands.Cog):
         if member.bot:
             return
 
+        db = await self.bot.db.get(member.guild.id)
         gold = LEVEL_UP_GOLD_PER_LEVEL * new_level
         try:
-            await self.bot.db.ensure_user(member.id, self.bot.starting_balance)
-            await self.bot.db.update_balance(member.id, gold)
+            await db.ensure_user(member.id, self.bot.starting_balance)
+            await db.update_balance(member.id, gold)
         except Exception:
             log.exception("[level-system] failed to pay level-up gold to %s", member.id)
             gold = 0
@@ -160,8 +164,9 @@ class LevelSystem(commands.Cog):
             await interaction.response.send_message("Bots don't earn levels.", ephemeral=True)
             return
 
+        db = await self.bot.db.get(interaction.guild.id)
         target = user or interaction.user
-        xp = await self.bot.db.get_level_xp(interaction.guild.id, target.id)
+        xp = await db.get_level_xp(target.id)
         lvl, into_level, needed = level_from_total_xp(xp)
         bar = _progress_bar(into_level, needed)
         progress_line = "**Max level reached!**" if lvl >= MAX_LEVEL else f"{bar}  {into_level}/{needed} XP to next level"
@@ -181,8 +186,9 @@ class LevelSystem(commands.Cog):
             await interaction.response.send_message("Bots don't have stats.", ephemeral=True)
             return
 
+        db = await self.bot.db.get(interaction.guild.id)
         target = user or interaction.user
-        data = await self.bot.db.get_level_stats(interaction.guild.id, target.id)
+        data = await db.get_level_stats(target.id)
         lvl, into_level, needed = level_from_total_xp(data["xp"])
         progress_line = "Max level reached!" if lvl >= MAX_LEVEL else f"{into_level:,}/{needed:,} XP to next level"
         badge = level_badge(lvl)
@@ -203,7 +209,8 @@ class LevelSystem(commands.Cog):
             await interaction.response.send_message("This only works in a server.", ephemeral=True)
             return
 
-        rows = await self.bot.db.get_level_leaderboard(interaction.guild.id, limit=10)
+        db = await self.bot.db.get(interaction.guild.id)
+        rows = await db.get_level_leaderboard(limit=10)
         if not rows:
             await interaction.response.send_message("No one has earned any XP yet.")
             return
@@ -234,10 +241,11 @@ class LevelSystem(commands.Cog):
             await interaction.response.send_message("Bots don't earn levels.", ephemeral=True)
             return
 
-        before_xp = await self.bot.db.get_level_xp(interaction.guild.id, user.id)
+        db = await self.bot.db.get(interaction.guild.id)
+        before_xp = await db.get_level_xp(user.id)
         before_level, _, _ = level_from_total_xp(before_xp)
 
-        after_xp = await self.bot.db.add_level_admin_xp(interaction.guild.id, user.id, amount)
+        after_xp = await db.add_level_admin_xp(user.id, amount)
         after_level, into_level, needed = level_from_total_xp(after_xp)
 
         if after_level > before_level:
@@ -265,8 +273,9 @@ class LevelSystem(commands.Cog):
         if interaction.guild is None:
             await interaction.response.send_message("This only works in a server.", ephemeral=True)
             return
+        db = await self.bot.db.get(interaction.guild.id)
         expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=days)
-        await self.bot.db.set_level_boost(interaction.guild.id, multiplier, expires_at)
+        await db.set_level_boost(multiplier, expires_at)
         await interaction.response.send_message(
             f"✅ XP gain is now **{multiplier}x** for the next **{days:g}** day(s) "
             f"(until {expires_at.strftime('%Y-%m-%d %H:%M UTC')})."
@@ -278,7 +287,8 @@ class LevelSystem(commands.Cog):
         if interaction.guild is None:
             await interaction.response.send_message("This only works in a server.", ephemeral=True)
             return
-        cleared = await self.bot.db.clear_level_boost(interaction.guild.id)
+        db = await self.bot.db.get(interaction.guild.id)
+        cleared = await db.clear_level_boost()
         if cleared:
             await interaction.response.send_message("✅ XP boost cleared — back to normal rates.")
         else:

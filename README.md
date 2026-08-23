@@ -16,8 +16,10 @@
 An open source economy bot for your Discord server, built with `discord.py`. At its core
 is a full virtual economy (bank, shop, trading, marriage, weekly lottery, robbing, a
 random passive Payday), layered with 14 casino games of chance and a from-scratch RPG
-(9 classes, 16 dungeons, level 1-1500 with prestige) that shares the same wallet —
-all backed by MySQL (or Postgres/Supabase).
+(9 classes, 16 dungeons, level 1-1500 with prestige) that shares the same wallet — every
+server the bot joins gets its own fully isolated SQLite database, so balances, RPG
+progress, inventories, and everything else are completely independent from server to
+server, with an optional periodic off-site backup to Postgres/Supabase.
 
 ## Table of contents
 
@@ -94,7 +96,7 @@ the casino:
   pay gold for an instant restore (also revives you at 0 HP)
 - PvP `/duel` with a cooldown, and an `/arena` leaderboard of top duelists
 
-**Economy** — a per-user virtual balance stored in MySQL, with:
+**Economy** — a per-user virtual balance stored in that server's own database, with:
 - `daily` bonus with a consecutive-day streak: +10% per day claimed on time, up to +100%
   at a 10-day streak; missing a day resets it back to 1, `work`/`crime`/`slut` for
   risk-based income, and `rob` to steal from others
@@ -151,12 +153,15 @@ character leveling:
   `commands/`, `events/`, `rpg/`, `utils/`, and `database/` within ~1.5s, no restart)
 - An in-process git watcher that checks `origin` every 60s and fast-forward-pulls any
   new commits, posting to the restart channel when one lands
-- A Supabase/Postgres fallback database that only kicks in if MySQL can't be reached
-  at bot startup
-- An automated DB backup every 30-60 minutes — a full JSON snapshot of every table,
-  written silently to `backups/` (gitignored) with the oldest pruned once more than 48
-  accumulate; works against whichever backend (MySQL or the Postgres fallback) is
-  currently active
+- Every Discord server the bot is in gets its own isolated SQLite database file at
+  `data/guilds/<guild_id>.db`, created automatically the first time it's needed — no
+  shared state between servers, and no external database server to install or run
+- An automated backup every 30-60 minutes — a full JSON snapshot of every guild's SQLite
+  tables, written silently to `backups/` (gitignored) with the oldest pruned once more
+  than 48 accumulate; if `SUPABASE_DB_URL`/`SUPABASE_DB_URL_FILE` is configured, the same
+  snapshot is also pushed to Postgres/Supabase as a best-effort off-site copy — Supabase
+  is never read from live, it's purely a disaster-recovery copy alongside the local JSON
+  backup
 - A shared error handler for every interactive button/menu (`discord.ui.View`), so a
   failed click gets logged and the player sees a friendly message instead of the
   interaction silently doing nothing
@@ -178,13 +183,11 @@ character leveling:
    pip install -r requirements.txt
    ```
 
-2. **Create a MySQL database**
+2. **Database**
 
-   ```sql
-   CREATE DATABASE gambler CHARACTER SET utf8mb4;
-   ```
-
-   All required tables are created automatically on startup.
+   Nothing to create — each Discord server the bot joins gets its own SQLite database
+   file, created automatically at `data/guilds/<guild_id>.db` the first time it's needed,
+   tables included. Just make sure the bot process can write to the `data/` directory.
 
 3. **Configure `.env`**
 
@@ -198,9 +201,7 @@ character leveling:
    |---|---|
    | `DISCORD_TOKEN` | Bot token from the [Discord Developer Portal](https://discord.com/developers/applications) |
    | `PREFIX` | Prefix for text commands (default: `!`) |
-   | `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | MySQL credentials |
-   | `DB_PASSWORD_FILE` | Optional path to a file holding the MySQL password (for Docker secrets) instead of `DB_PASSWORD` |
-   | `SUPABASE_DB_URL` / `SUPABASE_DB_URL_FILE` | Optional Postgres/Supabase connection string (or a file holding one) — if set, the bot automatically falls back to it when MySQL is unreachable at startup |
+   | `SUPABASE_DB_URL` / `SUPABASE_DB_URL_FILE` | Optional Postgres/Supabase connection string (or a file holding one) — if set, a snapshot of every guild's SQLite data is pushed there every 30-60 minutes as an off-site backup; purely for disaster recovery, never used as a live database |
    | `STARTING_BALANCE` | Starting balance for new players (default: 100000) |
    | `DAILY_AMOUNT` | Amount granted by the daily bonus (default: 500) |
    | `PAYDAY_MIN_AMOUNT` / `PAYDAY_MAX_AMOUNT` | Range for the random passive Payday payout, one random user every 2-4h (default: 100-10000) |
@@ -227,42 +228,28 @@ character leveling:
 
 ## Deploying to a VPS
 
-MySQL runs in Docker; the bot itself runs natively under [pm2](https://pm2.keymetrics.dev/)
-so `git pull` + a pm2 restart is all a routine update needs. MySQL is bound to `127.0.0.1`
-only — reachable from the bot process on the same VPS, never from the public internet.
+The bot runs natively under [pm2](https://pm2.keymetrics.dev/) — there's no database
+server to install or run, so `git pull` + a pm2 restart is all a routine update needs.
 
-1. Get the code onto the VPS (`git clone` this repo, or `scp` it over), install Docker
-   and pm2 (Python deps are handled automatically — see below):
+1. Get the code onto the VPS (`git clone` this repo, or `scp` it over), install pm2
+   (Python deps are handled automatically — see below):
 
    ```bash
-   curl -fsSL https://get.docker.com | sh
    npm install -g pm2
    ```
 
-2. Create `.env` and generate the DB secret files:
+2. Create `.env`:
 
    ```bash
    cp .env.example .env
-   bash deploy/init_secrets.sh
    ```
 
-   Fill in `DISCORD_TOKEN` in `.env`. The DB password itself is never stored in `.env` —
-   `init_secrets.sh` generates `secrets/mysql_root_password.txt` and
-   `secrets/db_password.txt` (gitignored), which `docker-compose.yml` reads directly via
-   Docker secrets. Point `.env`'s `DB_PASSWORD_FILE` at the same `db_password.txt` path it
-   printed, and set `DB_HOST=127.0.0.1`, `DB_USER=gambler_bot`, `DB_PORT=3306` — unless
-   the VPS already has its own MySQL/MariaDB bound to port 3306 (`sudo ss -tlnp | grep
-   3306` to check), in which case use `DB_PORT=3307` and update the port mapping in
-   `docker-compose.yml` to `127.0.0.1:3307:3306` to match. Using the same file on both
-   sides means the bot and MySQL can never end up with mismatched credentials.
+   Fill in `DISCORD_TOKEN`. There are no database credentials to configure — just make
+   sure the bot's working directory is writable so it can create `data/guilds/`.
+   Optionally set `SUPABASE_DB_URL`/`SUPABASE_DB_URL_FILE` if you want the periodic
+   backup snapshots pushed off-site to a Postgres/Supabase project too.
 
-3. Start MySQL:
-
-   ```bash
-   docker compose up -d mysql
-   ```
-
-4. Start the bot under pm2:
+3. Start the bot under pm2:
 
    ```bash
    bash deploy/install_pm2.sh
@@ -279,9 +266,9 @@ only — reachable from the bot process on the same VPS, never from the public i
    inside that venv — no manual `pip install` step needed, and later restarts are a
    no-op since the venv already exists.
 
-Both MySQL (`restart: unless-stopped`) and the bot (pm2 `autorestart`) recover
-automatically from a crash; pm2's `cron_restart` additionally restarts the bot process
-daily at 4am. Useful commands: `pm2 status`, `pm2 logs GamblerV2`, `pm2 restart GamblerV2`.
+The bot recovers automatically from a crash via pm2's `autorestart`; `cron_restart`
+additionally restarts the process daily at 4am. Useful commands: `pm2 status`,
+`pm2 logs GamblerV2`, `pm2 restart GamblerV2`.
 
 ---
 
@@ -477,8 +464,10 @@ Slash-only. Shares the same wallet (🪙) as the casino games.
 ## Project structure
 
 ```
-main.py                     Bot entry point, loads cogs, connects to MySQL, hot reload, restart announcements, git watcher, DB backups
-database/db.py               aiomysql connection pool + wallet/bank/inventory/stats/social/RPG functions
+main.py                     Bot entry point, loads cogs, opens per-guild SQLite databases, hot reload, restart announcements, git watcher, DB backups
+database/manager.py          GuildDatabaseManager — lazily opens/creates a guild's SQLite database file on first use
+database/guild_db.py         Per-guild SQLite engine (aiosqlite) — wallet/bank/inventory/stats/social/RPG/leveling tables & queries
+database/backup.py           SupabaseBackup — pushes a periodic off-site JSON snapshot of each guild's data to Postgres/Supabase
 utils/economy.py             Bet parsing, formatting, house edge constant, UI building blocks
 utils/cards.py                Card deck + custom card emoji mapping for Blackjack & Hilo
 assets/cards/                 Downloaded card emoji images (reference copies, not loaded at runtime)
@@ -533,10 +522,8 @@ events/on_ready.py            Startup logging & presence
 events/error_handler.py       Centralized error handling for text & slash commands, and every interactive view's buttons
 events/payday.py              Background loop: one random user gets a passive payday every 2-4h, announced in a channel
 events/achievements.py        Listens for command completions and checks/announces newly unlocked achievements
-database/db_postgres.py       Postgres/Supabase implementation of the same DB interface (automatic fallback)
 deploy/ecosystem.config.js    pm2 process config (autorestart, daily 4am cron_restart)
 deploy/install_pm2.sh         Starts the bot under pm2, posts a startup status message
-deploy/init_secrets.sh        Generates the gitignored MySQL secret files docker-compose.yml reads
 docs/rpg-wiki/                Obsidian vault documenting every system, generated from live game data
 ```
 

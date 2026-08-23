@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from utils.economy import StaticView, fmt, resolve_bet
 
 
@@ -16,9 +16,10 @@ class Bank(commands.Cog):
             await ctx.send("⚠️ The bank is available only in a server.")
             return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        wallet = await self.bot.db.get_balance(ctx.author.id)
-        bank_balance = await self.bot.db.get_bank_balance(ctx.guild.id, ctx.author.id)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        wallet = await db.get_balance(ctx.author.id)
+        bank_balance = await db.get_bank_balance(ctx.author.id)
 
         view = StaticView(
             "🏦 Bank",
@@ -36,11 +37,12 @@ class Bank(commands.Cog):
             await ctx.send("⚠️ The bank is available only in a server.")
             return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        value = await resolve_bet(self.bot, ctx.author.id, amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        value = await resolve_bet(db, ctx.author.id, amount)
 
         try:
-            wallet, bank_balance = await self.bot.db.deposit_to_bank(ctx.guild.id, ctx.author.id, value)
+            wallet, bank_balance = await db.deposit_to_bank(ctx.author.id, value)
         except InsufficientFunds:
             await ctx.send("⚠️ You don't have enough cash for that.")
             return
@@ -61,10 +63,11 @@ class Bank(commands.Cog):
             await ctx.send("⚠️ The bank is available only in a server.")
             return
 
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
 
         raw = amount.strip().lower()
-        bank_balance = await self.bot.db.get_bank_balance(ctx.guild.id, ctx.author.id)
+        bank_balance = await db.get_bank_balance(ctx.author.id)
         if raw in ("all", "max"):
             value = bank_balance
         elif raw == "half":
@@ -81,7 +84,7 @@ class Bank(commands.Cog):
             return
 
         try:
-            wallet, bank_balance = await self.bot.db.withdraw_from_bank(ctx.guild.id, ctx.author.id, value)
+            wallet, bank_balance = await db.withdraw_from_bank(ctx.author.id, value)
         except InsufficientFunds:
             await ctx.send("⚠️ You don't have enough balance in the bank.")
             return

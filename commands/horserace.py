@@ -166,10 +166,11 @@ class HorseRaceView(ui.LayoutView):
         won = horse_index in order[:cutoff]
         finish_rank = order.index(horse_index) + 1
         multiplier = self.payouts[horse_index]
+        db = await self.cog.bot.db.get(self.ctx.guild.id)
         payout = int(self.bet * multiplier) if won else 0
         if payout:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
-        await self.cog.bot.db.record_game_result(self.ctx.author.id, self.bet, payout)
+            await db.update_balance(self.ctx.author.id, payout)
+        await db.record_game_result(self.ctx.author.id, self.bet, payout)
 
         ordinal = _ORDINALS.get(finish_rank, f"{finish_rank}th")
         if won:
@@ -190,7 +191,8 @@ class HorseRaceView(ui.LayoutView):
         self.finished = True
         self.select.disabled = True
         if self.message:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, self.bet)
+            db = await self.cog.bot.db.get(self.ctx.guild.id)
+            await db.update_balance(self.ctx.author.id, self.bet)
             self.update(
                 [0] * len(self.names),
                 footer="⏱️ No horse chosen in time — bet refunded.",
@@ -212,9 +214,10 @@ class HorseRace(commands.Cog):
     )
     @game_enabled("horserace")
     async def horserace(self, ctx: commands.Context, bet: str, bet_type: BetType = "win"):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         names = random.sample(NAME_POOL, len(HORSE_PROFILES))
         view = HorseRaceView(self, ctx, amount, names, bet_type)

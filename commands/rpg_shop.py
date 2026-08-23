@@ -5,7 +5,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from rpg.character import current_hp, full_stats
 from rpg.consumables import CONSUMABLES
 from rpg.equipment import (
@@ -215,8 +215,12 @@ class RPGShop(commands.Cog):
         if item not in EQUIPMENT and item not in CONSUMABLES:
             await interaction.response.send_message(f"⚠️ Unknown item `{item}`.")
             return
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
 
-        character = await self.bot.db.get_character(interaction.user.id)
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -231,12 +235,12 @@ class RPGShop(commands.Cog):
         cost = price * quantity
 
         try:
-            await self.bot.db.update_balance(interaction.user.id, -cost)
+            await db.update_balance(interaction.user.id, -cost)
         except InsufficientFunds:
             await interaction.response.send_message(f"⚠️ You don't have enough balance. Costs {fmt(cost)}.")
             return
 
-        await self.bot.db.add_rpg_item(interaction.user.id, item, quantity)
+        await db.add_rpg_item(interaction.user.id, item, quantity)
         followup = f"Equip it with `/rpgequip {item}`." if is_equipment else f"Use it with `/rpguse {item}`."
         view = StaticView(
             "🛒 Purchase",
@@ -252,8 +256,12 @@ class RPGShop(commands.Cog):
         if item not in EQUIPMENT:
             await interaction.response.send_message(f"⚠️ Unknown item `{item}`.")
             return
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
 
-        character = await self.bot.db.get_character(interaction.user.id)
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -263,7 +271,7 @@ class RPGShop(commands.Cog):
             await interaction.response.send_message("⚠️ Shields can only be equipped by Paladins.")
             return
 
-        owned = await self.bot.db.get_rpg_item_quantity(interaction.user.id, item)
+        owned = await db.get_rpg_item_quantity(interaction.user.id, item)
         if owned < 1:
             await interaction.response.send_message(
                 f"⚠️ You don't own {EQUIPMENT[item].name}. Buy it with `/rpgbuy {item}`."
@@ -271,13 +279,13 @@ class RPGShop(commands.Cog):
             return
 
         already_equipped = character.get(f"equipped_{info.slot}") == item
-        await self.bot.db.set_equipped(interaction.user.id, info.slot, item)
+        await db.set_equipped(interaction.user.id, info.slot, item)
         if not already_equipped:
-            await self.bot.db.set_enchant_level(interaction.user.id, info.slot, 0)
+            await db.set_enchant_level(interaction.user.id, info.slot, 0)
 
         note = ""
         if character.get(f"primordial_{info.slot}"):
-            await self.bot.db.unequip_primordial(interaction.user.id, info.slot)
+            await db.unequip_primordial(interaction.user.id, info.slot)
             note = " (replaced your equipped ✨ Primordial item in that slot)"
 
         view = StaticView("✨ Equipped", f"Equipped {info.name}.{note}", color=discord.Color.green())
@@ -286,13 +294,17 @@ class RPGShop(commands.Cog):
     @app_commands.command(name="rpguse", description="Use a potion from your inventory.")
     @app_commands.describe(item="Which potion to use")
     async def rpguse(self, interaction: discord.Interaction, item: Literal["minor_potion", "greater_potion", "superior_potion"]):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
 
         try:
-            await self.bot.db.remove_rpg_item(interaction.user.id, item, 1)
+            await db.remove_rpg_item(interaction.user.id, item, 1)
         except InsufficientFunds:
             await interaction.response.send_message(f"⚠️ You don't own a {CONSUMABLES[item].name}.")
             return
@@ -302,7 +314,7 @@ class RPGShop(commands.Cog):
         potion = CONSUMABLES[item]
         healed = min(stats["hp"] - now_hp, int(stats["hp"] * potion.heal_pct))
         new_hp = now_hp + healed
-        await self.bot.db.set_character_hp(interaction.user.id, new_hp, datetime.datetime.utcnow())
+        await db.set_character_hp(interaction.user.id, new_hp, datetime.datetime.utcnow())
 
         view = StaticView(
             "🧪 Potion Used",
@@ -318,19 +330,23 @@ class RPGShop(commands.Cog):
         if item not in EQUIPMENT and item not in CONSUMABLES:
             await interaction.response.send_message(f"⚠️ Unknown item `{item}`.")
             return
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
 
-        owned = await self.bot.db.get_rpg_item_quantity(interaction.user.id, item)
+        db = await self.bot.db.get(interaction.guild.id)
+        owned = await db.get_rpg_item_quantity(interaction.user.id, item)
         if owned < quantity:
             await interaction.response.send_message(f"⚠️ You don't own {quantity}x {_item_name(item)}.")
             return
 
         proceeds = int(_item_price(item) * SELL_FRACTION) * quantity
         try:
-            await self.bot.db.remove_rpg_item(interaction.user.id, item, quantity)
+            await db.remove_rpg_item(interaction.user.id, item, quantity)
         except InsufficientFunds:
             await interaction.response.send_message(f"⚠️ You don't own {quantity}x {_item_name(item)}.")
             return
-        await self.bot.db.update_balance(interaction.user.id, proceeds)
+        await db.update_balance(interaction.user.id, proceeds)
 
         view = StaticView(
             "💰 Sold",
@@ -342,7 +358,11 @@ class RPGShop(commands.Cog):
     @app_commands.command(name="rpgupgrade", description="Spend gold to upgrade your equipped gear in a slot.")
     @app_commands.describe(slot="Which equipped slot to upgrade")
     async def rpgupgrade(self, interaction: discord.Interaction, slot: SlotKey):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -366,7 +386,7 @@ class RPGShop(commands.Cog):
 
         cost = enchant_cost(item_key, current_level)
         try:
-            await self.bot.db.upgrade_enchant(interaction.user.id, slot, cost, current_level + 1)
+            await db.upgrade_enchant(interaction.user.id, slot, cost, current_level + 1)
         except InsufficientFunds:
             await interaction.response.send_message(
                 f"⚠️ Upgrading {EQUIPMENT[item_key].name} to +{current_level + 1} costs {fmt(cost)}."
@@ -392,7 +412,11 @@ class RPGShop(commands.Cog):
             self._autoupgrading.discard(interaction.user.id)
 
     async def _run_autoupgrade(self, interaction: discord.Interaction):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -434,7 +458,7 @@ class RPGShop(commands.Cog):
             slot = min(candidates, key=candidates.get)
             cost = candidates[slot]
             try:
-                await self.bot.db.upgrade_enchant(interaction.user.id, slot, cost, levels[slot] + 1)
+                await db.upgrade_enchant(interaction.user.id, slot, cost, levels[slot] + 1)
             except InsufficientFunds:
                 stopped_reason = f"ran out of gold (next upgrade needs {fmt(cost)})"
                 break
@@ -466,7 +490,11 @@ class RPGShop(commands.Cog):
 
     @app_commands.command(name="rpgautobuy", description="Buy and equip the gear tier recommended for your level, per slot.")
     async def rpgautobuy(self, interaction: discord.Interaction):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -497,14 +525,14 @@ class RPGShop(commands.Cog):
 
             price = EQUIPMENT[target_key].price
             try:
-                await self.bot.db.update_balance(interaction.user.id, -price)
+                await db.update_balance(interaction.user.id, -price)
             except InsufficientFunds:
                 skipped.append(f"{slot} — can't afford {EQUIPMENT[target_key].name} ({fmt(price)})")
                 continue
 
-            await self.bot.db.add_rpg_item(interaction.user.id, target_key, 1)
-            await self.bot.db.set_equipped(interaction.user.id, slot, target_key)
-            await self.bot.db.set_enchant_level(interaction.user.id, slot, 0)
+            await db.add_rpg_item(interaction.user.id, target_key, 1)
+            await db.set_equipped(interaction.user.id, slot, target_key)
+            await db.set_enchant_level(interaction.user.id, slot, 0)
             bought.append(f"{EQUIPMENT[target_key].name} — {fmt(price)}")
 
         lines = []
@@ -521,8 +549,12 @@ class RPGShop(commands.Cog):
 
     @app_commands.command(name="rpginventory", description="Shows your owned equipment and potions.")
     async def rpginventory(self, interaction: discord.Interaction):
-        rows = await self.bot.db.get_rpg_inventory(interaction.user.id)
-        primordial_items = await self.bot.db.get_primordial_items(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        rows = await db.get_rpg_inventory(interaction.user.id)
+        primordial_items = await db.get_primordial_items(interaction.user.id)
         if not rows and not primordial_items:
             await interaction.response.send_message("🎒 You don't own any items yet. Check out `/rpgshop`!")
             return
@@ -532,7 +564,7 @@ class RPGShop(commands.Cog):
         detailed_lines = list(base_lines)
 
         if primordial_items:
-            character = await self.bot.db.get_character(interaction.user.id)
+            character = await db.get_character(interaction.user.id)
             equipped_ids = {
                 character.get("equipped_primordial_weapon_id"),
                 character.get("equipped_primordial_armor_id"),
@@ -567,18 +599,22 @@ class RPGShop(commands.Cog):
     @app_commands.command(name="rpgequipprimordial", description="Equip a ✨ Primordial item you own by its ID.")
     @app_commands.describe(item_id="The Primordial item's ID, shown in /rpginventory")
     async def rpgequipprimordial(self, interaction: discord.Interaction, item_id: int):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
 
-        items = await self.bot.db.get_primordial_items(interaction.user.id)
+        items = await db.get_primordial_items(interaction.user.id)
         item = next((i for i in items if i["id"] == item_id), None)
         if not item:
             await interaction.response.send_message(f"⚠️ You don't own a Primordial item with id `#{item_id}`.")
             return
 
-        await self.bot.db.equip_primordial(interaction.user.id, item["slot"], item_id)
+        await db.equip_primordial(interaction.user.id, item["slot"], item_id)
         base_name = PRIMORDIAL_BASES[item["slot"]].name
         view = StaticView(
             "✨ Equipped",
@@ -590,7 +626,11 @@ class RPGShop(commands.Cog):
     @app_commands.command(name="rpgunequipprimordial", description="Unequip a ✨ Primordial item, reverting to your regular gear in that slot.")
     @app_commands.describe(slot="Which slot to revert to regular gear")
     async def rpgunequipprimordial(self, interaction: discord.Interaction, slot: SlotKey):
-        character = await self.bot.db.get_character(interaction.user.id)
+        if interaction.guild is None:
+            await interaction.response.send_message("⚠️ This command is only available in a server.")
+            return
+        db = await self.bot.db.get(interaction.guild.id)
+        character = await db.get_character(interaction.user.id)
         if not character:
             await interaction.response.send_message("⚠️ You don't have a character yet. Use `/rpgstart` to create one.")
             return
@@ -599,7 +639,7 @@ class RPGShop(commands.Cog):
             await interaction.response.send_message(f"⚠️ You don't have a Primordial item equipped in your {slot} slot.")
             return
 
-        await self.bot.db.unequip_primordial(interaction.user.id, slot)
+        await db.unequip_primordial(interaction.user.id, slot)
         view = StaticView(
             "✨ Unequipped",
             f"Reverted to your regular {slot} gear.",

@@ -4,7 +4,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from database.db import InsufficientFunds
+from database import InsufficientFunds
 from utils.cards import BACK_EMOJI, Deck, hand_str, hand_value, is_blackjack
 from utils.checks import game_enabled
 from utils.economy import BetError, fmt, game_container, resolve_bet
@@ -196,6 +196,7 @@ class BlackjackView(ui.LayoutView):
         self.text.content = "## 🃏 Blackjack\n" + "\n".join(lines)
 
     async def resolve_side_bets(self, pp_amount: int, tt_amount: int):
+        db = await self.cog.bot.db.get(self.ctx.guild.id)
         player_cards = self.hands[0].cards
         dealer_up = self.dealer[0]
         lines = []
@@ -225,7 +226,7 @@ class BlackjackView(ui.LayoutView):
                 lines.append(f"🂡 21+3: 😢 No hand — lost {fmt(tt_amount)}")
 
         if payout:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, payout)
+            await db.update_balance(self.ctx.author.id, payout)
 
         self.side_wagered = wagered
         self.side_payout = payout
@@ -238,8 +239,9 @@ class BlackjackView(ui.LayoutView):
             self.side_bet_lines.append("🛡️ Insurance: not offered — dealer's up-card wasn't an Ace, bet not placed.")
             return
 
+        db = await self.cog.bot.db.get(self.ctx.guild.id)
         try:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, -insurance_amount)
+            await db.update_balance(self.ctx.author.id, -insurance_amount)
         except InsufficientFunds:
             self.side_bet_lines.append("🛡️ Insurance: skipped — insufficient balance.")
             return
@@ -248,7 +250,7 @@ class BlackjackView(ui.LayoutView):
         if is_blackjack(self.dealer):
             win = insurance_amount * 3
             self.side_payout += win
-            await self.cog.bot.db.update_balance(self.ctx.author.id, win)
+            await db.update_balance(self.ctx.author.id, win)
             self.side_bet_lines.append(f"🛡️ Insurance: 🎉 Dealer has Blackjack (2:1) — {fmt(win)}")
         else:
             self.side_bet_lines.append(f"🛡️ Insurance: 😢 Dealer has no Blackjack — lost {fmt(insurance_amount)}")
@@ -319,6 +321,7 @@ class BlackjackView(ui.LayoutView):
             return
         self.finished = True
         self._set_action_buttons_disabled(True)
+        db = await self.cog.bot.db.get(self.ctx.guild.id)
 
         any_hand_alive = any(hand_value(h.cards) <= 21 for h in self.hands)
 
@@ -364,8 +367,8 @@ class BlackjackView(ui.LayoutView):
             total_payout += payout
 
         if total_payout:
-            await self.cog.bot.db.update_balance(self.ctx.author.id, total_payout)
-        await self.cog.bot.db.record_game_result(
+            await db.update_balance(self.ctx.author.id, total_payout)
+        await db.record_game_result(
             self.ctx.author.id, total_wagered + self.side_wagered, total_payout + self.side_payout
         )
 
@@ -427,9 +430,10 @@ class BlackjackView(ui.LayoutView):
             return
         self._busy = True
         try:
+            db = await self.cog.bot.db.get(self.ctx.guild.id)
             hand = self.current_hand
             try:
-                await self.cog.bot.db.update_balance(self.ctx.author.id, -hand.bet)
+                await db.update_balance(self.ctx.author.id, -hand.bet)
             except InsufficientFunds:
                 await interaction.response.send_message(
                     "⚠️ You don't have enough balance to double down.", ephemeral=True
@@ -458,9 +462,10 @@ class BlackjackView(ui.LayoutView):
             return
         self._busy = True
         try:
+            db = await self.cog.bot.db.get(self.ctx.guild.id)
             hand = self.hands[0]
             try:
-                await self.cog.bot.db.update_balance(self.ctx.author.id, -hand.bet)
+                await db.update_balance(self.ctx.author.id, -hand.bet)
             except InsufficientFunds:
                 await interaction.response.send_message("⚠️ You don't have enough balance to split.", ephemeral=True)
                 return
@@ -505,12 +510,13 @@ class BlackjackView(ui.LayoutView):
         try:
             self.finished = True
             self._set_action_buttons_disabled(True)
+            db = await self.cog.bot.db.get(self.ctx.guild.id)
 
             hand = self.hands[0]
             refund = hand.bet // 2
             if refund:
-                await self.cog.bot.db.update_balance(self.ctx.author.id, refund)
-            await self.cog.bot.db.record_game_result(
+                await db.update_balance(self.ctx.author.id, refund)
+            await db.record_game_result(
                 self.ctx.author.id, hand.bet + self.side_wagered, refund + self.side_payout
             )
 
@@ -552,9 +558,10 @@ class Blackjack(commands.Cog):
         twentyone_plus_three: str | None = None,
         insurance: str | None = None,
     ):
-        await self.bot.db.ensure_user(ctx.author.id, self.bot.starting_balance)
-        amount = await resolve_bet(self.bot, ctx.author.id, bet)
-        await self.bot.db.update_balance(ctx.author.id, -amount)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.ensure_user(ctx.author.id, self.bot.starting_balance)
+        amount = await resolve_bet(db, ctx.author.id, bet)
+        await db.update_balance(ctx.author.id, -amount)
 
         pp_amount = 0
         tt_amount = 0
@@ -563,19 +570,19 @@ class Blackjack(commands.Cog):
         tt_deducted = 0
         try:
             if perfect_pairs is not None:
-                pp_amount = await resolve_bet(self.bot, ctx.author.id, perfect_pairs)
-                await self.bot.db.update_balance(ctx.author.id, -pp_amount)
+                pp_amount = await resolve_bet(db, ctx.author.id, perfect_pairs)
+                await db.update_balance(ctx.author.id, -pp_amount)
                 pp_deducted = pp_amount
             if twentyone_plus_three is not None:
-                tt_amount = await resolve_bet(self.bot, ctx.author.id, twentyone_plus_three)
-                await self.bot.db.update_balance(ctx.author.id, -tt_amount)
+                tt_amount = await resolve_bet(db, ctx.author.id, twentyone_plus_three)
+                await db.update_balance(ctx.author.id, -tt_amount)
                 tt_deducted = tt_amount
             if insurance is not None:
-                insurance_amount = await resolve_bet(self.bot, ctx.author.id, insurance)
+                insurance_amount = await resolve_bet(db, ctx.author.id, insurance)
                 if insurance_amount > amount // 2:
                     raise BetError(f"Insurance can be at most half your main bet ({fmt(amount // 2)}).")
         except (BetError, InsufficientFunds):
-            await self.bot.db.update_balance(ctx.author.id, amount + pp_deducted + tt_deducted)
+            await db.update_balance(ctx.author.id, amount + pp_deducted + tt_deducted)
             raise
 
         view = BlackjackView(self, ctx, amount)
@@ -601,8 +608,8 @@ class Blackjack(commands.Cog):
                 color = discord.Color.gold()
 
             if payout:
-                await self.bot.db.update_balance(ctx.author.id, payout)
-            await self.bot.db.record_game_result(
+                await db.update_balance(ctx.author.id, payout)
+            await db.record_game_result(
                 ctx.author.id, amount + view.side_wagered, payout + view.side_payout
             )
 

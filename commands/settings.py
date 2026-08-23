@@ -25,9 +25,10 @@ class Settings(commands.Cog):
     @admin_only()
     @commands.guild_only()
     async def settings(self, ctx: commands.Context):
-        disabled, allowed_channels = await self.bot.db.get_guild_settings(ctx.guild.id)
-        gamble_channel_id = await self.bot.db.get_gamble_channel(ctx.guild.id)
-        updates_channel_id = await self.bot.db.get_updates_channel(ctx.guild.id)
+        db = await self.bot.db.get(ctx.guild.id)
+        disabled, allowed_channels = await db.get_guild_settings()
+        gamble_channel_id = await db.get_gamble_channel()
+        updates_channel_id = await db.get_updates_channel()
 
         disabled_text = ", ".join(f"`{g}`" for g in sorted(disabled)) or "none"
         if allowed_channels:
@@ -50,7 +51,8 @@ class Settings(commands.Cog):
     @admin_only()
     @commands.guild_only()
     async def togglegame(self, ctx: commands.Context, game: GameName, enabled: bool):
-        await self.bot.db.set_game_disabled(ctx.guild.id, game, not enabled)
+        db = await self.bot.db.get(ctx.guild.id)
+        await db.set_game_disabled(game, not enabled)
 
         state = "enabled" if enabled else "disabled"
         view = StaticView("🛠️ Game Toggled", f"`{game}` is now **{state}** on this server.", color=discord.Color.blue())
@@ -63,7 +65,8 @@ class Settings(commands.Cog):
     @admin_only()
     @commands.guild_only()
     async def togglechannel(self, ctx: commands.Context, action: Literal["add", "remove", "clear"]):
-        _, allowed_channels = await self.bot.db.get_guild_settings(ctx.guild.id)
+        db = await self.bot.db.get(ctx.guild.id)
+        _, allowed_channels = await db.get_guild_settings()
 
         if action == "clear":
             allowed_channels = set()
@@ -75,7 +78,7 @@ class Settings(commands.Cog):
             allowed_channels.discard(ctx.channel.id)
             text = f"{ctx.channel.mention} removed from the allow-list."
 
-        await self.bot.db.set_allowed_channels(ctx.guild.id, allowed_channels)
+        await db.set_allowed_channels(allowed_channels)
 
         view = StaticView("🛠️ Channel Settings", text, color=discord.Color.blue())
         await ctx.send(view=view)
@@ -93,8 +96,9 @@ class Settings(commands.Cog):
     async def set_gamblechannel(
         self, ctx: commands.Context, channel: discord.TextChannel | None = None, clear: bool = False
     ):
+        db = await self.bot.db.get(ctx.guild.id)
         if clear:
-            await self.bot.db.clear_gamble_channel(ctx.guild.id)
+            await db.clear_gamble_channel()
             view = StaticView(
                 "🛠️ Gamble Channel Cleared",
                 "The bot can now be used in any channel again.",
@@ -104,7 +108,7 @@ class Settings(commands.Cog):
             return
 
         target = channel or ctx.channel
-        await self.bot.db.set_gamble_channel(ctx.guild.id, target.id)
+        await db.set_gamble_channel(target.id)
         view = StaticView(
             "🛠️ Gamble Channel Set",
             f"The bot can now only be used in {target.mention}.\n"
@@ -126,8 +130,9 @@ class Settings(commands.Cog):
     async def set_updateschannel(
         self, ctx: commands.Context, channel: discord.TextChannel | None = None, clear: bool = False
     ):
+        db = await self.bot.db.get(ctx.guild.id)
         if clear:
-            await self.bot.db.clear_updates_channel(ctx.guild.id)
+            await db.clear_updates_channel()
             view = StaticView(
                 "🆕 Updates Channel Cleared",
                 "New feature announcements will no longer be posted anywhere.",
@@ -137,7 +142,7 @@ class Settings(commands.Cog):
             return
 
         target = channel or ctx.channel
-        await self.bot.db.set_updates_channel(ctx.guild.id, target.id)
+        await db.set_updates_channel(target.id)
         view = StaticView(
             "🆕 Updates Channel Set",
             f"When new commands/game modes are detected after a restart, they'll be announced in "
