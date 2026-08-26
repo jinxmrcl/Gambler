@@ -565,6 +565,7 @@ class RPGDungeon(commands.Cog):
         self._idle_tracker_message: discord.Message | None = None
         self._idle_tracker_posted_at: datetime.datetime | None = None
         self._tracker_update_task: asyncio.Task | None = None
+        self._tracker_lock = asyncio.Lock()
         self.tracker_refresh_loop.start()
 
     async def cog_unload(self):
@@ -688,33 +689,37 @@ class RPGDungeon(commands.Cog):
         view = StaticView("🏕️ Active Idle Farmers", body)
         now = datetime.datetime.utcnow()
 
-        try:
-            if self._idle_tracker_message is None:
-                tracker_db = await self._tracker_guild_db()
-                saved = await tracker_db.get_idle_tracker_message() if tracker_db is not None else None
-                if saved:
-                    saved_id, saved_posted_at = saved
-                    if saved_posted_at and now - saved_posted_at >= IDLE_TRACKER_REPOST_AFTER:
-                        await self._post_new_idle_tracker(view)
-                    else:
-                        try:
-                            channel = await self._get_idle_tracker_channel()
-                            self._idle_tracker_message = await channel.fetch_message(saved_id)
-                            self._idle_tracker_posted_at = saved_posted_at
-                            await limited_edit(self._idle_tracker_message, view=view)
-                        except discord.NotFound:
+        # Serialized: the 1-minute refresh loop and debounced updates (triggered by
+        # sessions starting/stopping) can otherwise overlap and both decide there's no
+        # message yet, each posting its own — leaving a duplicate behind in the channel.
+        async with self._tracker_lock:
+            try:
+                if self._idle_tracker_message is None:
+                    tracker_db = await self._tracker_guild_db()
+                    saved = await tracker_db.get_idle_tracker_message() if tracker_db is not None else None
+                    if saved:
+                        saved_id, saved_posted_at = saved
+                        if saved_posted_at and now - saved_posted_at >= IDLE_TRACKER_REPOST_AFTER:
                             await self._post_new_idle_tracker(view)
-                else:
+                        else:
+                            try:
+                                channel = await self._get_idle_tracker_channel()
+                                self._idle_tracker_message = await channel.fetch_message(saved_id)
+                                self._idle_tracker_posted_at = saved_posted_at
+                                await limited_edit(self._idle_tracker_message, view=view)
+                            except discord.NotFound:
+                                await self._post_new_idle_tracker(view)
+                    else:
+                        await self._post_new_idle_tracker(view)
+                elif self._idle_tracker_posted_at and now - self._idle_tracker_posted_at >= IDLE_TRACKER_REPOST_AFTER:
                     await self._post_new_idle_tracker(view)
-            elif self._idle_tracker_posted_at and now - self._idle_tracker_posted_at >= IDLE_TRACKER_REPOST_AFTER:
+                else:
+                    await limited_edit(self._idle_tracker_message, view=view)
+            except discord.NotFound:
+                self._idle_tracker_message = None
                 await self._post_new_idle_tracker(view)
-            else:
-                await limited_edit(self._idle_tracker_message, view=view)
-        except discord.NotFound:
-            self._idle_tracker_message = None
-            await self._post_new_idle_tracker(view)
-        except discord.HTTPException:
-            log.exception("[idle] failed to update the idle-tracker message")
+            except discord.HTTPException:
+                log.exception("[idle] failed to update the idle-tracker message")
 
     @app_commands.command(name="dungeons", description="Shows the available RPG dungeons.")
     async def dungeons(self, interaction: discord.Interaction):
@@ -1115,6 +1120,7 @@ class RPGDungeon(commands.Cog):
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 channel = await self.bot.fetch_channel(channel_id)
+            await limited_send(channel, content=f"<@{user_id}>")
             await limited_send(channel, view=StaticView(title, body, color=discord.Color.blue()))
         except Exception:
             log.exception("[idle] failed to send checkpoint summary for user %s", user_id)
