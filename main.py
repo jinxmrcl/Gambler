@@ -356,8 +356,15 @@ class GamblerBot(commands.Bot):
                 log.exception("[db-backup] backup failed")
 
     async def _run_db_backup(self) -> None:
+        # Union of already-loaded guilds, guilds with an existing SQLite file, and guilds
+        # the bot is currently in — so a guild that hasn't had a command run yet this
+        # session (no lazily-loaded instance) still gets swept up in the global snapshot.
+        guild_ids = set(self.db.loaded_guild_ids())
+        guild_ids.update(self.db.known_guild_ids())
+        guild_ids.update(g.id for g in self.guilds)
+
         data: dict[str, dict] = {}
-        for guild_id in self.db.loaded_guild_ids():
+        for guild_id in guild_ids:
             guild_db = await self.db.get(guild_id)
             dump = await guild_db.dump_all_tables()
             data[str(guild_id)] = dump
@@ -366,6 +373,12 @@ class GamblerBot(commands.Bot):
                     await self.backup.push_guild_snapshot(guild_id, dump)
                 except Exception:
                     log.exception("[supabase-backup] failed to push snapshot for guild %s", guild_id)
+
+        if self.backup is not None:
+            try:
+                await self.backup.push_global_snapshot(data)
+            except Exception:
+                log.exception("[supabase-backup] failed to push global snapshot")
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         path = BACKUPS_DIR / f"backup_{timestamp}.json"
