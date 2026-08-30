@@ -38,6 +38,7 @@ IDLE_MAX_MINUTES = 120
 IDLE_DEFAULT_MINUTES = 30
 AUTO_IDLE_CHECKPOINT_MINUTES = 60
 
+
 _raw_idle_announce_channel = os.getenv("IDLE_ANNOUNCE_CHANNEL_ID", "1538948163510083605")
 IDLE_ANNOUNCE_CHANNEL_ID = int(_raw_idle_announce_channel) if _raw_idle_announce_channel.isdigit() else None
 IDLE_TRACKER_REPOST_AFTER = datetime.timedelta(hours=12)
@@ -1019,46 +1020,50 @@ class RPGDungeon(commands.Cog):
                 if not character:
                     break
 
+                # Idle attempts each start at full HP rather than whatever the slow
+                # real-time regen (5%/minute, see rpg/character.py) has recovered since
+                # the last tick. Monster/boss power is calibrated (scripts/tune_power.py)
+                # against a fighter starting every bout at full HP; chaining ticks every
+                # 5 seconds off carried-over HP made one early loss permanent — regen
+                # could never catch up, so the character stayed near 0 HP and kept losing
+                # for the rest of the session. Manual /dungeon and /dungeonboss are
+                # unaffected — those still use your real persisted HP, since a player
+                # pacing their own commands is expected to manage it.
                 player_stats = full_stats(character)
-                hp_now = current_hp(character, player_stats["hp"], now)
-
-                if hp_now > 0:
-                    outcome = await _resolve_dungeon_fight(
-                        db, user_id, display_name, character, hp_now, d, now
-                    )
-                    if outcome["event"] in (TREASURE, MERCHANT):
-                        stats["gold"] += outcome["gold"]
-                    else:
-                        stats["dungeon_attempts"] += 1
-                        stats["gold"] += outcome["gold"]
-                        stats["xp"] += outcome["xp"]
-                        stats["levels_gained"] += outcome["levels_gained"]
-                        if outcome["won"]:
-                            stats["dungeon_wins"] += 1
-                            name = outcome["monster_name"]
-                            stats["kills"][name] = stats["kills"].get(name, 0) + 1
-                        if outcome["loot_item"]:
-                            stats["loot"].append(outcome["loot_item"])
+                outcome = await _resolve_dungeon_fight(
+                    db, user_id, display_name, character, player_stats["hp"], d, now
+                )
+                if outcome["event"] in (TREASURE, MERCHANT):
+                    stats["gold"] += outcome["gold"]
+                else:
+                    stats["dungeon_attempts"] += 1
+                    stats["gold"] += outcome["gold"]
+                    stats["xp"] += outcome["xp"]
+                    stats["levels_gained"] += outcome["levels_gained"]
+                    if outcome["won"]:
+                        stats["dungeon_wins"] += 1
+                        name = outcome["monster_name"]
+                        stats["kills"][name] = stats["kills"].get(name, 0) + 1
+                    if outcome["loot_item"]:
+                        stats["loot"].append(outcome["loot_item"])
 
                 now = datetime.datetime.utcnow()
                 character = await db.get_character(user_id)
                 if character:
                     player_stats = full_stats(character)
-                    hp_now = current_hp(character, player_stats["hp"], now)
-                    if hp_now > 0:
-                        outcome = await _resolve_boss_fight(
-                            db, user_id, display_name, character, hp_now, d, now
-                        )
-                        stats["boss_attempts"] += 1
-                        stats["gold"] += outcome["gold"]
-                        stats["xp"] += outcome["xp"]
-                        stats["levels_gained"] += outcome["levels_gained"]
-                        if outcome["won"]:
-                            stats["boss_wins"] += 1
-                            name = outcome["boss_name"]
-                            stats["kills"][name] = stats["kills"].get(name, 0) + 1
-                        if outcome["loot_item"]:
-                            stats["loot"].append(outcome["loot_item"])
+                    outcome = await _resolve_boss_fight(
+                        db, user_id, display_name, character, player_stats["hp"], d, now
+                    )
+                    stats["boss_attempts"] += 1
+                    stats["gold"] += outcome["gold"]
+                    stats["xp"] += outcome["xp"]
+                    stats["levels_gained"] += outcome["levels_gained"]
+                    if outcome["won"]:
+                        stats["boss_wins"] += 1
+                        name = outcome["boss_name"]
+                        stats["kills"][name] = stats["kills"].get(name, 0) + 1
+                    if outcome["loot_item"]:
+                        stats["loot"].append(outcome["loot_item"])
                         if outcome["bonus_loot_item"]:
                             stats["loot"].append(outcome["bonus_loot_item"])
                         if outcome["primordial_drop"]:
