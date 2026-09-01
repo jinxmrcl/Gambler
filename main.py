@@ -54,6 +54,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import aiohttp
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -522,18 +523,39 @@ def _handle_loop_exception(_loop: asyncio.AbstractEventLoop, context: dict) -> N
     log.error("[event-loop] %s", message, exc_info=exc)
 
 
+# discord.py's own connect() loop retries most gateway hiccups with backoff, but a
+# handshake failure on the very first connection attempt (e.g. a transient 503 from
+# Discord's edge) isn't one of the cases it catches, so it propagates and kills the
+# whole process instead of just retrying. Wrap startup so a brief, self-resolving
+# gateway issue doesn't require an external process manager to notice and restart.
+GATEWAY_STARTUP_RETRY_DELAYS = (5, 15, 30, 60, 60)
+
+
 async def main():
     if not TOKEN:
         raise SystemExit("DISCORD_TOKEN is not set. Please check your .env file.")
 
     setup_discord_logger()
 
-    bot = GamblerBot()
-    loop = asyncio.get_running_loop()
-    loop.set_exception_handler(_handle_loop_exception)
-    _install_signal_handlers(loop, bot)
-    async with bot:
-        await bot.start(TOKEN)
+    delays = (*GATEWAY_STARTUP_RETRY_DELAYS, None)
+    for attempt, delay in enumerate(delays, start=1):
+        bot = GamblerBot()
+        loop = asyncio.get_running_loop()
+        loop.set_exception_handler(_handle_loop_exception)
+        _install_signal_handlers(loop, bot)
+        try:
+            async with bot:
+                await bot.start(TOKEN)
+            return
+        except (aiohttp.ClientError, OSError, asyncio.TimeoutError) as exc:
+            if delay is None:
+                log.error("[startup] gateway connection failed after %d attempts, giving up: %s", attempt, exc)
+                raise
+            log.warning(
+                "[startup] gateway connection failed (attempt %d/%d): %s — retrying in %ds",
+                attempt, len(delays), exc, delay,
+            )
+            await asyncio.sleep(delay)
 
 
 if __name__ == "__main__":
