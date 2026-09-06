@@ -83,8 +83,6 @@ def _line_symbol(a: str, b: str, c: str) -> str | None:
 
 
 def _calibrate_scale() -> float:
-    # For 3 independent cells, P(line resolves to symbol i) = (p_i + p_wild)^3 - p_wild^3
-    # (all non-wild cells among the 3 are i, excluding the all-wild case which resolves to WILD instead).
     total_weight = sum(_WEIGHTS)
     p_wild = WILD_WEIGHT / total_weight
     expected_raw = (p_wild**3) * WILD_BASE_MULT

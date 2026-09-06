@@ -1,11 +1,15 @@
+import logging
+from collections import defaultdict
 from typing import Literal
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from utils.economy import StaticView
 from utils.checks import admin_only
+
+log = logging.getLogger("gambler")
 
 GAMES = (
     "blackjack", "mines", "hilo", "plinko", "limbo", "keno", "slots", "roulette", "dice", "soloflip",
@@ -16,10 +20,84 @@ GameName = Literal[
     "scratchcard", "horserace", "baccarat",
 ]
 
+GAMBLE_CHANNEL_SLOWMODE_LOW = 2
+GAMBLE_CHANNEL_SLOWMODE_HIGH = 5
+GAMBLE_TRAFFIC_WINDOW_SECONDS = 60
+GAMBLE_HIGH_TRAFFIC_PER_MIN = 20
+_MANAGED_SLOWMODES = {0, GAMBLE_CHANNEL_SLOWMODE_LOW, GAMBLE_CHANNEL_SLOWMODE_HIGH}
+
+
+async def _set_managed_slowmode(channel: discord.TextChannel, seconds: int, reason: str) -> bool:
+    """Only ever adjusts a slowmode value this feature itself set previously (or an
+    unset channel) — an admin's own custom slowmode is never touched."""
+    if channel.slowmode_delay == seconds:
+        return False
+    if channel.slowmode_delay not in _MANAGED_SLOWMODES:
+        return False
+    try:
+        await channel.edit(slowmode_delay=seconds, reason=reason)
+        return True
+    except (discord.Forbidden, discord.HTTPException):
+        return False
+
+
+async def _apply_gamble_channel_slowmode(channel: discord.TextChannel) -> bool:
+    return await _set_managed_slowmode(
+        channel, GAMBLE_CHANNEL_SLOWMODE_LOW, "Gambler: auto slowmode for the restricted gamble channel"
+    )
+
+
+async def _clear_gamble_channel_slowmode(channel: discord.TextChannel) -> None:
+    await _set_managed_slowmode(channel, 0, "Gambler: gamble channel restriction removed")
+
 
 class Settings(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._gamble_channel_msg_counts: dict[int, int] = defaultdict(int)
+        self.gamble_traffic_loop.start()
+
+    def cog_unload(self):
+        self.gamble_traffic_loop.cancel()
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or message.guild is None:
+            return
+        db = await self.bot.db.get(message.guild.id)
+        gamble_channel_id = await db.get_gamble_channel()
+        if gamble_channel_id and message.channel.id == gamble_channel_id:
+            self._gamble_channel_msg_counts[message.guild.id] += 1
+
+    @tasks.loop(seconds=GAMBLE_TRAFFIC_WINDOW_SECONDS)
+    async def gamble_traffic_loop(self):
+        counts = self._gamble_channel_msg_counts
+        self._gamble_channel_msg_counts = defaultdict(int)
+        for guild_id, count in counts.items():
+            try:
+                guild = self.bot.get_guild(guild_id)
+                if guild is None:
+                    continue
+                db = await self.bot.db.get(guild_id)
+                channel_id = await db.get_gamble_channel()
+                if not channel_id:
+                    continue
+                channel = guild.get_channel(channel_id)
+                if not isinstance(channel, discord.TextChannel):
+                    continue
+
+                per_minute = count * (60 / GAMBLE_TRAFFIC_WINDOW_SECONDS)
+                if per_minute >= GAMBLE_HIGH_TRAFFIC_PER_MIN:
+                    target, label = GAMBLE_CHANNEL_SLOWMODE_HIGH, "high"
+                else:
+                    target, label = GAMBLE_CHANNEL_SLOWMODE_LOW, "slow"
+                await _set_managed_slowmode(channel, target, f"Gambler: auto slowmode ({label} traffic)")
+            except Exception:
+                log.exception("[gamble-traffic] failed to evaluate slowmode for guild %s", guild_id)
+
+    @gamble_traffic_loop.before_loop
+    async def before_gamble_traffic_loop(self):
+        await self.bot.wait_until_ready()
 
     @commands.hybrid_command(name="settings", description="[Admin] Shows the current server settings.")
     @admin_only()
@@ -98,7 +176,12 @@ class Settings(commands.Cog):
     ):
         db = await self.bot.db.get(ctx.guild.id)
         if clear:
+            old_channel_id = await db.get_gamble_channel()
             await db.clear_gamble_channel()
+            if old_channel_id:
+                old_channel = ctx.guild.get_channel(old_channel_id)
+                if isinstance(old_channel, discord.TextChannel):
+                    await _clear_gamble_channel_slowmode(old_channel)
             view = StaticView(
                 "🛠️ Gamble Channel Cleared",
                 "The bot can now be used in any channel again.",
@@ -109,10 +192,16 @@ class Settings(commands.Cog):
 
         target = channel or ctx.channel
         await db.set_gamble_channel(target.id)
+        slowmode_note = ""
+        if isinstance(target, discord.TextChannel) and await _apply_gamble_channel_slowmode(target):
+            slowmode_note = (
+                f"\n-# 🐢 Also enabled a {GAMBLE_CHANNEL_SLOWMODE_LOW}s channel slowmode there "
+                f"(auto-raises to {GAMBLE_CHANNEL_SLOWMODE_HIGH}s if traffic gets heavy)."
+            )
         view = StaticView(
             "🛠️ Gamble Channel Set",
             f"The bot can now only be used in {target.mention}.\n"
-            f"-# Administrators are exempt from this restriction.",
+            f"-# Administrators are exempt from this restriction.{slowmode_note}",
             color=discord.Color.blue(),
         )
         await ctx.send(view=view)

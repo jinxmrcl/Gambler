@@ -1,6 +1,5 @@
 import datetime
 import json
-import os
 from typing import Literal
 
 import discord
@@ -12,7 +11,7 @@ from rpg.equipment import EQUIPMENT
 from rpg.leveling import MAX_LEVEL, apply_xp, xp_for_level
 from rpg.primordial import PRIMORDIAL_BASES, describe_affixes, generate_primordial_drop
 from utils.checks import admin_only, app_admin_only
-from utils.economy import StaticView, fmt
+from utils.economy import StaticView, fmt, game_container
 from utils.ratelimit import get_status as ratelimit_status, limited_send
 
 PrimordialSlotKey = Literal["weapon", "armor", "accessory"]
@@ -34,10 +33,76 @@ async def _rpgitem_autocomplete(interaction: discord.Interaction, current: str) 
     matches = [k for k in keys if current in k.lower() or current in _rpgitem_name(k).lower()]
     return [app_commands.Choice(name=_rpgitem_name(k), value=k) for k in matches[:RPGITEM_AUTOCOMPLETE_LIMIT]]
 
-_raw_updates_channel = os.getenv("UPDATES_CHANNEL_ID", "1538079078186229760")
-UPDATES_CHANNEL_ID = int(_raw_updates_channel) if _raw_updates_channel.isdigit() else None
-
 PERMANENT_SHIELD_UNTIL = datetime.datetime(9999, 1, 1)
+
+
+class AnnounceConfirmView(discord.ui.LayoutView):
+    def __init__(self, author_id: int, targets: list[tuple[discord.Guild, discord.abc.Messageable]], message: str):
+        super().__init__(timeout=60)
+        self.author_id = author_id
+        self.targets = targets
+        self.message_text = message
+        self.done = False
+
+        names = "\n".join(f"• {g.name}" for g, _c in targets) or "*none*"
+        self.container, self.text = game_container(
+            "📢 Confirm Announcement",
+            f"{message}\n\n-# Will post to **{len(targets)}** server(s):\n{names}",
+        )
+        self.confirm_button = discord.ui.Button(style=discord.ButtonStyle.success, label="Send", emoji="✅")
+        self.cancel_button = discord.ui.Button(style=discord.ButtonStyle.danger, label="Cancel", emoji="❌")
+        self.confirm_button.callback = self.confirm
+        self.cancel_button.callback = self.cancel
+        row = discord.ui.ActionRow()
+        row.add_item(self.confirm_button)
+        row.add_item(self.cancel_button)
+        self.container.add_item(row)
+        self.add_item(self.container)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message("Only the person who ran this command can confirm it.", ephemeral=True)
+            return False
+        return True
+
+    async def confirm(self, interaction: discord.Interaction):
+        if self.done:
+            return
+        self.done = True
+        self.confirm_button.disabled = True
+        self.cancel_button.disabled = True
+        self.text.content = "## 📢 Confirm Announcement\n📤 Sending..."
+        await interaction.response.edit_message(view=self)
+
+        sent = 0
+        for _guild, channel in self.targets:
+            try:
+                view = StaticView("📢 Announcement", self.message_text, color=discord.Color.blurple())
+                await limited_send(channel, view=view)
+                sent += 1
+            except (discord.HTTPException, discord.Forbidden):
+                pass
+
+        self.text.content = f"## 📢 Confirm Announcement\n✅ Sent to **{sent}**/{len(self.targets)} server(s)."
+        await interaction.message.edit(view=self)
+        self.stop()
+
+    async def cancel(self, interaction: discord.Interaction):
+        if self.done:
+            return
+        self.done = True
+        self.confirm_button.disabled = True
+        self.cancel_button.disabled = True
+        self.text.content = "## 📢 Confirm Announcement\n❌ Cancelled — nothing was sent."
+        await interaction.response.edit_message(view=self)
+        self.stop()
+
+    async def on_timeout(self):
+        if self.done:
+            return
+        self.done = True
+        self.confirm_button.disabled = True
+        self.cancel_button.disabled = True
 
 
 class Admin(commands.Cog):
@@ -167,8 +232,8 @@ class Admin(commands.Cog):
         )
         await ctx.send(view=view)
 
-    @commands.hybrid_command(name="botstatus", description="[Admin] Shows gateway latency and rate-limit health.")
-    @admin_only()
+    @commands.command(name="botstatus", hidden=True)
+    @commands.is_owner()
     async def botstatus(self, ctx: commands.Context):
         rl = ratelimit_status()
         lines = [
@@ -181,8 +246,8 @@ class Admin(commands.Cog):
         view = StaticView("📡 Bot Status", "\n".join(lines), color=discord.Color.blue())
         await ctx.send(view=view)
 
-    @commands.hybrid_command(name="restart", description="[Admin] Restart the bot process.")
-    @admin_only()
+    @commands.command(name="restart", hidden=True)
+    @commands.is_owner()
     async def restart(self, ctx: commands.Context):
         view = StaticView(
             "<:restart:1537866127835799572> Restarting",
@@ -192,26 +257,29 @@ class Admin(commands.Cog):
         await ctx.send(view=view)
         await self.bot.graceful_shutdown()
 
-    @commands.hybrid_command(name="announce", description="[Admin] Post an announcement to the updates channel.")
-    @app_commands.describe(message="The announcement text")
-    @admin_only()
+    @commands.command(name="announce", hidden=True)
+    @commands.is_owner()
     async def announce(self, ctx: commands.Context, *, message: str):
-        if not UPDATES_CHANNEL_ID:
-            await ctx.send("⚠️ UPDATES_CHANNEL_ID is not configured.")
+        targets: list[tuple[discord.Guild, discord.abc.Messageable]] = []
+        for guild in self.bot.guilds:
+            db = await self.bot.db.get(guild.id)
+            channel_id = await db.get_updates_channel()
+            if not channel_id:
+                continue
+            channel = guild.get_channel(channel_id)
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(channel_id)
+                except (discord.HTTPException, discord.Forbidden):
+                    continue
+            targets.append((guild, channel))
+
+        if not targets:
+            await ctx.send("⚠️ No server has an updates channel configured (`/set-updateschannel`).")
             return
 
-        channel = self.bot.get_channel(UPDATES_CHANNEL_ID)
-        if channel is None:
-            try:
-                channel = await self.bot.fetch_channel(UPDATES_CHANNEL_ID)
-            except discord.HTTPException:
-                await ctx.send("⚠️ Couldn't find the updates channel.")
-                return
-
-        view = StaticView("📢 Announcement", message, color=discord.Color.blurple())
-        await limited_send(channel, view=view)
-
-        await ctx.send("✅ Announcement posted.")
+        view = AnnounceConfirmView(ctx.author.id, targets, message)
+        await ctx.send(view=view)
 
     @app_commands.command(name="rpgsetlevel", description="[Admin] Set a player's RPG level (and optionally XP).")
     @app_commands.describe(user="Target user", level="New level (1-1500)", xp="XP toward the next level (default: 0)")

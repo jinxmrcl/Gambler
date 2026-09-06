@@ -124,7 +124,7 @@ def _build() -> dict[str, EquipmentDef]:
 EQUIPMENT: dict[str, EquipmentDef] = _build()
 
 ENCHANT_MAX_LEVEL = 10
-ENCHANT_PCT_PER_LEVEL = 0.01  # each level adds a flat +1 percentage point to that slot's stat(s)
+ENCHANT_PCT_PER_LEVEL = 0.01
 
 
 def enchant_cost(item_key: str, current_level: int) -> int:

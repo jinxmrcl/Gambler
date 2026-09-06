@@ -42,7 +42,7 @@ def _category_commands(bot: commands.Bot, cog_names: list[str]) -> list[commands
     for cog_name in cog_names:
         cog = bot.get_cog(cog_name)
         if cog:
-            result.extend(cog.get_commands())
+            result.extend(c for c in cog.get_commands() if not c.hidden)
     return result
 
 

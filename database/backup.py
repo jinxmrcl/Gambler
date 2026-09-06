@@ -53,6 +53,17 @@ class SupabaseBackup:
                 )
                 """
             )
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS guild_daily_backups (
+                    guild_id BIGINT NOT NULL,
+                    backup_date DATE NOT NULL,
+                    data JSONB NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    PRIMARY KEY (guild_id, backup_date)
+                )
+                """
+            )
 
     async def close(self) -> None:
         if self.pool is not None:
@@ -101,9 +112,38 @@ class SupabaseBackup:
         return data if isinstance(data, dict) else json.loads(data)
 
     async def pull_guild_from_global(self, guild_id: int) -> dict[str, list[dict]] | None:
-        """Extracts one guild's data out of the global snapshot in isolation — restoring
-        a single server never touches or mixes in any other server's data."""
         global_data = await self.pull_global_snapshot()
         if global_data is None:
             return None
         return global_data.get(str(guild_id))
+
+    async def push_guild_daily_snapshot(self, guild_id: int, day: str, tables: dict[str, list[dict]]) -> None:
+        payload = json.dumps(tables, default=str)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO guild_daily_backups (guild_id, backup_date, data, created_at) "
+                "VALUES ($1, $2::date, $3::jsonb, now()) "
+                "ON CONFLICT (guild_id, backup_date) DO UPDATE SET data = EXCLUDED.data, created_at = EXCLUDED.created_at",
+                guild_id,
+                day,
+                payload,
+            )
+
+    async def pull_guild_daily_snapshot(self, guild_id: int, day: str) -> dict[str, list[dict]] | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT data FROM guild_daily_backups WHERE guild_id = $1 AND backup_date = $2::date",
+                guild_id,
+                day,
+            )
+        if row is None:
+            return None
+        data = row[0]
+        return data if isinstance(data, dict) else json.loads(data)
+
+    async def prune_daily_backups(self, keep_days: int = 30) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM guild_daily_backups WHERE backup_date < (now() - ($1 || ' days')::interval)::date",
+                keep_days,
+            )

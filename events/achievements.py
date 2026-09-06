@@ -2,8 +2,6 @@ from discord.ext import commands
 
 from utils.achievements import check_and_announce
 
-# Cogs whose commands can move the needle on a tracked achievement metric
-# (net worth, total wagered, robs succeeded, games played, daily streak).
 RELEVANT_COGS = {
     "Blackjack", "Mines", "Hilo", "Plinko", "Limbo", "Keno", "Slots", "Roulette", "Dice",
     "Coinflip", "Scratchcard", "HorseRace", "Baccarat", "Hustle", "Economy",

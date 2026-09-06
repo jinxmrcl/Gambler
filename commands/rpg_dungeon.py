@@ -690,9 +690,6 @@ class RPGDungeon(commands.Cog):
         view = StaticView("🏕️ Active Idle Farmers", body)
         now = datetime.datetime.utcnow()
 
-        # Serialized: the 1-minute refresh loop and debounced updates (triggered by
-        # sessions starting/stopping) can otherwise overlap and both decide there's no
-        # message yet, each posting its own — leaving a duplicate behind in the channel.
         async with self._tracker_lock:
             try:
                 if self._idle_tracker_message is None:
@@ -1020,15 +1017,6 @@ class RPGDungeon(commands.Cog):
                 if not character:
                     break
 
-                # Idle attempts each start at full HP rather than whatever the slow
-                # real-time regen (5%/minute, see rpg/character.py) has recovered since
-                # the last tick. Monster/boss power is calibrated (scripts/tune_power.py)
-                # against a fighter starting every bout at full HP; chaining ticks every
-                # 5 seconds off carried-over HP made one early loss permanent — regen
-                # could never catch up, so the character stayed near 0 HP and kept losing
-                # for the rest of the session. Manual /dungeon and /dungeonboss are
-                # unaffected — those still use your real persisted HP, since a player
-                # pacing their own commands is expected to manage it.
                 player_stats = full_stats(character)
                 outcome = await _resolve_dungeon_fight(
                     db, user_id, display_name, character, player_stats["hp"], d, now

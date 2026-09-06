@@ -46,11 +46,6 @@ class GuildDatabase:
         self._conn: aiosqlite.Connection | None = None
         self._lock = asyncio.Lock()
 
-        # Small in-memory caches for config rows that are read on nearly every
-        # command dispatch (gamble-channel/game-enabled checks, cooldown bypass)
-        # but change rarely. Invalidated/updated in place on every write below,
-        # so they can never observe another writer since each guild has exactly
-        # one GuildDatabase instance and one underlying connection.
         self._gamble_channel_cache = _UNSET
         self._guild_settings_cache = _UNSET
         self._updates_channel_cache = _UNSET
@@ -401,7 +396,6 @@ class GuildDatabase:
             (_e(datetime.datetime.utcnow() + datetime.timedelta(days=7)),),
         )
 
-    # -- wallet / bank -----------------------------------------------------
 
     async def ensure_user(self, user_id: int, starting_balance: int) -> None:
         await self._execute(
@@ -576,7 +570,6 @@ class GuildDatabase:
         )
         self._cooldown_bypass_cache[user_id] = enabled
 
-    # -- cooldowns / item-use limits ----------------------------------------
 
     async def get_cooldown(self, user_id: int, action: str) -> datetime.datetime | None:
         row = await self._fetchone(
@@ -660,7 +653,6 @@ class GuildDatabase:
             (_e(next_payday),),
         )
 
-    # -- inventory / trading -------------------------------------------------
 
     async def get_inventory(self, user_id: int) -> list[tuple[str, int]]:
         return await self._fetchall(
@@ -727,7 +719,6 @@ class GuildDatabase:
         if rowcount == 0:
             raise InsufficientFunds(f"User {user_id} does not have {quantity}x {item_key}")
 
-    # -- stats ---------------------------------------------------------------
 
     async def record_game_result(self, user_id: int, wagered: int, payout: int) -> None:
         net = payout - wagered
@@ -783,7 +774,6 @@ class GuildDatabase:
             f"SELECT user_id, {column} FROM stats ORDER BY {column} DESC LIMIT ?", (limit,)
         )
 
-    # -- guild config (singleton rows within this guild's file) -------------
 
     async def get_guild_settings(self) -> tuple[set[str], set[int]]:
         if self._guild_settings_cache is _UNSET:
@@ -897,7 +887,6 @@ class GuildDatabase:
         await self._execute("DELETE FROM updates_channels WHERE id = 1")
         self._updates_channel_cache = None
 
-    # -- marriage --------------------------------------------------------------
 
     async def get_marriage(self, user_id: int) -> int | None:
         row = await self._fetchone("SELECT partner_id FROM marriages WHERE user_id = ?", (user_id,))
@@ -996,7 +985,6 @@ class GuildDatabase:
             bank = (await cur.fetchone())[0]
             return wallet, bank
 
-    # -- lottery -----------------------------------------------------------
 
     async def get_lottery_state(self) -> dict:
         row = await self._fetchone("SELECT pot, next_draw, channel_id FROM lottery_state WHERE id = 1")
@@ -1032,7 +1020,6 @@ class GuildDatabase:
             await conn.execute("DELETE FROM lottery_tickets")
             await conn.execute("UPDATE lottery_state SET pot = 0, next_draw = ? WHERE id = 1", (_e(next_draw),))
 
-    # -- RPG: characters -----------------------------------------------------
 
     async def create_character(self, user_id: int, class_key: str, starting_hp: int) -> None:
         now = _e(datetime.datetime.utcnow())
@@ -1263,7 +1250,6 @@ class GuildDatabase:
         if rowcount == 0:
             raise InsufficientFunds(f"User {user_id} does not have {quantity}x {item_key}")
 
-    # -- reset ---------------------------------------------------------------
 
     async def reset_user(self, user_id: int, starting_balance: int) -> None:
         async with self._transaction() as conn:
@@ -1286,7 +1272,6 @@ class GuildDatabase:
         self._cooldown_bypass_cache[user_id] = False
         await self.divorce(user_id)
 
-    # -- leveling (per-guild file, so no guild_id column needed) --------------
 
     async def get_level_xp(self, user_id: int) -> int:
         row = await self._fetchone("SELECT xp FROM level_xp WHERE user_id = ?", (user_id,))

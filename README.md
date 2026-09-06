@@ -142,13 +142,20 @@ character leveling:
 
 **Infrastructure**:
 
-- A global + per-channel rate limiter (`utils/ratelimit.py`), both congestion-aware —
-  they throttle harder the more callers are waiting simultaneously, then relax back
-  down — to avoid Discord API throttling on frequent message edits and sends. Edits
-  (in-progress game state — blackjack draws, idle tracker updates) and new
-  sends (initial command replies) draw from separate budgets, so a burst of new commands
-  slows down how fast new replies go out without ever making an already-running game feel
-  laggy
+- A global + per-channel + per-message rate limiter (`utils/ratelimit.py`) tuned to the
+  real, commonly-observed Discord bucket sizes (~5 requests/5s per channel or message,
+  50/s global) to avoid Discord API throttling on frequent message edits and sends, without
+  leaving so much safety margin that a busy shared gamble channel queues up behind itself.
+  Edits (in-progress game state) and new sends (initial command replies) draw from separate
+  budgets. Multiplayer-feeling games (Blackjack's Hit/Stand/Double/Split) route their
+  per-click card reveals through Discord's separate interaction-response API instead of a
+  plain message edit, so those don't compete with other concurrent games in the same
+  channel for the shared per-channel edit budget at all — only the automated parts (deal
+  animation, the dealer's own auto-play) do
+- Gamble-channel restriction (`/set-gamblechannel`) auto-manages that channel's native
+  Discord slowmode, scaled to actual traffic: a 2s baseline when set, auto-raised to 5s if
+  the channel's message rate hits a configurable threshold (checked once a minute), and
+  cleared when the restriction is removed — never overrides a slowmode value set manually
 - Hot code reloading in development (`HOT_RELOAD=true`, picks up changes to
   `commands/`, `events/`, `rpg/`, `utils/`, and `database/` within ~1.5s, no restart)
 - An in-process git watcher that checks `origin` every 60s and fast-forward-pulls any

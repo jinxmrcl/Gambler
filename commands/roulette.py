@@ -29,8 +29,8 @@ def color_of(number: int) -> str:
 
 
 def _grid_pos(n: int) -> tuple[int, int]:
-    triplet = (n - 1) // 3  # which row-of-3 (1,2,3 / 4,5,6 / ...) the number sits in
-    slot = (n - 1) % 3  # position within that triplet, also its COLUMNS group
+    triplet = (n - 1) // 3
+    slot = (n - 1) % 3
     return triplet, slot
 
 
@@ -118,7 +118,7 @@ class Roulette(commands.Cog):
         elif bet_kind == "column":
             won = result in COLUMNS[raw_choice]
             multiplier = 3.0
-        else:  # split
+        else:
             won = result in split_pair
             multiplier = 18.0
 

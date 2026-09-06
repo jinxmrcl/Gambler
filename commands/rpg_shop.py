@@ -230,7 +230,7 @@ class RPGShop(commands.Cog):
             await interaction.response.send_message("⚠️ Shields can only be equipped by Paladins.")
             return
         if is_equipment:
-            quantity = 1  # equipment is unique-per-slot; only potions stack meaningfully
+            quantity = 1
         price = _item_price(item)
         cost = price * quantity
 

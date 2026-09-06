@@ -79,8 +79,20 @@ def _resolve_supabase_dsn() -> str | None:
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = os.getenv("PREFIX", "!")
-_raw_restart_channel = os.getenv("RESTART_LOG_CHANNEL_ID", "")
-RESTART_LOG_CHANNEL_ID = int(_raw_restart_channel) if _raw_restart_channel.isdigit() else None
+
+
+def _channel_id_from_env(name: str) -> int | None:
+    raw = os.getenv(name, "")
+    return int(raw) if raw.isdigit() else None
+
+
+RESTART_LOG_CHANNEL_ID = _channel_id_from_env("RESTART_LOG_CHANNEL_ID")
+RESTART_GLOBAL_LOG_CHANNEL_ID = _channel_id_from_env("RESTART_GLOBAL_LOG_CHANNEL_ID")
+ERROR_LOG_CHANNEL_ID = _channel_id_from_env("ERROR_LOG_CHANNEL_ID")
+ACTION_LOG_CHANNEL_ID = _channel_id_from_env("ACTION_LOG_CHANNEL_ID")
+INFO_LOG_CHANNEL_ID = _channel_id_from_env("INFO_LOG_CHANNEL_ID")
+SERVERS_LOG_CHANNEL_ID = _channel_id_from_env("SERVERS_LOG_CHANNEL_ID")
+LOGS_LOG_CHANNEL_ID = _channel_id_from_env("LOGS_LOG_CHANNEL_ID")
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -96,6 +108,7 @@ BACKUPS_DIR.mkdir(exist_ok=True)
 DB_BACKUP_MIN_INTERVAL_SECONDS = 30 * 60
 DB_BACKUP_MAX_INTERVAL_SECONDS = 60 * 60
 DB_BACKUP_RETENTION = 48
+DAILY_BACKUP_INTERVAL_SECONDS = 24 * 60 * 60
 
 HOT_RELOAD = os.getenv("HOT_RELOAD", "true").lower() not in ("0", "false", "no")
 HOT_RELOAD_DIRS = ("commands", "events", "rpg", "utils", "database")
@@ -218,19 +231,42 @@ class GamblerBot(commands.Bot):
         self._startup_reported = False
         self._git_watch_last_failed_sha: str | None = None
 
-    async def _send_to_restart_channel(self, **kwargs) -> None:
-        if not RESTART_LOG_CHANNEL_ID:
-            return
-        channel = self.get_channel(RESTART_LOG_CHANNEL_ID)
+    async def _send_to_channel(self, channel_id: int, **kwargs) -> None:
+        channel = self.get_channel(channel_id)
         if not channel:
             try:
-                channel = await self.fetch_channel(RESTART_LOG_CHANNEL_ID)
+                channel = await self.fetch_channel(channel_id)
             except Exception:
                 return
         try:
             await channel.send(embed=discord.Embed(**kwargs))
         except Exception:
             pass
+
+    async def _send_to_restart_channel(self, **kwargs) -> None:
+        for channel_id in (RESTART_LOG_CHANNEL_ID, RESTART_GLOBAL_LOG_CHANNEL_ID):
+            if channel_id:
+                await self._send_to_channel(channel_id, **kwargs)
+
+    async def _send_to_error_log(self, **kwargs) -> None:
+        if ERROR_LOG_CHANNEL_ID:
+            await self._send_to_channel(ERROR_LOG_CHANNEL_ID, **kwargs)
+
+    async def _send_to_action_log(self, **kwargs) -> None:
+        if ACTION_LOG_CHANNEL_ID:
+            await self._send_to_channel(ACTION_LOG_CHANNEL_ID, **kwargs)
+
+    async def _send_to_info_log(self, **kwargs) -> None:
+        if INFO_LOG_CHANNEL_ID:
+            await self._send_to_channel(INFO_LOG_CHANNEL_ID, **kwargs)
+
+    async def _send_to_servers_log(self, **kwargs) -> None:
+        if SERVERS_LOG_CHANNEL_ID:
+            await self._send_to_channel(SERVERS_LOG_CHANNEL_ID, **kwargs)
+
+    async def _send_to_logs_log(self, **kwargs) -> None:
+        if LOGS_LOG_CHANNEL_ID:
+            await self._send_to_channel(LOGS_LOG_CHANNEL_ID, **kwargs)
 
     async def report_startup_state(self) -> None:
         if self._startup_reported:
@@ -344,6 +380,9 @@ class GamblerBot(commands.Bot):
         self._db_backup_task = asyncio.create_task(self._db_backup_loop())
         log.info("DB backup enabled — snapshotting every 30-60 min to %s.", BACKUPS_DIR)
 
+        self._daily_backup_task = asyncio.create_task(self._daily_backup_loop())
+        log.info("Daily Supabase backup enabled — pushing a dated snapshot every 24h.")
+
         if (BASE_DIR / ".git").exists():
             self._git_watch_task = asyncio.create_task(self._git_watch_loop())
             log.info("Git watch enabled — checking %s every %ds.", GIT_REPO_URL, GIT_WATCH_INTERVAL_SECONDS)
@@ -357,9 +396,6 @@ class GamblerBot(commands.Bot):
                 log.exception("[db-backup] backup failed")
 
     async def _run_db_backup(self) -> None:
-        # Union of already-loaded guilds, guilds with an existing SQLite file, and guilds
-        # the bot is currently in — so a guild that hasn't had a command run yet this
-        # session (no lazily-loaded instance) still gets swept up in the global snapshot.
         guild_ids = set(self.db.loaded_guild_ids())
         guild_ids.update(self.db.known_guild_ids())
         guild_ids.update(g.id for g in self.guilds)
@@ -385,6 +421,50 @@ class GamblerBot(commands.Bot):
         path = BACKUPS_DIR / f"backup_{timestamp}.json"
         await asyncio.to_thread(path.write_text, json.dumps(data, default=str), encoding="utf-8")
         log.info("[db-backup] wrote %s (%d guild(s))", path.name, len(data))
+        await self._send_to_logs_log(
+            title="💾 DB backup",
+            description=f"Wrote `{path.name}` ({len(data)} guild(s)).",
+            color=0x5865F2,
+        )
+
+    async def _daily_backup_loop(self) -> None:
+        while True:
+            await asyncio.sleep(DAILY_BACKUP_INTERVAL_SECONDS)
+            try:
+                await self._run_daily_backup()
+            except Exception:
+                log.exception("[daily-backup] backup failed")
+
+    async def _run_daily_backup(self) -> None:
+        if self.backup is None:
+            return
+
+        guild_ids = set(self.db.loaded_guild_ids())
+        guild_ids.update(self.db.known_guild_ids())
+        guild_ids.update(g.id for g in self.guilds)
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        count = 0
+        for guild_id in guild_ids:
+            guild_db = await self.db.get(guild_id)
+            dump = await guild_db.dump_all_tables()
+            try:
+                await self.backup.push_guild_daily_snapshot(guild_id, today, dump)
+                count += 1
+            except Exception:
+                log.exception("[daily-backup] failed to push snapshot for guild %s", guild_id)
+
+        try:
+            await self.backup.prune_daily_backups()
+        except Exception:
+            log.exception("[daily-backup] failed to prune old snapshots")
+
+        log.info("[daily-backup] pushed daily snapshot for %d guild(s) (%s)", count, today)
+        await self._send_to_logs_log(
+            title="🗓️ Daily Supabase backup",
+            description=f"Pushed a dated snapshot for **{count}** guild(s) ({today}).",
+            color=0x5865F2,
+        )
 
         backups = sorted(BACKUPS_DIR.glob("backup_*.json"))
         for old in backups[: max(0, len(backups) - DB_BACKUP_RETENTION)]:
@@ -493,8 +573,14 @@ class GamblerBot(commands.Bot):
             except Exception:
                 log.exception("[hot-reload] failed to sync commands")
 
+            await self._send_to_info_log(
+                title="🔁 Hot reload",
+                description=f"Changed: `{changed_names}`",
+                color=0x5865F2,
+            )
+
     async def close(self) -> None:
-        for attr in ("_hot_reload_task", "_git_watch_task", "_db_backup_task"):
+        for attr in ("_hot_reload_task", "_git_watch_task", "_db_backup_task", "_daily_backup_task"):
             task = getattr(self, attr, None)
             if task:
                 task.cancel()
@@ -523,11 +609,6 @@ def _handle_loop_exception(_loop: asyncio.AbstractEventLoop, context: dict) -> N
     log.error("[event-loop] %s", message, exc_info=exc)
 
 
-# discord.py's own connect() loop retries most gateway hiccups with backoff, but a
-# handshake failure on the very first connection attempt (e.g. a transient 503 from
-# Discord's edge) isn't one of the cases it catches, so it propagates and kills the
-# whole process instead of just retrying. Wrap startup so a brief, self-resolving
-# gateway issue doesn't require an external process manager to notice and restart.
 GATEWAY_STARTUP_RETRY_DELAYS = (5, 15, 30, 60, 60)
 
 

@@ -34,7 +34,7 @@ def _is_straight(indices: list) -> bool:
         return False
     if unique[1] - unique[0] == 1 and unique[2] - unique[1] == 1:
         return True
-    return unique == [0, 1, 12]  # A-2-3 (low straight)
+    return unique == [0, 1, 12]
 
 
 def _twentyone_three_result(player_cards: list, dealer_card) -> tuple[str, int] | None:
@@ -256,7 +256,7 @@ class BlackjackView(ui.LayoutView):
             self.side_bet_lines.append(f"🛡️ Insurance: 😢 Dealer has no Blackjack — lost {fmt(insurance_amount)}")
 
     async def animate_deal(self):
-        for player_shown, dealer_shown in ((1, 0), (1, 1), (2, 1)):
+        for player_shown, dealer_shown in ((1, 1), (2, 1)):
             await asyncio.sleep(DEAL_DELAY)
             self._render_dealing(player_shown, dealer_shown)
             await limited_edit(self.message, view=self)
@@ -325,20 +325,16 @@ class BlackjackView(ui.LayoutView):
 
         any_hand_alive = any(hand_value(h.cards) <= 21 for h in self.hands)
 
-        self._render_dealer_progress(footer="🎴 Revealing dealer's hand...")
-        await limited_edit(self.message, view=self)
-        await asyncio.sleep(DEAL_DELAY)
+        if any_hand_alive and hand_value(self.dealer) < 17:
+            self._render_dealer_progress(footer="🎴 Revealing dealer's hand...")
+            await limited_edit(self.message, view=self)
+            await asyncio.sleep(DEAL_DELAY)
 
-        if any_hand_alive:
             while hand_value(self.dealer) < 17:
-                self._render_dealer_progress(pending=True, footer="🎴 Dealer draws...")
-                await limited_edit(self.message, view=self)
-                await asyncio.sleep(DRAW_DELAY)
-
                 self.dealer.append(self.deck.draw())
                 self._render_dealer_progress(footer="🎴 Dealer draws...")
                 await limited_edit(self.message, view=self)
-                await asyncio.sleep(0.4)
+                await asyncio.sleep(DRAW_DELAY)
 
         dealer_total = hand_value(self.dealer)
 
@@ -393,22 +389,18 @@ class BlackjackView(ui.LayoutView):
         try:
             hand = self.current_hand
             self._set_action_buttons_disabled(True)
-            self.render(footer="🎴 Drawing...", pending_hand=self.active_hand)
-            await interaction.response.edit_message(view=self)
-            await asyncio.sleep(DRAW_DELAY)
-
             hand.cards.append(self.deck.draw())
             if hand_value(hand.cards) > 21:
                 hand.finished = True
                 self.render(footer="💥 Bust!")
-                await limited_edit(self.message, view=self)
+                await interaction.response.edit_message(view=self)
                 await asyncio.sleep(RESOLVE_PAUSE)
                 await self._advance_or_finish()
             else:
                 self.hit_button.disabled = False
                 self.stand_button.disabled = False
                 self.render()
-                await limited_edit(self.message, view=self)
+                await interaction.response.edit_message(view=self)
         finally:
             self._busy = False
 
@@ -442,15 +434,11 @@ class BlackjackView(ui.LayoutView):
 
             hand.bet *= 2
             self._set_action_buttons_disabled(True)
-            self.render(footer="🎴 Drawing...", pending_hand=self.active_hand)
-            await interaction.response.edit_message(view=self)
-            await asyncio.sleep(DRAW_DELAY)
-
             hand.cards.append(self.deck.draw())
             hand.finished = True
             busted = hand_value(hand.cards) > 21
             self.render(footer="💥 Bust!" if busted else None)
-            await limited_edit(self.message, view=self)
+            await interaction.response.edit_message(view=self)
             if busted:
                 await asyncio.sleep(RESOLVE_PAUSE)
             await self._advance_or_finish()
@@ -478,13 +466,9 @@ class BlackjackView(ui.LayoutView):
             self.active_hand = 0
 
             self._set_action_buttons_disabled(True)
-            self.render(footer="🎴 Splitting...", pending_hand=0)
-            await interaction.response.edit_message(view=self)
-            await asyncio.sleep(DRAW_DELAY)
-
             hand_a.cards.append(self.deck.draw())
             self.render(footer="🎴 Splitting...", pending_hand=1)
-            await limited_edit(self.message, view=self)
+            await interaction.response.edit_message(view=self)
             await asyncio.sleep(DRAW_DELAY)
 
             hand_b.cards.append(self.deck.draw())

@@ -38,20 +38,22 @@ class RateLimiter:
             self._waiters -= 1
 
 
-_EDIT_RATE = 3
+_EDIT_RATE = 5
 _EDIT_PER = 5.0
-_channel_limiters: dict[int, RateLimiter] = defaultdict(lambda: RateLimiter(_EDIT_RATE, _EDIT_PER))
+_channel_limiters: dict[int, RateLimiter] = defaultdict(
+    lambda: RateLimiter(_EDIT_RATE, _EDIT_PER, min_rate_fraction=1.0)
+)
 
-_MESSAGE_MIN_INTERVAL = 1.1
+_MESSAGE_MIN_INTERVAL = 1.0
 _message_limiters: dict[int, RateLimiter] = defaultdict(
     lambda: RateLimiter(1, _MESSAGE_MIN_INTERVAL, min_rate_fraction=1.0)
 )
 
-_GLOBAL_EDIT_RATE = 20
-_GLOBAL_SEND_RATE = 8
+_GLOBAL_EDIT_RATE = 30
+_GLOBAL_SEND_RATE = 12
 _GLOBAL_PER = 1.0
-_global_edit_limiter = RateLimiter(_GLOBAL_EDIT_RATE, _GLOBAL_PER, min_rate_fraction=0.8)
-_global_send_limiter = RateLimiter(_GLOBAL_SEND_RATE, _GLOBAL_PER, min_rate_fraction=0.15)
+_global_edit_limiter = RateLimiter(_GLOBAL_EDIT_RATE, _GLOBAL_PER, min_rate_fraction=0.9)
+_global_send_limiter = RateLimiter(_GLOBAL_SEND_RATE, _GLOBAL_PER, min_rate_fraction=0.4)
 
 _STALE_ENTRY_SECONDS = 1800.0
 _SWEEP_INTERVAL_SECONDS = 600.0

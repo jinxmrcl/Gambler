@@ -10,7 +10,6 @@ from utils.economy import BetError
 
 log = logging.getLogger("gambler")
 
-# Errors where showing the correct command syntax actually helps the user fix their input.
 _SYNTAX_HINT_ERRORS = (
     commands.MissingRequiredArgument,
     commands.RangeError,
@@ -50,7 +49,7 @@ def _friendly_message(error: Exception, ctx: commands.Context | None = None) -> 
         return f"That's on cooldown. Try again in {error.retry_after:.1f}s."
     elif isinstance(error, (commands.MissingPermissions, app_commands.MissingPermissions)):
         return "You're missing the required permission (Administrator)."
-    elif isinstance(error, commands.CommandNotFound):
+    elif isinstance(error, (commands.CommandNotFound, commands.NotOwner)):
         return None
     elif isinstance(error, commands.UserInputError):
         text = "One of the provided values is invalid."
@@ -86,9 +85,18 @@ class ErrorHandler(commands.Cog):
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
         error = getattr(error, "original", error)
         message = _friendly_message(error, ctx)
-        if message is None and not isinstance(error, commands.CommandNotFound):
+        if message is None and not isinstance(error, (commands.CommandNotFound, commands.NotOwner)):
             log.exception("Unexpected error in command %s", ctx.command, exc_info=error)
             message = "Something went wrong. Please try again later."
+            guild_text = f"{ctx.guild.name} (`{ctx.guild.id}`)" if ctx.guild else "DM"
+            await self.bot._send_to_error_log(
+                title="⚠️ Unexpected command error",
+                description=(
+                    f"**Command:** `{ctx.command}`\n**User:** {ctx.author} (`{ctx.author.id}`)\n"
+                    f"**Server:** {guild_text}\n**Error:** ```{type(error).__name__}: {error}```"
+                ),
+                color=0xED4245,
+            )
         if message:
             try:
                 await ctx.send(f"⚠️ {message}")
@@ -103,6 +111,16 @@ class ErrorHandler(commands.Cog):
         if message is None:
             log.exception("Unexpected error in app command", exc_info=error)
             message = "Something went wrong. Please try again later."
+            guild_text = f"{interaction.guild.name} (`{interaction.guild.id}`)" if interaction.guild else "DM"
+            command_name = interaction.command.qualified_name if interaction.command else "?"
+            await self.bot._send_to_error_log(
+                title="⚠️ Unexpected app command error",
+                description=(
+                    f"**Command:** `/{command_name}`\n**User:** {interaction.user} (`{interaction.user.id}`)\n"
+                    f"**Server:** {guild_text}\n**Error:** ```{type(error).__name__}: {error}```"
+                ),
+                color=0xED4245,
+            )
         try:
             if interaction.response.is_done():
                 await interaction.followup.send(f"⚠️ {message}", ephemeral=True)

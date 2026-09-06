@@ -16,7 +16,7 @@ class OnReady(commands.Cog):
         if not self._presence_set:
             self._presence_set = True
             await self.bot.change_presence(
-                activity=discord.Activity(type=discord.ActivityType.watching, name="/blackjack 🎰")
+                activity=discord.CustomActivity(name="🎰 /help for games & commands")
             )
         log.info("Logged in as %s (ID: %s)", self.bot.user, self.bot.user.id)
         await self.bot.report_startup_state()
