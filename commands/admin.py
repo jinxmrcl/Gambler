@@ -1,11 +1,13 @@
 import datetime
 import json
+from pathlib import Path
 from typing import Literal
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
+from events.audit_log import invite_for
 from rpg.consumables import CONSUMABLES
 from rpg.equipment import EQUIPMENT
 from rpg.leveling import MAX_LEVEL, apply_xp, xp_for_level
@@ -33,7 +35,15 @@ async def _rpgitem_autocomplete(interaction: discord.Interaction, current: str) 
     matches = [k for k in keys if current in k.lower() or current in _rpgitem_name(k).lower()]
     return [app_commands.Choice(name=_rpgitem_name(k), value=k) for k in matches[:RPGITEM_AUTOCOMPLETE_LIMIT]]
 
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 PERMANENT_SHIELD_UNTIL = datetime.datetime(9999, 1, 1)
+
+
+def _fmt_size(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.0f}{unit}" if unit == "B" else f"{n:.1f}{unit}"
+        n /= 1024
 
 
 class AnnounceConfirmView(discord.ui.LayoutView):
@@ -246,6 +256,20 @@ class Admin(commands.Cog):
         view = StaticView("📡 Bot Status", "\n".join(lines), color=discord.Color.blue())
         await ctx.send(view=view)
 
+    @commands.command(name="servers", hidden=True)
+    @commands.is_owner()
+    async def servers(self, ctx: commands.Context):
+        lines = []
+        for guild in self.bot.guilds:
+            invite_url = await invite_for(guild)
+            invite_text = invite_url or "*(no invite - missing permission)*"
+            lines.append(f"**{guild.name}** (`{guild.id}`) — {guild.member_count} members\n{invite_text}")
+
+        body = "\n\n".join(lines) if lines else "*Not in any servers.*"
+        for chunk_start in range(0, len(body), 3800):
+            chunk = body[chunk_start : chunk_start + 3800]
+            await ctx.send(view=StaticView(f"🌐 Servers ({len(self.bot.guilds)})", chunk, color=discord.Color.blue()))
+
     @commands.command(name="restart", hidden=True)
     @commands.is_owner()
     async def restart(self, ctx: commands.Context):
@@ -279,6 +303,63 @@ class Admin(commands.Cog):
             return
 
         view = AnnounceConfirmView(ctx.author.id, targets, message)
+        await ctx.send(view=view)
+
+    @commands.command(name="guildinfo", hidden=True)
+    @commands.is_owner()
+    async def guildinfo(self, ctx: commands.Context, guild_id: int):
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            try:
+                guild = await self.bot.fetch_guild(guild_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                await ctx.send(f"⚠️ Couldn't find/fetch guild `{guild_id}`.")
+                return
+
+        owner_text = f"`{guild.owner_id}`"
+        if guild.owner_id:
+            try:
+                owner_user = self.bot.get_user(guild.owner_id) or await self.bot.fetch_user(guild.owner_id)
+                owner_text = f"{owner_user} (`{guild.owner_id}`)"
+            except discord.HTTPException:
+                pass
+
+        lines = [
+            f"**ID:** `{guild.id}`",
+            f"**Owner:** {owner_text}",
+            f"**Members:** {guild.member_count}",
+            f"**Created:** {discord.utils.format_dt(guild.created_at, 'F')}",
+        ]
+        view = StaticView(f"🌐 {guild.name}", "\n".join(lines), color=discord.Color.blue())
+        await ctx.send(view=view)
+
+    @commands.command(name="sync", hidden=True)
+    @commands.is_owner()
+    async def sync(self, ctx: commands.Context):
+        synced = await self.bot.tree.sync()
+        await ctx.send(f"✅ Synced {len(synced)} slash command(s).")
+
+    @commands.command(name="dbsize", hidden=True)
+    @commands.is_owner()
+    async def dbsize(self, ctx: commands.Context):
+        guilds_dir = DATA_DIR / "guilds"
+        if not guilds_dir.exists():
+            await ctx.send("⚠️ No guild databases found yet.")
+            return
+
+        entries = sorted(
+            ((f.stem, f.stat().st_size) for f in guilds_dir.glob("*.db")),
+            key=lambda e: e[1],
+            reverse=True,
+        )
+        lines = [f"`{guild_id}`: {_fmt_size(size)}" for guild_id, size in entries]
+        total = sum(size for _guild_id, size in entries)
+        data_total = sum(f.stat().st_size for f in DATA_DIR.rglob("*") if f.is_file())
+        lines.append(f"\n**Total (guild DBs):** {_fmt_size(total)}")
+        lines.append(f"**Total (data/ folder):** {_fmt_size(data_total)}")
+
+        body = "\n".join(lines) if entries else "*No guild databases found.*"
+        view = StaticView("💾 Database Sizes", body, color=discord.Color.blue())
         await ctx.send(view=view)
 
     @app_commands.command(name="rpgsetlevel", description="[Admin] Set a player's RPG level (and optionally XP).")
