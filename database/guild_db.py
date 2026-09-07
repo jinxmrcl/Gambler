@@ -311,6 +311,14 @@ class GuildDatabase:
         )
         await conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS vote_claims (
+                user_id INTEGER PRIMARY KEY,
+                last_claimed_at TEXT NOT NULL
+            )
+            """
+        )
+        await conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS characters (
                 user_id INTEGER PRIMARY KEY,
                 class_key TEXT NOT NULL,
@@ -484,6 +492,38 @@ class GuildDatabase:
     async def get_daily_streak(self, user_id: int) -> int:
         row = await self._fetchone("SELECT daily_streak FROM users WHERE user_id = ?", (user_id,))
         return row[0] if row else 0
+
+    async def claim_vote_reward(
+        self, user_id: int, amount: int, now: datetime.datetime, cooldown: datetime.timedelta
+    ) -> int | None:
+        cutoff = now - cooldown
+        async with self._transaction() as conn:
+            await conn.execute(
+                "INSERT OR IGNORE INTO vote_claims (user_id, last_claimed_at) VALUES (?, ?)",
+                (user_id, _e(datetime.datetime.min)),
+            )
+            cur = await conn.execute(
+                "UPDATE vote_claims SET last_claimed_at = ? "
+                "WHERE user_id = ? AND last_claimed_at <= ?",
+                (_e(now), user_id, _e(cutoff)),
+            )
+            if cur.rowcount == 0:
+                return None
+            await conn.execute(
+                "UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id)
+            )
+            cur = await conn.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+            row = await cur.fetchone()
+            return row[0]
+
+    async def get_last_vote_claim(self, user_id: int) -> datetime.datetime | None:
+        row = await self._fetchone(
+            "SELECT last_claimed_at FROM vote_claims WHERE user_id = ?", (user_id,)
+        )
+        if not row or row[0] is None:
+            return None
+        claimed = _p(row[0])
+        return claimed if claimed != datetime.datetime.min else None
 
     async def get_unlocked_achievements(self, user_id: int) -> set[str]:
         rows = await self._fetchall(
@@ -1269,6 +1309,7 @@ class GuildDatabase:
             await conn.execute("DELETE FROM primordial_items WHERE user_id = ?", (user_id,))
             await conn.execute("DELETE FROM item_use_limits WHERE user_id = ?", (user_id,))
             await conn.execute("DELETE FROM achievements WHERE user_id = ?", (user_id,))
+            await conn.execute("DELETE FROM vote_claims WHERE user_id = ?", (user_id,))
         self._cooldown_bypass_cache[user_id] = False
         await self.divorce(user_id)
 

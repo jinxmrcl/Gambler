@@ -60,6 +60,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from database import GuildDatabaseManager, SupabaseBackup
+from utils import topgg
 from utils.checks import gamble_channel_check
 from utils.economy import StaticView
 from utils.owners import OWNER_IDS
@@ -224,6 +225,9 @@ class GamblerBot(commands.Bot):
         self.prefix = PREFIX
         self.starting_balance = int(os.getenv("STARTING_BALANCE", "100000"))
         self.daily_amount = int(os.getenv("DAILY_AMOUNT", "500"))
+        self.vote_reward_amount = int(os.getenv("VOTE_REWARD_AMOUNT", "1000"))
+        self.topgg_bot_id = os.getenv("TOPGG_BOT_ID") or None
+        self.topgg_token = os.getenv("TOPGG_TOKEN") or None
 
         self.db = GuildDatabaseManager(DATA_DIR / "guilds")
         self.backup: SupabaseBackup | None = None
@@ -592,6 +596,7 @@ class GamblerBot(commands.Bot):
         await self.db.close_all()
         if self.backup is not None:
             await self.backup.close()
+        await topgg.close_session()
         await super().close()
 
 

@@ -1,5 +1,5 @@
 import discord
-from discord import ui
+from discord import app_commands, ui
 from discord.ext import commands
 
 from utils.economy import game_container
@@ -8,6 +8,7 @@ from utils.ratelimit import limited_edit
 CATEGORIES = [
     ("economy", "💰 Economy", ["Economy"], discord.Color.gold()),
     ("earn", "💼 Earn Money", ["Hustle", "Cooldowns"], discord.Color.green()),
+    ("vote", "🗳️ Vote & Rewards", ["Vote"], discord.Color.green()),
     ("bank", "🏦 Bank", ["Bank"], discord.Color.teal()),
     ("shop", "🛒 Shop & Inventory", ["Shop"], discord.Color.orange()),
     ("trade", "🤝 Trading", ["Trade"], discord.Color.blurple()),
@@ -28,7 +29,7 @@ CATEGORIES = [
 ]
 
 SECTIONS = [
-    ("💵 Economy & Social", ["economy", "earn", "bank", "shop", "trade", "marriage", "lottery", "stats", "levels"]),
+    ("💵 Economy & Social", ["economy", "earn", "vote", "bank", "shop", "trade", "marriage", "lottery", "stats", "levels"]),
     ("🎰 Casino Games", ["games"]),
     ("⚔️ RPG", ["rpg_character", "rpg_dungeon", "rpg_shop", "rpg_arena"]),
     ("🔧 Server & Admin", ["settings", "admin"]),
@@ -122,11 +123,11 @@ class Help(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="help", description="Shows all available commands.")
-    async def help(self, ctx: commands.Context):
-        view = HelpView(self.bot, ctx.author.id)
-        message = await ctx.send(view=view)
-        view.message = message
+    @app_commands.command(name="help", description="Shows all available commands.")
+    async def help(self, interaction: discord.Interaction):
+        view = HelpView(self.bot, interaction.user.id)
+        await interaction.response.send_message(view=view)
+        view.message = await interaction.original_response()
 
 
 async def setup(bot: commands.Bot):
