@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.checks import ChannelNotAllowed, GameDisabled, GuildOnly, WrongGambleChannel
+from utils.checks import ChannelNotAllowed, GameDisabled, GuildOnly, NotBotOwner, WrongGambleChannel
 from utils.economy import BetError
 
 log = logging.getLogger("gambler")
@@ -107,6 +107,12 @@ class ErrorHandler(commands.Cog):
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
     ):
         error = getattr(error, "original", error)
+        if isinstance(error, NotBotOwner):
+            try:
+                await interaction.response.send_message("🤡")
+            except (discord.HTTPException, aiohttp.ClientError, ConnectionError, OSError):
+                log.warning("Failed to send troll response for app command")
+            return
         message = _friendly_message(error)
         if message is None:
             log.exception("Unexpected error in app command", exc_info=error)

@@ -49,6 +49,19 @@ def app_admin_only():
     return app_commands.check(predicate)
 
 
+class NotBotOwner(app_commands.CheckFailure):
+    pass
+
+
+def app_owner_only():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if await interaction.client.is_owner(interaction.user):
+            return True
+        raise NotBotOwner()
+
+    return app_commands.check(predicate)
+
+
 def game_enabled(game: str):
     async def predicate(ctx: commands.Context) -> bool:
         if ctx.guild is None:

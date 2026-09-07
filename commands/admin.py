@@ -12,7 +12,7 @@ from rpg.consumables import CONSUMABLES
 from rpg.equipment import EQUIPMENT
 from rpg.leveling import MAX_LEVEL, apply_xp, xp_for_level
 from rpg.primordial import PRIMORDIAL_BASES, describe_affixes, generate_primordial_drop
-from utils.checks import admin_only, app_admin_only
+from utils.checks import admin_only, app_admin_only, app_owner_only
 from utils.economy import StaticView, fmt, game_container
 from utils.ratelimit import get_status as ratelimit_status, limited_send
 
@@ -270,15 +270,15 @@ class Admin(commands.Cog):
             chunk = body[chunk_start : chunk_start + 3800]
             await ctx.send(view=StaticView(f"🌐 Servers ({len(self.bot.guilds)})", chunk, color=discord.Color.blue()))
 
-    @commands.command(name="restart", hidden=True)
-    @commands.is_owner()
-    async def restart(self, ctx: commands.Context):
+    @app_commands.command(name="restart", description="[Owner] Restart the bot to apply a pulled update.")
+    @app_owner_only()
+    async def restart(self, interaction: discord.Interaction):
         view = StaticView(
             "<:restart:1537866127835799572> Restarting",
             "Restarting the bot now — back online in a few seconds.",
             color=discord.Color.blue(),
         )
-        await ctx.send(view=view)
+        await interaction.response.send_message(view=view)
         await self.bot.graceful_shutdown()
 
     @commands.command(name="announce", hidden=True)
